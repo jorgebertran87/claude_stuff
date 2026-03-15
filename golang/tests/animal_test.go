@@ -8,10 +8,10 @@ import (
 
 func TestHungryAnimalEatsFood(t *testing.T) {
 	tests := []struct {
-		species        domain.Species
-		food           string
+		species         domain.Species
+		food            string
 		expectedEmotion domain.Emotion
-		expectedEnergy int
+		expectedEnergy  int
 	}{
 		{domain.Dog, "bone", domain.EmotionOk, 2},
 		{domain.Cat, "fish", domain.EmotionSatisfied, 5},

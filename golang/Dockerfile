@@ -4,5 +4,6 @@ WORKDIR /app
 
 COPY go.mod ./
 COPY domain/ ./domain/
+COPY tests/ ./tests/
 
-ENTRYPOINT ["go", "test", "-v", "./..."]
+ENTRYPOINT ["go", "test", "-v", "./tests/..."]
