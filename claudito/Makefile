@@ -18,4 +18,13 @@ debug:
 		-v /run/user/$(UID)/pulse/native:/tmp/pulse.sock \
 		$(IMAGE) python debug_audio.py
 
+VENV := .venv
+
+install:
+	python3 -m venv $(VENV)
+	$(VENV)/bin/pip install --quiet SpeechRecognition pyaudio
+
+run-local:
+	$(VENV)/bin/python -m voice_listener
+
 .PHONY: build run debug install run-local

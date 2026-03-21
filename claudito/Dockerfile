@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir \
     SpeechRecognition \
     pyaudio
 
-COPY listen.py .
+COPY voice_listener/ voice_listener/
 COPY debug_audio.py .
 
-CMD ["python", "listen.py"]
+CMD ["python", "-m", "voice_listener"]
