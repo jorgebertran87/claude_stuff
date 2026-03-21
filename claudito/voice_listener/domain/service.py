@@ -1,5 +1,5 @@
 from voice_listener.domain.model import Language, WakeWord
-from voice_listener.domain.ports import AudioCapturer, Transcriber
+from voice_listener.domain.ports import AudioCapturer, OrderHandler, Transcriber
 
 
 class VoiceListenerService:
@@ -7,11 +7,13 @@ class VoiceListenerService:
         self,
         capturer: AudioCapturer,
         transcriber: Transcriber,
+        order_handler: OrderHandler,
         wake_word: WakeWord,
         language: Language,
     ) -> None:
         self._capturer = capturer
         self._transcriber = transcriber
+        self._order_handler = order_handler
         self._wake_word = wake_word
         self._language = language
 
@@ -30,7 +32,7 @@ class VoiceListenerService:
 
     def listen_for_order(self) -> str | None:
         print("Listening for your order...")
-        audio = self._capturer.capture(timeout=5, phrase_time_limit=10)
+        audio = self._capturer.capture(timeout=5, phrase_time_limit=None)
         if audio is None:
             print("No order detected.")
             return None
@@ -42,4 +44,5 @@ class VoiceListenerService:
             order = self.listen_for_order()
             if order:
                 print(f"Order received: {order!r}")
-                # Extension point: inject an OrderHandler port here later.
+                response = self._order_handler.handle(order)
+                print(f"Claudito: {response}")

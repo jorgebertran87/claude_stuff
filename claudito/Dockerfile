@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# System deps: PortAudio for PyAudio + CA certs for Google STT HTTPS
+# System deps: PortAudio, PulseAudio, Node.js (for Claude Code CLI)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         portaudio19-dev \
         ca-certificates \
@@ -9,6 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpulse0 \
         pulseaudio-utils \
         libasound2-plugins \
+        curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
     && rm -rf /var/lib/apt/lists/*
 
 # Route ALSA through PulseAudio (which PipeWire emulates)
@@ -18,7 +22,8 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir \
     SpeechRecognition \
-    pyaudio
+    pyaudio \
+    claude-agent-sdk
 
 COPY voice_listener/ voice_listener/
 COPY debug_audio.py .

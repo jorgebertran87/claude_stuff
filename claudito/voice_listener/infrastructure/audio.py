@@ -5,8 +5,9 @@ from voice_listener.domain.ports import AudioCapturer
 
 
 class MicrophoneCapturer(AudioCapturer):
-    def __init__(self) -> None:
+    def __init__(self, pause_threshold: float = 2.0) -> None:
         self._recognizer = sr.Recognizer()
+        self._recognizer.pause_threshold = pause_threshold
         self._mic: sr.Microphone | None = None
         self._source = None
 
@@ -23,7 +24,7 @@ class MicrophoneCapturer(AudioCapturer):
         print("Calibrating for ambient noise...")
         self._recognizer.adjust_for_ambient_noise(self._source, duration=duration)
 
-    def capture(self, timeout: float | None, phrase_time_limit: float) -> AudioCapture | None:
+    def capture(self, timeout: float | None, phrase_time_limit: float | None) -> AudioCapture | None:
         try:
             raw = self._recognizer.listen(
                 self._source,
