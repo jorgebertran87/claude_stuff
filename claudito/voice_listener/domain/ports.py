@@ -8,7 +8,18 @@ class AudioCapturer(ABC):
     def calibrate(self, duration: float = 1.0) -> None: ...
 
     @abstractmethod
-    def capture(self, timeout: float | None, phrase_time_limit: float | None) -> AudioCapture | None: ...
+    def capture(
+        self,
+        timeout: float | None,
+        phrase_time_limit: float | None,
+        pause_threshold: float | None = None,
+    ) -> AudioCapture | None: ...
+
+    @abstractmethod
+    def mute(self) -> None: ...
+
+    @abstractmethod
+    def unmute(self) -> None: ...
 
 
 class Transcriber(ABC):
@@ -24,3 +35,6 @@ class OrderHandler(ABC):
 class AudioSpeaker(ABC):
     @abstractmethod
     def speak(self, text: str, language: Language) -> None: ...
+
+    @abstractmethod
+    def beep(self) -> None: ...

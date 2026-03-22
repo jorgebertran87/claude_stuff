@@ -1,5 +1,9 @@
+import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import Any
+
+_FUZZY_THRESHOLD = 0.80  # minimum similarity ratio to accept a match
 
 
 @dataclass(frozen=True)
@@ -11,7 +15,22 @@ class WakeWord:
             raise ValueError("WakeWord cannot be empty.")
 
     def matches(self, text: str) -> bool:
-        return self.value.lower() in text.lower()
+        wake = self.value.lower()
+        words = re.findall(r"\w+", text.lower())
+        return any(
+            word == wake or SequenceMatcher(None, wake, word).ratio() >= _FUZZY_THRESHOLD
+            for word in words
+        )
+
+    def extract_order(self, text: str) -> str | None:
+        """Return the text that follows the wake word in the utterance, if any."""
+        wake = self.value.lower()
+        words = re.findall(r"\w+", text.lower())
+        for i, word in enumerate(words):
+            if word == wake or SequenceMatcher(None, wake, word).ratio() >= _FUZZY_THRESHOLD:
+                rest = " ".join(words[i + 1:]).strip()
+                return rest if rest else None
+        return None
 
 
 @dataclass(frozen=True)
