@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import os
+
 from voice_listener.domain.model import Language, WakeWord
 from voice_listener.domain.service import VoiceListenerService
 from voice_listener.infrastructure.audio import MicrophoneCapturer
@@ -7,12 +9,12 @@ from voice_listener.infrastructure.speaker import GTTSSpeaker
 from voice_listener.infrastructure.speech import GoogleTranscriber
 
 
-def main(language_code: str = "es-ES") -> None:
+def main(language_code: str = os.environ.get("VOICE_LANGUAGE", "es-ES")) -> None:
     print("Voice Order Listener")
     print("====================")
     print("Press Ctrl+C to quit.\n")
 
-    wake_word = WakeWord(value="claudito")
+    wake_word = WakeWord(value=os.environ.get("WAKE_WORD", "claudito"))
     language = Language(code=language_code)
     transcriber = GoogleTranscriber()
     order_handler = ClaudeCodeHandler()

@@ -23,7 +23,7 @@ class GTTSSpeaker(AudioSpeaker):
         pygame.mixer.init()
 
     def speak(self, text: str, language: Language) -> None:
-        lang_code = language.code.split("-")[0]  # "es-ES" -> "es"
+        lang_code = language.code.split("-")[0]
         tts = gTTS(text=_strip_markdown(text), lang=lang_code)
 
         mp3_buf = io.BytesIO()
