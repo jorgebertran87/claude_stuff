@@ -7,6 +7,8 @@ load_dotenv()
 
 # Access environment variables
 default_user_city = os.getenv("DEFAULT_USER_CITY")
+voice_language = os.getenv("VOICE_LANGUAGE")
+wake_word = os.getenv("WAKE_WORD")
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, SystemMessage, query
 
@@ -18,6 +20,7 @@ _SYSTEM_PROMPT = (
     "No le preguntes si necesita algo más, solo haz lo que te pida."
     "Si te pregunta que tiempo hace, si no te indica ninguna ciudad o ubicación,  responde con el clima actual de " + default_user_city + ". Cuando me contestes, indica qué ciudad has usado para responder. "
     "Devuelve la información en texto plano, sin formato ni explicaciones adicionales. Solamente la información relevante, nada más. Si no te pido que extiendas la respuesta, hazla lo más resumida posible"
+    "Devuelve la respuesta en el idioma oficial del país con código '" + voice_language + "'."
 )
 
 
