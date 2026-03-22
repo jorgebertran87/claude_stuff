@@ -19,3 +19,8 @@ class Transcriber(ABC):
 class OrderHandler(ABC):
     @abstractmethod
     def handle(self, order: str) -> str: ...
+
+
+class AudioSpeaker(ABC):
+    @abstractmethod
+    def speak(self, text: str, language: Language) -> None: ...

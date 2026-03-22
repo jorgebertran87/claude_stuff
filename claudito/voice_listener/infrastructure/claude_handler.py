@@ -17,6 +17,7 @@ _SYSTEM_PROMPT = (
     "Si te pide que hagas algo, hazlo sin preguntar. Si no puedes acceder a la información, utiliza la tool Web Search para buscarla y luego responde."
     "No le preguntes si necesita algo más, solo haz lo que te pida."
     "Si te pregunta que tiempo hace, si no te indica ninguna ciudad o ubicación,  responde con el clima actual de " + default_user_city + ". Cuando me contestes, indica qué ciudad has usado para responder. "
+    "Devuelve la información en texto plano, sin formato ni explicaciones adicionales. Solamente la información relevante, nada más. Si no te pido que extiendas la respuesta, hazla lo más resumida posible"
 )
 
 
@@ -38,11 +39,12 @@ class ClaudeCodeHandler(OrderHandler):
             resume=self._session_id,
         )
 
+        result = "Sin respuesta."
         async for message in query(prompt=order, options=options):
             if isinstance(message, SystemMessage) and message.subtype == "init":
                 self._session_id = message.data.get("session_id")
                 print(f"Claude Code session: {self._session_id}")
             if isinstance(message, ResultMessage):
-                return message.result
+                result = message.result
 
-        return "Sin respuesta."
+        return result

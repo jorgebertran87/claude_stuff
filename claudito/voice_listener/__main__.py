@@ -3,6 +3,7 @@ from voice_listener.domain.model import Language, WakeWord
 from voice_listener.domain.service import VoiceListenerService
 from voice_listener.infrastructure.audio import MicrophoneCapturer
 from voice_listener.infrastructure.claude_handler import ClaudeCodeHandler
+from voice_listener.infrastructure.speaker import GTTSSpeaker
 from voice_listener.infrastructure.speech import GoogleTranscriber
 
 
@@ -15,6 +16,7 @@ def main(language_code: str = "es-ES") -> None:
     language = Language(code=language_code)
     transcriber = GoogleTranscriber()
     order_handler = ClaudeCodeHandler()
+    speaker = GTTSSpeaker()
 
     with MicrophoneCapturer() as capturer:
         capturer.calibrate(duration=1.0)
@@ -22,6 +24,7 @@ def main(language_code: str = "es-ES") -> None:
             capturer=capturer,
             transcriber=transcriber,
             order_handler=order_handler,
+            speaker=speaker,
             wake_word=wake_word,
             language=language,
         )

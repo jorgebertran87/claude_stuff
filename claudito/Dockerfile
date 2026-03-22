@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpulse0 \
         pulseaudio-utils \
         libasound2-plugins \
+        libsdl2-2.0-0 \
         curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
@@ -23,7 +24,9 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
     SpeechRecognition \
     pyaudio \
-    claude-agent-sdk
+    claude-agent-sdk \
+    gTTS \
+    pygame
 
 COPY voice_listener/ voice_listener/
 COPY debug_audio.py .
