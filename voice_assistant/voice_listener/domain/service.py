@@ -1,9 +1,11 @@
+import threading
+
 from voice_listener.domain.model import Language, WakeWord
 from voice_listener.domain.ports import AudioCapturer, AudioSpeaker, OrderHandler, Transcriber
 
-_ORDER_TIMEOUT = 10           # seconds to wait for the user to start speaking
+_ORDER_TIMEOUT = 10          # seconds to wait for the user to start speaking
 _ORDER_RETRIES = 2            # how many times to re-prompt before giving up
-_ORDER_PAUSE_THRESHOLD = 4.0  # seconds of silence before the order phrase is considered done
+_ORDER_PAUSE_THRESHOLD = 2.0  # seconds of silence before the order phrase is considered done
 
 
 class VoiceListenerService:
@@ -58,13 +60,59 @@ class VoiceListenerService:
         return None
 
     def run(self) -> None:
+        waiting_for_answer = False
         while True:
-            inline_order = self.wait_for_wake_word()
-            order = inline_order or self.listen_for_order()
+            if waiting_for_answer:
+                order = self.listen_for_order()
+            else:
+                inline_order = self.wait_for_wake_word()
+                order = inline_order or self.listen_for_order()
             if order:
                 print(f"Order received: {order!r}")
-                response = self._order_handler.handle(order)
+                response, stop_melody, melody_thread = self._handle_with_melody(order)
                 print(f"Claudito: {response}")
-                self._capturer.mute()
-                self._speaker.speak(response, self._language)
-                self._capturer.unmute()
+                interrupted = self._speak_interruptible(response, stop_melody, melody_thread)
+                if interrupted:
+                    waiting_for_answer = False
+                else:
+                    waiting_for_answer = bool(response and "?" in response.rstrip())
+            else:
+                waiting_for_answer = False
+
+    def _handle_with_melody(self, order: str) -> tuple[str, threading.Event, threading.Thread]:
+        """Call the order handler while playing a waiting melody. Returns the melody still running."""
+        stop_event = threading.Event()
+        melody_thread = threading.Thread(
+            target=self._speaker.play_melody, args=(stop_event,), daemon=True
+        )
+        melody_thread.start()
+        response = self._order_handler.handle(order)
+        return response, stop_event, melody_thread
+
+    def _speak_interruptible(self, response: str, stop_melody: threading.Event, melody_thread: threading.Thread) -> bool:
+        """Speak response while listening for the wake word. Returns True if interrupted."""
+        speak_thread = threading.Thread(
+            target=self._speaker.speak,
+            args=(response, self._language),
+            kwargs={"on_playback_start": stop_melody.set},
+            daemon=True,
+        )
+        speak_thread.start()
+        melody_thread.join()
+
+        interrupted = False
+        while speak_thread.is_alive():
+            audio = self._capturer.capture(timeout=1, phrase_time_limit=2)
+            if audio is not None:
+                text = self._transcriber.transcribe(audio, self._language)
+                if text:
+                    print(f"Heard during speech: {text!r}")
+                if text and self._wake_word.matches(text):
+                    print("Wake word detected — interrupting speech.")
+                    self._speaker.stop()
+                    self.listen_for_order()
+                    interrupted = True
+                    break
+
+        speak_thread.join()
+        return interrupted

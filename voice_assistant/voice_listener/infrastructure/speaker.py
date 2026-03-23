@@ -2,6 +2,7 @@ import array
 import io
 import math
 import re
+import threading
 
 import pygame
 from gtts import gTTS
@@ -36,7 +37,7 @@ class GTTSSpeaker(AudioSpeaker):
         sound.play()
         pygame.time.wait(duration_ms)
 
-    def speak(self, text: str, language: Language, speed: float = 1.5, pitch: float = 0.75) -> None:
+    def speak(self, text: str, language: Language, on_playback_start=None, speed: float = 1.5, pitch: float = 0.75) -> None:
         lang_code = language.code.split("-")[0]
         tts = gTTS(text=_strip_markdown(text), lang=lang_code)
 
@@ -63,6 +64,23 @@ class GTTSSpeaker(AudioSpeaker):
         wav_buf.seek(0)
 
         pygame.mixer.music.load(wav_buf)
+        if on_playback_start is not None:
+            on_playback_start()
         pygame.mixer.music.play()
         while pygame.mixer.music.get_busy():
             pygame.time.Clock().tick(10)
+
+    def stop(self) -> None:
+        pygame.mixer.music.stop()
+
+    def play_melody(self, stop_event: threading.Event) -> None:
+        # R2-D2-style waiting melody: ascending then descending arpeggio
+        notes = [523, 659, 784, 1047, 784, 659, 523, 440]  # C5 E5 G5 C6 G5 E5 C5 A4
+        durations = [120, 100, 100, 180, 100, 100, 120, 200]
+        pause_ms = 400
+        while not stop_event.is_set():
+            for freq, dur in zip(notes, durations):
+                if stop_event.is_set():
+                    return
+                self.beep(frequency=freq, duration_ms=dur, volume=0.3)
+            stop_event.wait(timeout=pause_ms / 1000)

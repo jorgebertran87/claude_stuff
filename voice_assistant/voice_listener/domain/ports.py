@@ -1,4 +1,6 @@
+import threading
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 from voice_listener.domain.model import AudioCapture, Language
 
@@ -34,7 +36,13 @@ class OrderHandler(ABC):
 
 class AudioSpeaker(ABC):
     @abstractmethod
-    def speak(self, text: str, language: Language) -> None: ...
+    def speak(self, text: str, language: Language, on_playback_start: Callable[[], None] | None = None) -> None: ...
+
+    @abstractmethod
+    def stop(self) -> None: ...
 
     @abstractmethod
     def beep(self) -> None: ...
+
+    @abstractmethod
+    def play_melody(self, stop_event: threading.Event) -> None: ...
