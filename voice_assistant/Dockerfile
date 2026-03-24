@@ -31,9 +31,11 @@ RUN pip install --no-cache-dir \
     numpy \
     noisereduce \
     pydub \
-    langdetect
+    langdetect \
+    pytest
 
 COPY voice_listener/ voice_listener/
+COPY tests/ tests/
 COPY debug_audio.py .
 COPY prompt* .
 

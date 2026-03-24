@@ -16,6 +16,9 @@ run:
 		-v $(HOME)/.claude.json:/root/.claude.json \
 		$(IMAGE)
 
+test:
+	docker run --rm $(IMAGE) pytest tests/ -v
+
 debug:
 	docker run -it --rm \
 		-e PULSE_SERVER=unix:/tmp/pulse.sock \
@@ -23,4 +26,4 @@ debug:
 		-v $(HOME)/.claude:/root/.claude \
 		$(IMAGE) python debug_audio.py
 
-.PHONY: build run debug
+.PHONY: build run test debug
