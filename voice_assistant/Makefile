@@ -17,7 +17,7 @@ run:
 		$(IMAGE)
 
 test:
-	docker run --rm $(IMAGE) pytest tests/ -v
+	docker run --rm -e SDL_AUDIODRIVER=dummy -e SDL_VIDEODRIVER=dummy $(IMAGE) pytest tests/ -v
 
 debug:
 	docker run -it --rm \
