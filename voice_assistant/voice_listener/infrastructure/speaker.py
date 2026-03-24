@@ -6,6 +6,7 @@ import threading
 
 import pygame
 from gtts import gTTS
+from langdetect import detect as detect_language
 from pydub import AudioSegment
 
 from voice_listener.domain.model import Language
@@ -20,6 +21,37 @@ def _strip_markdown(text: str) -> str:
     text = re.sub(r'^[-*]\s+', '', text, flags=re.MULTILINE) # list bullets
     text = re.sub(r'`[^`]*`', '', text)                     # inline code
     return text.strip()
+
+
+def _tts_segment(text: str, lang: str) -> AudioSegment:
+    buf = io.BytesIO()
+    try:
+        gTTS(text=text, lang=lang).write_to_fp(buf)
+    except ValueError:
+        buf = io.BytesIO()
+        gTTS(text=text, lang="en").write_to_fp(buf)
+    buf.seek(0)
+    return AudioSegment.from_mp3(buf)
+
+
+def _alexa_spotify_parts(text: str) -> list[tuple[str, str]] | None:
+    """If text is an Alexa/Spotify command, return [(chunk, lang), ...]; else None.
+
+    The command frame uses Spanish; the song title uses its detected language.
+    The title is expected to be the quoted string in the response.
+    """
+    if not (re.search(r'\balexa\b', text, re.IGNORECASE) and
+            re.search(r'\bspotify\b', text, re.IGNORECASE)):
+        return None
+    m = re.search(r'(["\'])(.+?)\1', text)
+    if not m:
+        return None
+    before, title, after = text[:m.start()], m.group(2), text[m.end():]
+    try:
+        title_lang = detect_language(title)
+    except Exception:
+        title_lang = "en"
+    return [(before, "es"), (title, title_lang), (after, "es")]
 
 
 class GTTSSpeaker(AudioSpeaker):
@@ -39,14 +71,17 @@ class GTTSSpeaker(AudioSpeaker):
         pygame.time.wait(duration_ms)
 
     def speak(self, text: str, language: Language, on_playback_start=None, speed: float = 1.5, pitch: float = 0.75) -> None:
+        cleaned = _strip_markdown(text)
         lang_code = language.code.split("-")[0]
-        tts = gTTS(text=_strip_markdown(text), lang=lang_code)
 
-        mp3_buf = io.BytesIO()
-        tts.write_to_fp(mp3_buf)
-        mp3_buf.seek(0)
-
-        segment = AudioSegment.from_mp3(mp3_buf)
+        parts = _alexa_spotify_parts(cleaned)
+        if parts:
+            chunks = [_tts_segment(chunk, lang) for chunk, lang in parts if chunk.strip()]
+            segment = chunks[0]
+            for chunk in chunks[1:]:
+                segment = segment + chunk
+        else:
+            segment = _tts_segment(cleaned, lang_code)
 
         # Speed up (pitch-preserving via resample)
         processed = segment._spawn(
@@ -83,13 +118,6 @@ class GTTSSpeaker(AudioSpeaker):
         return self._echo_reference
 
     def play_melody(self, stop_event: threading.Event) -> None:
-        # The Entertainer by Scott Joplin
-        notes = [587, 659, 523, 440, 523, 659, 523, 587, 659, 523, 659, 784, 659, 523, 440, 440, 493, 523]
-        durations = [100, 100, 100, 100, 200, 100, 300, 100, 100, 100, 100, 200, 300, 100, 100, 100, 100, 300]
-        pause_ms = 600
         while not stop_event.is_set():
-            for freq, dur in zip(notes, durations):
-                if stop_event.is_set():
-                    return
-                self.beep(frequency=freq, duration_ms=dur, volume=0.3)
-            stop_event.wait(timeout=pause_ms / 1000)
+            self.beep(frequency=660, duration_ms=80, volume=0.15)
+            stop_event.wait(timeout=2.0)

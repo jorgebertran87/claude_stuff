@@ -30,7 +30,8 @@ RUN pip install --no-cache-dir \
     pygame \
     numpy \
     noisereduce \
-    pydub
+    pydub \
+    langdetect
 
 COPY voice_listener/ voice_listener/
 COPY debug_audio.py .
