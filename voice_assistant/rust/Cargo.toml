@@ -1,0 +1,19 @@
+[package]
+name = "voice_assistant"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "voice_assistant"
+path = "src/main.rs"
+
+[lib]
+name = "voice_assistant"
+path = "src/lib.rs"
+
+[dependencies]
+regex   = "1"
+strsim  = "0.11"
+rustfft = "6"
+ureq    = "2"
+whichlang = "0.1"
