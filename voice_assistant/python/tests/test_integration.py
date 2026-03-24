@@ -19,7 +19,9 @@ from pydub import AudioSegment
 from voice_listener.domain.model import AudioCapture, Language, WakeWord
 from voice_listener.domain.ports import AudioCapturer, AudioSpeaker, OrderHandler, Transcriber
 from voice_listener.domain.service import VoiceListenerService
+from claude_agent_sdk import ResultMessage
 from voice_listener.infrastructure.audio import MicrophoneCapturer
+from voice_listener.infrastructure.claude_handler import ClaudeCodeHandler
 from voice_listener.infrastructure.speaker import _alexa_spotify_parts, _tts_segment
 from voice_listener.infrastructure.speech import _denoise
 
@@ -307,3 +309,88 @@ class TestServiceThreadingLifecycle:
         # run() sets waiting_for_answer=True on interrupt so user can speak without wake word
         waiting_for_answer = interrupted
         assert waiting_for_answer is True
+
+
+# ===========================================================================
+# 4. ClaudeCodeHandler token logging  (real ResultMessage + real file I/O)
+# ===========================================================================
+
+def _fake_result_message(result="ok", input_tokens=18, output_tokens=735,
+                         cache_read=38335, cache_creation=2610, cost=0.029965):
+    return ResultMessage(
+        subtype="success",
+        duration_ms=1000,
+        duration_api_ms=900,
+        is_error=False,
+        num_turns=1,
+        session_id="test-session",
+        stop_reason="end_turn",
+        total_cost_usd=cost,
+        usage={
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_read_input_tokens": cache_read,
+            "cache_creation_input_tokens": cache_creation,
+        },
+        result=result,
+        structured_output=None,
+    )
+
+
+def _fake_query(message):
+    async def _q(prompt, options):
+        yield message
+    return _q
+
+
+class TestClaudeCodeHandlerTokenLogging:
+    def test_token_log_is_written_after_handle(self, tmp_path, monkeypatch):
+        log_file = tmp_path / ".orders_tokens"
+        monkeypatch.setattr("voice_listener.infrastructure.claude_handler._TOKENS_LOG_FILE", log_file)
+        monkeypatch.setattr("voice_listener.infrastructure.claude_handler.query",
+                            _fake_query(_fake_result_message("respuesta")))
+
+        ClaudeCodeHandler().handle("pon música")
+
+        assert log_file.exists()
+
+    def test_token_log_contains_order_and_all_token_fields(self, tmp_path, monkeypatch):
+        log_file = tmp_path / ".orders_tokens"
+        monkeypatch.setattr("voice_listener.infrastructure.claude_handler._TOKENS_LOG_FILE", log_file)
+        monkeypatch.setattr("voice_listener.infrastructure.claude_handler.query",
+                            _fake_query(_fake_result_message(cost=0.029965)))
+
+        ClaudeCodeHandler().handle("mañana lloverá")
+
+        line = log_file.read_text()
+        assert "mañana lloverá" in line
+        assert "input: 18" in line
+        assert "output: 735" in line
+        assert "cache_read: 38335" in line
+        assert "cache_creation: 2610" in line
+        assert "total: 41698" in line
+        assert "0.029965" in line
+
+    def test_token_log_appends_one_line_per_call(self, tmp_path, monkeypatch):
+        log_file = tmp_path / ".orders_tokens"
+        monkeypatch.setattr("voice_listener.infrastructure.claude_handler._TOKENS_LOG_FILE", log_file)
+
+        for order in ("primera orden", "segunda orden"):
+            monkeypatch.setattr("voice_listener.infrastructure.claude_handler.query",
+                                _fake_query(_fake_result_message(order)))
+            ClaudeCodeHandler().handle(order)
+
+        lines = [l for l in log_file.read_text().splitlines() if l]
+        assert len(lines) == 2
+        assert "primera orden" in lines[0]
+        assert "segunda orden" in lines[1]
+
+    def test_handle_returns_result_from_message(self, tmp_path, monkeypatch):
+        log_file = tmp_path / ".orders_tokens"
+        monkeypatch.setattr("voice_listener.infrastructure.claude_handler._TOKENS_LOG_FILE", log_file)
+        monkeypatch.setattr("voice_listener.infrastructure.claude_handler.query",
+                            _fake_query(_fake_result_message("respuesta esperada")))
+
+        result = ClaudeCodeHandler().handle("una orden")
+
+        assert result == "respuesta esperada"
