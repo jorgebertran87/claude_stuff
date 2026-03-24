@@ -14,6 +14,7 @@ run:
 		-v /run/user/$(UID)/pulse/native:/tmp/pulse.sock \
 		-v $(HOME)/.claude:/root/.claude \
 		-v $(HOME)/.claude.json:/root/.claude.json \
+		-v $(PWD)/.orders_tokens:/app/.orders_tokens:rw \
 		$(IMAGE)
 
 test:
