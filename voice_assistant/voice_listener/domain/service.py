@@ -100,19 +100,23 @@ class VoiceListenerService:
         speak_thread.start()
         melody_thread.join()
 
+        self._capturer.set_echo_reference(self._speaker.get_echo_reference())
         interrupted = False
-        while speak_thread.is_alive():
-            audio = self._capturer.capture(timeout=1, phrase_time_limit=2)
-            if audio is not None:
-                text = self._transcriber.transcribe(audio, self._language)
-                if text:
-                    print(f"Heard during speech: {text!r}")
-                if text and self._wake_word.matches(text):
-                    print("Wake word detected — interrupting speech.")
-                    self._speaker.stop()
-                    self.listen_for_order()
-                    interrupted = True
-                    break
+        try:
+            while speak_thread.is_alive():
+                audio = self._capturer.capture(timeout=1, phrase_time_limit=2)
+                if audio is not None:
+                    text = self._transcriber.transcribe(audio, self._language)
+                    if text:
+                        print(f"Heard during speech: {text!r}")
+                    if text and self._wake_word.matches(text):
+                        print("Wake word detected — interrupting speech.")
+                        self._speaker.stop()
+                        self.listen_for_order()
+                        interrupted = True
+                        break
+        finally:
+            self._capturer.set_echo_reference(None)
 
         speak_thread.join()
         return interrupted

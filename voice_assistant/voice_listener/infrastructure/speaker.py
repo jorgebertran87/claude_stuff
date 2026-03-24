@@ -25,6 +25,7 @@ def _strip_markdown(text: str) -> str:
 class GTTSSpeaker(AudioSpeaker):
     def __init__(self) -> None:
         pygame.mixer.init()
+        self._echo_reference: tuple[bytes, int, int] | None = None
 
     def beep(self, frequency: float = 880.0, duration_ms: int = 200, volume: float = 0.6) -> None:
         sample_rate = 44100
@@ -59,6 +60,9 @@ class GTTSSpeaker(AudioSpeaker):
             overrides={"frame_rate": int(processed.frame_rate * pitch)},
         ).set_frame_rate(processed.frame_rate)
 
+        mono = processed.set_channels(1) if processed.channels > 1 else processed
+        self._echo_reference = (mono.raw_data, mono.frame_rate, mono.sample_width)
+
         wav_buf = io.BytesIO()
         processed.export(wav_buf, format="wav")
         wav_buf.seek(0)
@@ -69,15 +73,20 @@ class GTTSSpeaker(AudioSpeaker):
         pygame.mixer.music.play()
         while pygame.mixer.music.get_busy():
             pygame.time.Clock().tick(10)
+        self._echo_reference = None
 
     def stop(self) -> None:
         pygame.mixer.music.stop()
+        self._echo_reference = None
+
+    def get_echo_reference(self) -> tuple[bytes, int, int] | None:
+        return self._echo_reference
 
     def play_melody(self, stop_event: threading.Event) -> None:
-        # R2-D2-style waiting melody: ascending then descending arpeggio
-        notes = [523, 659, 784, 1047, 784, 659, 523, 440]  # C5 E5 G5 C6 G5 E5 C5 A4
-        durations = [120, 100, 100, 180, 100, 100, 120, 200]
-        pause_ms = 400
+        # The Entertainer by Scott Joplin
+        notes = [587, 659, 523, 440, 523, 659, 523, 587, 659, 523, 659, 784, 659, 523, 440, 440, 493, 523]
+        durations = [100, 100, 100, 100, 200, 100, 300, 100, 100, 100, 100, 200, 300, 100, 100, 100, 100, 300]
+        pause_ms = 600
         while not stop_event.is_set():
             for freq, dur in zip(notes, durations):
                 if stop_event.is_set():

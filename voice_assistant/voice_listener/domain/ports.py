@@ -23,6 +23,11 @@ class AudioCapturer(ABC):
     @abstractmethod
     def unmute(self) -> None: ...
 
+    @abstractmethod
+    def set_echo_reference(self, ref: tuple[bytes, int, int] | None) -> None:
+        """Set (raw_bytes, sample_rate, sample_width) of audio being played, for echo cancellation."""
+        ...
+
 
 class Transcriber(ABC):
     @abstractmethod
@@ -46,3 +51,8 @@ class AudioSpeaker(ABC):
 
     @abstractmethod
     def play_melody(self, stop_event: threading.Event) -> None: ...
+
+    @abstractmethod
+    def get_echo_reference(self) -> tuple[bytes, int, int] | None:
+        """Return (raw_bytes, sample_rate, sample_width) of the audio currently queued for playback."""
+        ...
