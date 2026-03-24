@@ -73,7 +73,7 @@ class VoiceListenerService:
                 print(f"Claudito: {response}")
                 interrupted = self._speak_interruptible(response, stop_melody, melody_thread)
                 if interrupted:
-                    waiting_for_answer = False
+                    waiting_for_answer = True
                 else:
                     waiting_for_answer = bool(response and "?" in response.rstrip())
             else:
@@ -112,7 +112,6 @@ class VoiceListenerService:
                     if text and self._wake_word.matches(text):
                         print("Wake word detected — interrupting speech.")
                         self._speaker.stop()
-                        self.listen_for_order()
                         interrupted = True
                         break
         finally:
