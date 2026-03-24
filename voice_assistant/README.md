@@ -4,24 +4,59 @@ Claudito listens for a wake word, captures a voice order, sends it to Claude Cod
 
 ---
 
+## Repository layout
+
+```
+voice_assistant/
+├── features/                         # BDD feature specs (shared across implementations)
+│   ├── audio_processing.feature
+│   ├── claude_handler_token_logging.feature
+│   ├── conversation_flow.feature
+│   ├── interruptible_speech.feature
+│   ├── order_capture.feature
+│   ├── tts_pipeline.feature
+│   └── wake_word_detection.feature
+├── python/                           # Python implementation
+│   ├── voice_listener/
+│   │   ├── domain/
+│   │   │   ├── model.py              # Value objects: WakeWord, Language, AudioCapture
+│   │   │   ├── ports.py              # Abstract ports: AudioCapturer, Transcriber, OrderHandler, AudioSpeaker
+│   │   │   └── service.py            # VoiceListenerService — orchestration logic
+│   │   └── infrastructure/
+│   │       ├── audio.py              # MicrophoneCapturer  → AudioCapturer
+│   │       ├── speech.py             # GoogleTranscriber   → Transcriber
+│   │       ├── claude_handler.py     # ClaudeCodeHandler   → OrderHandler
+│   │       └── speaker.py            # GTTSSpeaker         → AudioSpeaker
+│   ├── tests/
+│   │   ├── test_service.py
+│   │   └── test_integration.py
+│   ├── Dockerfile
+│   ├── Makefile
+│   └── .env.example
+└── rust/                             # Rust implementation
+    ├── src/
+    │   ├── domain/
+    │   │   ├── model.rs              # Value objects: WakeWord, Language, AudioCapture
+    │   │   ├── ports.rs              # Traits: AudioCapturer, Transcriber, OrderHandler, AudioSpeaker
+    │   │   └── service.rs            # VoiceListenerService — orchestration logic
+    │   └── infrastructure/
+    │       ├── audio.rs              # MicrophoneCapturer  → AudioCapturer
+    │       ├── speech.rs             # WhisperTranscriber  → Transcriber
+    │       ├── transcriber.rs        # Transcription helpers
+    │       ├── claude_handler.rs     # ClaudeCodeHandler   → OrderHandler
+    │       └── speaker.rs            # GTTSSpeaker         → AudioSpeaker
+    ├── tests/
+    │   ├── service_tests.rs
+    │   └── claude_handler_tests.rs
+    ├── Cargo.toml
+    ├── Dockerfile
+    ├── Makefile
+    └── .env.example
+```
+
 ## Architecture
 
-The project follows **Domain-Driven Design (DDD)**. The domain layer never imports from infrastructure.
-
-```
-voice_listener/
-├── domain/
-│   ├── model.py          # Value objects: WakeWord, Language, AudioCapture
-│   ├── ports.py          # Abstract ports: AudioCapturer, Transcriber, OrderHandler, AudioSpeaker
-│   └── service.py        # VoiceListenerService — orchestration logic
-└── infrastructure/
-    ├── audio.py          # MicrophoneCapturer  → AudioCapturer
-    ├── speech.py         # GoogleTranscriber   → Transcriber
-    ├── claude_handler.py # ClaudeCodeHandler   → OrderHandler
-    └── speaker.py        # GTTSSpeaker         → AudioSpeaker
-
-system_prompt.txt         # Claude system prompt template (uses {default_user_city}, {voice_language})
-```
+Both implementations follow **Domain-Driven Design (DDD)**. The domain layer never imports from infrastructure.
 
 ### Flow
 
@@ -83,7 +118,7 @@ response ended with "?"?
 
 ## Configuration
 
-All configuration lives in a `.env` file in the project root (see `.env.example`).
+All configuration lives in a `.env` file inside the implementation folder (`python/` or `rust/`). See the corresponding `.env.example`.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -101,6 +136,8 @@ WAKE_WORD=Claudito
 ```
 
 ## Running with Docker
+
+Run all commands from the desired implementation folder (`python/` or `rust/`).
 
 ### Build the image
 
