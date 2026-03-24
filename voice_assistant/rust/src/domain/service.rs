@@ -32,11 +32,13 @@ impl VoiceListenerService {
     // ── public methods ────────────────────────────────────────────────────────
 
     pub fn wait_for_wake_word(&mut self) -> Option<String> {
+        eprintln!("[listening for wake word \"{}\"]", self.wake_word.value);
         loop {
             let audio = self.capturer.capture(None, Some(8_000), None);
             let audio = match audio { Some(a) => a, None => continue };
             let text  = self.transcriber.transcribe(&audio, &self.language);
             if let Some(ref t) = text {
+                eprintln!("[heard: {t:?}]");
                 if self.wake_word.matches(t) {
                     return self.wake_word.extract_order(t);
                 }
@@ -45,6 +47,7 @@ impl VoiceListenerService {
     }
 
     pub fn listen_for_order(&mut self) -> Option<String> {
+        eprintln!("[listening for order]");
         for attempt in 0..ORDER_RETRIES {
             self.speaker.beep();
             let audio = self.capturer.capture(
@@ -82,6 +85,38 @@ impl VoiceListenerService {
 
         let response = self.order_handler.handle(order);
         (response, stop_signal, melody_thread)
+    }
+
+    pub fn run(&mut self) {
+        println!("Voice Order Listener");
+        println!("====================");
+        println!("Press Ctrl+C to quit.\n");
+
+        let mut waiting_for_answer = false;
+        loop {
+            let order = if waiting_for_answer {
+                self.listen_for_order()
+            } else {
+                let inline = self.wait_for_wake_word();
+                inline.or_else(|| self.listen_for_order())
+            };
+
+            if let Some(ref order_text) = order {
+                println!("Order received: {order_text:?}");
+                let (response, stop_melody, melody_thread) =
+                    self.handle_with_melody(order_text);
+                println!("Claudito: {response}");
+                let interrupted =
+                    self.speak_interruptible(&response, stop_melody, melody_thread);
+                if interrupted {
+                    waiting_for_answer = true;
+                } else {
+                    waiting_for_answer = response.trim_end().ends_with('?');
+                }
+            } else {
+                waiting_for_answer = false;
+            }
+        }
     }
 
     pub fn speak_interruptible(

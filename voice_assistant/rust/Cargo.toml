@@ -11,6 +11,9 @@ path = "src/main.rs"
 name = "voice_assistant"
 path = "src/lib.rs"
 
+[dev-dependencies]
+tempfile = "3"
+
 [dependencies]
 regex   = "1"
 strsim  = "0.11"

@@ -1,5 +1,7 @@
 //! Microphone capture with optional acoustic echo cancellation.
 
+use std::process::{Command, Stdio};
+
 use crate::domain::model::AudioCapture;
 use crate::domain::ports::{AudioCapturer, EchoRef};
 use crate::infrastructure::speech::cancel_echo;
@@ -28,8 +30,8 @@ impl MicrophoneCapturer {
         let ref_samples  = bytes_to_i16(ref_bytes);
 
         // Resample reference if needed (linear interpolation)
-        let ref_resampled = if *ref_rate != sample_rate {
-            resample(&ref_samples, *ref_rate, sample_rate)
+        let ref_resampled = if ref_rate != sample_rate {
+            resample(&ref_samples, ref_rate, sample_rate)
         } else {
             ref_samples
         };
@@ -46,15 +48,46 @@ impl Default for MicrophoneCapturer {
 impl AudioCapturer for MicrophoneCapturer {
     fn capture(
         &mut self,
-        _timeout_ms:           Option<u64>,
-        _phrase_time_limit_ms: Option<u64>,
-        _pause_threshold_ms:   Option<u64>,
+        timeout_ms:           Option<u64>,
+        phrase_time_limit_ms: Option<u64>,
+        pause_threshold_ms:   Option<u64>,
     ) -> Option<AudioCapture> {
-        // Real implementation would read from microphone hardware.
-        None
+        let max_secs   = phrase_time_limit_ms.or(timeout_ms).unwrap_or(8_000) / 1_000;
+        let pause_secs = pause_threshold_ms.unwrap_or(1_500) as f64 / 1_000.0;
+        let tmp        = "/tmp/voice_capture.wav";
+
+        // `rec` (sox): wait for voice onset, then record until pause_secs of silence.
+        // silence 1 0.1 2%  → start when 1 sample above 2% amplitude within 0.1 s
+        // silence 1 <pause> 2% → stop after <pause> s of silence below 2%
+        // trim 0 <max_secs>  → hard cap on duration
+        let pause_arg = format!("{pause_secs:.1}");
+        let max_arg   = format!("{max_secs}");
+
+        let ok = Command::new("rec")
+            .args([
+                "-q",
+                "-c", "1", "-r", "16000",
+                "-e", "signed-integer", "-b", "16",
+                tmp,
+                "silence", "1", "0.1", "2%",
+                "1", &pause_arg, "2%",
+                "trim", "0", &max_arg,
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if !ok { return None; }
+        let bytes = std::fs::read(tmp).ok()?;
+        if bytes.len() <= 44 { return None; }   // only WAV header → silence
+        Some(AudioCapture::new(bytes, 16_000, 2))
     }
 
-    fn calibrate(&mut self, _duration_secs: f64) {}
+    fn calibrate(&mut self, _duration_secs: f64) {
+        // sox `rec` adapts automatically; nothing to calibrate.
+    }
     fn mute(&mut self)   {}
     fn unmute(&mut self) {}
 

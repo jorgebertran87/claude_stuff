@@ -1,7 +1,15 @@
-//! TTS pipeline: markdown stripping, language detection, audio generation.
+//! TTS pipeline: markdown stripping, language detection, audio generation, playback.
+
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::thread;
+use std::time::Duration;
 
 use regex::Regex;
 use whichlang::detect_language;
+
+use crate::domain::model::Language;
+use crate::domain::ports::{AudioSpeaker, EchoRef};
 
 // Supported gTTS language codes (subset; extended as needed).
 const GTTS_SUPPORTED: &[&str] = &[
@@ -73,14 +81,13 @@ pub fn detect_lang(text: &str) -> String {
         Lang::Por => "pt",
         Lang::Ita => "it",
         Lang::Nld => "nl",
-        Lang::Pol => "pl",
         Lang::Rus => "ru",
         Lang::Swe => "sv",
         Lang::Tur => "tr",
         Lang::Kor => "ko",
         Lang::Ara => "ar",
         Lang::Hin => "hi",
-        Lang::Zho => "zh-CN",
+        Lang::Cmn => "zh-CN",
         Lang::Jpn => "ja",
         _ => "en",
     }
@@ -155,3 +162,158 @@ fn urlencode(s: &str) -> String {
 
 // Need std::io::Read for read_to_end
 use std::io::Read;
+
+// ── TTS chunk splitter ────────────────────────────────────────────────────────
+
+const MAX_TTS_CHARS: usize = 180;
+
+/// Split text into chunks ≤ MAX_TTS_CHARS, breaking at sentence boundaries first,
+/// then at word boundaries. Mirrors how gTTS splits long strings internally.
+fn tts_chunks(text: &str) -> Vec<String> {
+    let mut chunks: Vec<String> = Vec::new();
+    // Split at sentence-ending punctuation, keeping the delimiter
+    let sentences = split_sentences(text);
+    let mut current = String::new();
+    for sentence in sentences {
+        if current.len() + sentence.len() <= MAX_TTS_CHARS {
+            current.push_str(&sentence);
+        } else {
+            if !current.trim().is_empty() {
+                chunks.push(current.trim().to_string());
+            }
+            // If the sentence itself exceeds the limit, split at word boundaries
+            if sentence.len() > MAX_TTS_CHARS {
+                let mut word_buf = String::new();
+                for word in sentence.split_whitespace() {
+                    if word_buf.len() + word.len() + 1 > MAX_TTS_CHARS {
+                        if !word_buf.trim().is_empty() {
+                            chunks.push(word_buf.trim().to_string());
+                        }
+                        word_buf = word.to_string();
+                    } else {
+                        if !word_buf.is_empty() { word_buf.push(' '); }
+                        word_buf.push_str(word);
+                    }
+                }
+                current = word_buf;
+            } else {
+                current = sentence;
+            }
+        }
+    }
+    if !current.trim().is_empty() {
+        chunks.push(current.trim().to_string());
+    }
+    if chunks.is_empty() { chunks.push(text.to_string()); }
+    chunks
+}
+
+fn split_sentences(text: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        current.push(c);
+        if matches!(c, '.' | '!' | '?') {
+            if chars.peek().map(|&n| n == ' ' || n == '\n').unwrap_or(true) {
+                result.push(current.clone());
+                current.clear();
+            }
+        } else if c == '\n' {
+            result.push(current.clone());
+            current.clear();
+        }
+    }
+    if !current.is_empty() { result.push(current); }
+    result
+}
+
+// ── GTTSSpeaker ───────────────────────────────────────────────────────────────
+
+pub struct GTTSSpeaker {
+    current_pid: Arc<Mutex<Option<u32>>>,
+}
+
+impl GTTSSpeaker {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self { current_pid: Arc::new(Mutex::new(None)) })
+    }
+
+    fn play_bytes(&self, bytes: &[u8], on_start: Option<Box<dyn FnOnce() + Send>>) {
+        let tmp = "/tmp/voice_response.mp3";
+        let _ = std::fs::write(tmp, bytes);
+
+        if let Some(cb) = on_start {
+            cb();
+        }
+
+        if let Ok(mut child) = Command::new("ffplay")
+            .args(["-nodisp", "-autoexit", "-loglevel", "quiet", tmp])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            *self.current_pid.lock().unwrap() = Some(child.id());
+            let _ = child.wait();
+            *self.current_pid.lock().unwrap() = None;
+        }
+    }
+}
+
+impl AudioSpeaker for GTTSSpeaker {
+    fn speak(&self, text: &str, language: &Language, on_playback_start: Option<Box<dyn FnOnce() + Send>>) {
+        let lang = language.lang_prefix();
+        let segments = alexa_spotify_parts(text)
+            .unwrap_or_else(|| vec![(strip_markdown(text), lang.to_string())]);
+
+        let mut all_bytes: Vec<u8> = Vec::new();
+        for (chunk, chunk_lang) in &segments {
+            if chunk.trim().is_empty() { continue; }
+            for piece in tts_chunks(chunk) {
+                match tts_segment(&piece, chunk_lang) {
+                    Ok(seg) => all_bytes.extend_from_slice(seg.raw_data()),
+                    Err(e)  => eprintln!("TTS error: {e}"),
+                }
+            }
+        }
+
+        if !all_bytes.is_empty() {
+            self.play_bytes(&all_bytes, on_playback_start);
+        }
+    }
+
+    fn stop(&self) {
+        if let Some(pid) = *self.current_pid.lock().unwrap() {
+            let _ = Command::new("kill")
+                .arg(pid.to_string())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+
+    fn beep(&self) {
+        let _ = Command::new("ffplay")
+            .args(["-nodisp", "-autoexit", "-loglevel", "quiet",
+                   "-f", "lavfi", "-i", "sine=frequency=440:duration=0.2"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+
+    fn play_melody(&self, stop_signal: Arc<AtomicBool>) {
+        while !stop_signal.load(Ordering::SeqCst) {
+            let _ = Command::new("ffplay")
+                .args(["-nodisp", "-autoexit", "-loglevel", "quiet",
+                       "-f", "lavfi", "-i", "sine=frequency=520:duration=0.4"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            thread::sleep(Duration::from_millis(200));
+        }
+    }
+
+    fn get_echo_reference(&self) -> Option<EchoRef> {
+        None
+    }
+}
