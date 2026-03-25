@@ -112,9 +112,13 @@ impl VoiceListenerService {
                     waiting_for_answer = true;
                 } else {
                     waiting_for_answer = response.trim_end().ends_with('?');
+                    if !waiting_for_answer {
+                        self.order_handler.reset_session();
+                    }
                 }
             } else {
                 waiting_for_answer = false;
+                self.order_handler.reset_session();
             }
         }
     }

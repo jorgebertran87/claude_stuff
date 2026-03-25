@@ -64,6 +64,7 @@ impl Transcriber for FakeTranscriber {
 struct FakeOrderHandler(String);
 impl OrderHandler for FakeOrderHandler {
     fn handle(&self, _: &str) -> String { self.0.clone() }
+    fn reset_session(&self) {}
 }
 
 struct FakeSpeaker {

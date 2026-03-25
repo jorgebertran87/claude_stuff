@@ -2,6 +2,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 
 use crate::domain::ports::OrderHandler;
 
@@ -24,43 +25,48 @@ pub struct TokenUsage {
     pub cache_read_input_tokens: u64,
     pub cache_creation_input_tokens: u64,
     pub total_cost_usd: f64,
+    pub session_id: Option<String>,
     pub result: String,
 }
 
 // ── Backend trait (injectable for tests) ──────────────────────────────────────
 
 pub trait ClaudeBackend: Send + Sync {
-    fn query(&self, order: &str) -> Result<TokenUsage, String>;
+    fn query(&self, order: &str, session_id: Option<&str>) -> Result<TokenUsage, String>;
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 pub struct ClaudeCodeHandler {
-    backend:  Box<dyn ClaudeBackend>,
-    log_file: PathBuf,
+    backend:    Box<dyn ClaudeBackend>,
+    log_file:   PathBuf,
+    session_id: Mutex<Option<String>>,
 }
 
 impl ClaudeCodeHandler {
     pub fn new() -> Self {
         Self {
-            backend:  Box::new(ClaudeCliBackend),
-            log_file: PathBuf::from(".orders_tokens"),
+            backend:    Box::new(ClaudeCliBackend),
+            log_file:   PathBuf::from(".orders_tokens"),
+            session_id: Mutex::new(None),
         }
     }
 
     pub fn with_injectable(backend: Box<dyn ClaudeBackend>, log_file: PathBuf) -> Self {
-        Self { backend, log_file }
+        Self { backend, log_file, session_id: Mutex::new(None) }
     }
 }
 
 impl OrderHandler for ClaudeCodeHandler {
     fn handle(&self, order: &str) -> String {
-        match self.backend.query(order) {
+        let session_id = self.session_id.lock().unwrap().clone();
+        match self.backend.query(order, session_id.as_deref()) {
             Err(e) => {
                 eprintln!("[claude handler error: {e}]");
                 "No tienes tokens disponibles. Por favor, revisa tu configuración.".into()
             }
             Ok(usage) => {
+                *self.session_id.lock().unwrap() = usage.session_id.clone();
                 let total = usage.input_tokens
                     + usage.output_tokens
                     + usage.cache_read_input_tokens
@@ -87,6 +93,11 @@ impl OrderHandler for ClaudeCodeHandler {
             }
         }
     }
+
+    fn reset_session(&self) {
+        *self.session_id.lock().unwrap() = None;
+        eprintln!("[session reset]");
+    }
 }
 
 // ── Real backend: calls the `claude` CLI ─────────────────────────────────────
@@ -94,16 +105,18 @@ impl OrderHandler for ClaudeCodeHandler {
 struct ClaudeCliBackend;
 
 impl ClaudeBackend for ClaudeCliBackend {
-    fn query(&self, order: &str) -> Result<TokenUsage, String> {
+    fn query(&self, order: &str, session_id: Option<&str>) -> Result<TokenUsage, String> {
         let prompt = load_prompt();
-        let mut child = Command::new("claude")
-            .args([
-                "--print",
-                "--output-format", "json",
-                "--model", "claude-haiku-4-5",
-                "--system-prompt", &prompt,
-                "--allowedTools", "Bash,WebSearch",
-            ])
+        let mut cmd = Command::new("claude");
+        cmd.args(["--print", "--output-format", "json", "--model", "claude-haiku-4-5",
+                  "--allowedTools", "Bash,WebSearch"]);
+        if let Some(id) = session_id {
+            eprintln!("[resuming session: {id}]");
+            cmd.args(["--resume", id, "--system-prompt", &prompt]);
+        } else {
+            cmd.args(["--system-prompt", &prompt]);
+        }
+        let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -130,9 +143,10 @@ impl ClaudeBackend for ClaudeCliBackend {
 }
 
 fn parse_result_json(json: &str) -> Result<TokenUsage, String> {
-    let result   = extract_str(json, "\"result\":")    .unwrap_or_default();
-    let cost_str = extract_str(json, "\"total_cost_usd\":").unwrap_or_default();
-    let cost: f64 = cost_str.parse().unwrap_or(0.0);
+    let result     = extract_str(json, "\"result\":")         .unwrap_or_default();
+    let cost_str   = extract_str(json, "\"total_cost_usd\":") .unwrap_or_default();
+    let session_id = extract_str(json, "\"session_id\":");
+    let cost: f64  = cost_str.parse().unwrap_or(0.0);
 
     Ok(TokenUsage {
         input_tokens:              extract_u64(json, "\"input_tokens\":"),
@@ -140,6 +154,7 @@ fn parse_result_json(json: &str) -> Result<TokenUsage, String> {
         cache_read_input_tokens:   extract_u64(json, "\"cache_read_input_tokens\":"),
         cache_creation_input_tokens: extract_u64(json, "\"cache_creation_input_tokens\":"),
         total_cost_usd: cost,
+        session_id,
         result,
     })
 }

@@ -102,9 +102,10 @@ pub fn alexa_spotify_parts(text: &str) -> Option<Vec<(String, String)>> {
     if !lower.contains("alexa") || !lower.contains("spotify") {
         return None;
     }
-    let re = Regex::new(r#"(["\'])(.+?)\1"#).unwrap();
+    let re = Regex::new(r#""([^"]+)"|'([^']+)'"#).unwrap();
     let m  = re.captures(text)?;
-    let title  = m.get(2)?.as_str().to_string();
+    // group 1 = double-quoted title, group 2 = single-quoted title
+    let title = m.get(1).or_else(|| m.get(2))?.as_str().to_string();
     let before = text[..m.get(0)?.start()].to_string();
     let after  = text[m.get(0)?.end()..].to_string();
     let title_lang = detect_lang(&title);
@@ -248,7 +249,9 @@ impl GTTSSpeaker {
         }
 
         if let Ok(mut child) = Command::new("ffplay")
-            .args(["-nodisp", "-autoexit", "-loglevel", "quiet", tmp])
+            .args(["-nodisp", "-autoexit", "-loglevel", "quiet",
+                   "-af", "atempo=1.5",
+                   tmp])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()

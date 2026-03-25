@@ -33,13 +33,14 @@ impl FakeBackend {
 }
 
 impl ClaudeBackend for FakeBackend {
-    fn query(&self, _order: &str) -> Result<TokenUsage, String> {
+    fn query(&self, _order: &str, _session_id: Option<&str>) -> Result<TokenUsage, String> {
         Ok(TokenUsage {
             input_tokens:               self.input_tokens,
             output_tokens:              self.output_tokens,
             cache_read_input_tokens:    self.cache_read,
             cache_creation_input_tokens: self.cache_creation,
             total_cost_usd:             self.total_cost_usd,
+            session_id:                 None,
             result:                     self.result.clone(),
         })
     }
