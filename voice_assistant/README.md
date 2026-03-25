@@ -8,7 +8,7 @@ Claudito listens for a wake word, captures a voice order, sends it to Claude Cod
 
 ```
 voice_assistant/
-├── features/                         # BDD feature specs (shared across implementations)
+├── features/                         # BDD feature specs
 │   ├── audio_processing.feature
 │   ├── claude_handler_token_logging.feature
 │   ├── conversation_flow.feature
@@ -16,23 +16,6 @@ voice_assistant/
 │   ├── order_capture.feature
 │   ├── tts_pipeline.feature
 │   └── wake_word_detection.feature
-├── python/                           # Python implementation
-│   ├── voice_listener/
-│   │   ├── domain/
-│   │   │   ├── model.py              # Value objects: WakeWord, Language, AudioCapture
-│   │   │   ├── ports.py              # Abstract ports: AudioCapturer, Transcriber, OrderHandler, AudioSpeaker
-│   │   │   └── service.py            # VoiceListenerService — orchestration logic
-│   │   └── infrastructure/
-│   │       ├── audio.py              # MicrophoneCapturer  → AudioCapturer
-│   │       ├── speech.py             # GoogleTranscriber   → Transcriber
-│   │       ├── claude_handler.py     # ClaudeCodeHandler   → OrderHandler
-│   │       └── speaker.py            # GTTSSpeaker         → AudioSpeaker
-│   ├── tests/
-│   │   ├── test_service.py
-│   │   └── test_integration.py
-│   ├── Dockerfile
-│   ├── Makefile
-│   └── .env.example
 └── rust/                             # Rust implementation
     ├── src/
     │   ├── domain/
@@ -51,12 +34,13 @@ voice_assistant/
     ├── Cargo.toml
     ├── Dockerfile
     ├── Makefile
+    ├── run.sh
     └── .env.example
 ```
 
 ## Architecture
 
-Both implementations follow **Domain-Driven Design (DDD)**. The domain layer never imports from infrastructure.
+The implementation follows **Domain-Driven Design (DDD)**. The domain layer never imports from infrastructure.
 
 ### Flow
 
@@ -67,7 +51,7 @@ Microphone
 MicrophoneCapturer.capture()       8-second chunks, indefinite timeout
     │  loops until wake word heard  (skipped if previous response was a question)
     ▼
-GoogleTranscriber.transcribe()     Google Speech Recognition API
+WhisperTranscriber.transcribe()    local Whisper model
     │
     ▼
 WakeWord.matches(text)? ──No──► loop back
@@ -76,26 +60,26 @@ WakeWord.matches(text)? ──No──► loop back
 MicrophoneCapturer.capture()       timeout=10s, ends after 2s of silence
     │  up to 2 retries if nothing heard
     ▼
-GoogleTranscriber.transcribe()
+WhisperTranscriber.transcribe()
     │
     ▼
 GTTSSpeaker.play_melody()          waiting melody starts in background thread
     │
     ▼
-ClaudeCodeHandler.handle(order)    claude-haiku-4-5 via Claude Agent SDK
-    │  tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch
-    │  session persisted across orders
+ClaudeCodeHandler.handle(order)    claude-haiku-4-5 via Claude Code CLI
+    │  tools: Bash, WebSearch
+    │  session persisted across orders within a run
     ▼
 print response to log
     │  melody still playing
     ▼
-GTTSSpeaker.speak() — TTS generation (gTTS + pydub)
+GTTSSpeaker.speak() — TTS generation (gTTS) + playback at 1.5× speed (ffplay atempo)
     │  melody still playing
     ▼
 on_playback_start() fires ─────────► melody thread stopped
     │
     ▼
-pygame plays audio              mic stays active, listening for wake word
+ffplay plays audio              mic stays active, listening for wake word
     │
     ├── wake word heard? ──Yes──► GTTSSpeaker.stop(), listen for new order
     │                              (does not wait for speech to finish)
@@ -118,14 +102,13 @@ response ended with "?"?
 
 ## Configuration
 
-All configuration lives in a `.env` file inside the implementation folder (`python/` or `rust/`). See the corresponding `.env.example`.
+All configuration lives in `rust/.env`. See `rust/.env.example`.
 
 | Variable | Default | Description |
 |---|---|---|
 | `VOICE_LANGUAGE` | `es-ES` | BCP-47 language code for speech recognition and TTS |
 | `WAKE_WORD` | `claudito` | Word that activates order listening |
 | `DEFAULT_USER_CITY` | _(required)_ | Default city for weather queries with no location specified |
-| `CLAUDE_SESSION_ID` | _(none)_ | Resume a specific Claude Code session across restarts |
 
 ### `.env.example`
 
@@ -137,7 +120,7 @@ WAKE_WORD=Claudito
 
 ## Running with Docker
 
-Run all commands from the desired implementation folder (`python/` or `rust/`).
+Run all commands from the `rust/` folder.
 
 ### Build the image
 
@@ -151,6 +134,8 @@ make build
 make run
 ```
 
+`make run` delegates to `run.sh`, which starts the container detached, streams its logs to the terminal, and stops and removes the container on exit (Ctrl+C, SIGTERM, or normal exit).
+
 The container mounts:
 | Mount | Purpose |
 |---|---|
@@ -158,6 +143,7 @@ The container mounts:
 | `~/.claude/` | Claude Code session history and config |
 | `~/.claude.json` | Claude Code authentication |
 | `.env` | Application environment variables |
+| `.orders_tokens` | Append-only token/cost log |
 
 ### Debug audio devices
 
@@ -165,7 +151,7 @@ The container mounts:
 make debug
 ```
 
-Lists all audio input/output devices detected inside the container. Useful if the microphone is not being picked up.
+Opens an interactive shell inside the container. Useful for inspecting audio devices or diagnosing microphone issues.
 
 ---
 
@@ -176,7 +162,7 @@ Lists all audio input/output devices detected inside the container. Useful if th
 3. Say **"Claudito"** — the app prints `Wake word detected!`
 4. Speak your order — capture ends automatically after 2 seconds of silence
 5. A melody plays while Claude processes the order and prepares the audio
-6. Claude speaks the response
+6. Claude speaks the response at 1.5× speed
 7. If the response is a question, speak your answer directly — no wake word needed
 8. While Claude is speaking, say the wake word to interrupt and ask something new
 9. Repeat from step 3, or press `Ctrl+C` to quit
@@ -206,18 +192,22 @@ If the wake word is recognised alone, a beep prompts you to speak the order sepa
 
 **Order capture** has no hard time limit (`phrase_time_limit=None`). It ends when 4 seconds of silence are detected (`pause_threshold=4.0`), allowing for natural pauses mid-sentence. Up to 2 retries are attempted before giving up.
 
-**Wake word interruption** — during playback the microphone stays active. `_speak_interruptible` runs `speak()` in a background thread while the main thread calls `capturer.capture()` in a loop (1-second timeout, 2-second phrase limit). If the transcribed audio matches the wake word, `speaker.stop()` is called immediately (`pygame.mixer.music.stop()`), the speak thread is joined, and the service proceeds directly to order capture without returning to wake word detection.
+**Wake word interruption** — during playback the microphone stays active. `_speak_interruptible` runs `speak()` in a background thread while the main thread calls `capturer.capture()` in a loop (1-second timeout, 2-second phrase limit). If the transcribed audio matches the wake word, `speaker.stop()` is called immediately (kills the `ffplay` process), the speak thread is joined, and the service proceeds directly to order capture without returning to wake word detection.
 
 **Conversation continuation** — after `speak()` finishes, if the response contains a `?` the `waiting_for_answer` flag is set. On the next iteration `wait_for_wake_word()` is skipped and `listen_for_order()` is called directly, so the user can answer naturally. If no order is captured (timeout), the flag resets and wake word detection resumes.
 
-**Waiting melody** — `_handle_with_melody` starts a `play_melody` thread before calling `handle()`, then returns the response together with the still-running `stop_event` and `melody_thread`. `_speak_interruptible` passes `stop_event.set` as the `on_playback_start` callback to `speak()`. Inside `speak()` the callback fires just before `pygame.mixer.music.play()`, which stops the melody at the exact moment audio output begins. `melody_thread.join()` in `_speak_interruptible` ensures the melody has fully stopped before the wake-word listen loop starts. The melody is a soft (volume 0.3) ascending-then-descending arpeggio: C5 E5 G5 C6 G5 E5 C5 A4, generated with the same `beep()` sine-wave synthesis used for the order-ready beep.
+**Session resumption** — `ClaudeCodeHandler` tracks the Claude Code session ID returned from each `--output-format json` response. Subsequent orders within the same `make run` are sent with `--resume <session_id>`, preserving conversation context. `reset_session()` clears the stored ID; the service calls it after each complete interaction so that the next wake-word cycle starts a fresh context.
 
-**Audio processing** — the gTTS MP3 response is processed with `pydub` before playback: first sped up 1.5× (pitch-preserving resample), then pitch-shifted down to 0.75× (deeper voice). The result is exported as WAV and played via pygame. `ffmpeg` is required as the pydub MP3 backend.
+**Waiting melody** — `_handle_with_melody` starts a `play_melody` thread before calling `handle()`. The melody is a repeating sine tone (520 Hz, 400 ms, 200 ms gap) played via `ffplay`. A shared `AtomicBool` stop signal is set inside the `on_playback_start` callback, which fires just before `ffplay` begins TTS playback, stopping the melody at the exact moment audio output starts.
 
-**Claude session** is preserved across orders within the same `make run` invocation. The session ID is printed on first use and can be saved as `CLAUDE_SESSION_ID` in `.env` to resume context across restarts.
+**Audio processing** — TTS MP3 bytes from gTTS are written to a temp file and played via `ffplay -af atempo=1.5`, speeding up playback 1.5× without pitch distortion. No additional post-processing is applied.
+
+**TTS chunking** — long responses are split at sentence boundaries (`.`, `!`, `?`, newlines) into chunks of ≤ 180 characters before being sent to gTTS, mirroring gTTS's own internal limit. The resulting MP3 segments are concatenated into a single byte buffer and played in one `ffplay` call.
+
+**Alexa/Spotify handling** — if the response contains "alexa" and "spotify" and a double- or single-quoted song title, `alexa_spotify_parts` splits it into `(frame, es)`, `(title, detected_lang)`, `(suffix, es)` so the title is spoken in its own language rather than being forced into Spanish.
 
 **TTS preprocessing** strips markdown (links, bold, bullets, headers, inline code) from Claude's response before passing it to gTTS, so the spoken output is clean plain text.
 
-**Ambient noise calibration** runs for 1 second at startup and fixes the energy threshold. If the detected threshold exceeds 17000 (noisy environment), calibration retries automatically.
+**Language** is extracted from the BCP-47 code for both Whisper STT (`language.code` → `es-ES`) and gTTS (`language.lang_prefix()` → `es`).
 
-**Language** is extracted from the BCP-47 code for both Google STT (`language.code` → `es-ES`) and gTTS (`language.code.split("-")[0]` → `es`).
+**Container lifecycle** — `run.sh` starts the container detached (`docker run -d`), traps `INT`, `TERM`, and `EXIT` to run `docker stop` + `docker rm`, and streams logs with `docker logs -f`. This ensures the container is always cleaned up on Ctrl+C or unexpected exit.
