@@ -29,6 +29,7 @@ COPY Cargo.toml Cargo.lock* ./
 COPY src/ src/
 COPY tests/ tests/
 
-RUN cargo build --release
+ENV RUST_MIN_STACK=16777216
+RUN cargo build --release --jobs 2
 
 ENTRYPOINT ["./target/release/voice_assistant"]
