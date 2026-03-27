@@ -6,7 +6,10 @@ build:
 UID := $(shell id -u)
 
 run:
-	@./run.sh
+	@./run.sh $(if $(ORDER),--order "$(ORDER)") &
+
+run-telegram:
+	@./run.sh --telegram &
 
 test:
 	docker run --rm -e SDL_AUDIODRIVER=dummy -e SDL_VIDEODRIVER=dummy $(IMAGE) \
@@ -19,4 +22,4 @@ debug:
 		-v $(HOME)/.claude:/root/.claude \
 		$(IMAGE) bash
 
-.PHONY: build run test debug
+.PHONY: build run run-telegram test debug

@@ -31,4 +31,4 @@ COPY tests/ tests/
 
 RUN cargo build --release
 
-CMD ["./target/release/voice_assistant"]
+ENTRYPOINT ["./target/release/voice_assistant"]

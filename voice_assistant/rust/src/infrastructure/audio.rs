@@ -20,7 +20,7 @@ impl MicrophoneCapturer {
         &self,
         raw:         &[u8],
         sample_rate: u32,
-        sample_width: u16,
+        _sample_width: u16,
     ) -> Vec<u8> {
         let Some((ref ref_bytes, ref_rate, _)) = self.echo_reference else {
             return raw.to_vec();
