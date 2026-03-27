@@ -22,15 +22,19 @@ voice_assistant/
     │   │   ├── model.rs              # Value objects: WakeWord, Language, AudioCapture
     │   │   ├── ports.rs              # Traits: AudioCapturer, Transcriber, OrderHandler, AudioSpeaker
     │   │   └── service.rs            # VoiceListenerService — orchestration logic
+    │   ├── cli.rs                    # CLI argument parsing (parse_args, CliArgs)
     │   └── infrastructure/
     │       ├── audio.rs              # MicrophoneCapturer  → AudioCapturer
     │       ├── speech.rs             # WhisperTranscriber  → Transcriber
     │       ├── transcriber.rs        # Transcription helpers
     │       ├── claude_handler.rs     # ClaudeCodeHandler   → OrderHandler
-    │       └── speaker.rs            # GTTSSpeaker         → AudioSpeaker
+    │       ├── speaker.rs            # GTTSSpeaker         → AudioSpeaker
+    │       └── telegram_bot.rs       # TelegramBot — long-polling text interface
     ├── tests/
     │   ├── service_tests.rs
-    │   └── claude_handler_tests.rs
+    │   ├── claude_handler_tests.rs
+    │   ├── cli_tests.rs
+    │   └── direct_order_integration_tests.rs
     ├── Cargo.toml
     ├── Dockerfile
     ├── Makefile
@@ -109,6 +113,8 @@ All configuration lives in `rust/.env`. See `rust/.env.example`.
 | `VOICE_LANGUAGE` | `es-ES` | BCP-47 language code for speech recognition and TTS |
 | `WAKE_WORD` | `claudito` | Word that activates order listening |
 | `DEFAULT_USER_CITY` | _(required)_ | Default city for weather queries with no location specified |
+| `TELEGRAM_BOT_TOKEN` | _(required for `--telegram`)_ | Bot token from BotFather |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | _(empty = allow all)_ | Comma-separated list of chat IDs that may use the bot |
 
 ### `.env.example`
 
@@ -116,6 +122,8 @@ All configuration lives in `rust/.env`. See `rust/.env.example`.
 DEFAULT_USER_CITY=xxx
 VOICE_LANGUAGE=es-ES
 WAKE_WORD=Claudito
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_ALLOWED_CHAT_IDS=
 ```
 
 ## Running with Docker
@@ -136,6 +144,25 @@ make run
 
 `make run` delegates to `run.sh`, which starts the container detached, streams its logs to the terminal, and stops and removes the container on exit (Ctrl+C, SIGTERM, or normal exit).
 
+### Send a direct order (skip voice)
+
+Pass `--order` to bypass wake word detection and transcription entirely. The order is sent straight to Claude and the response is printed to stdout:
+
+```bash
+make run ORDER="qué tiempo hace en Madrid?"
+# or directly:
+./run.sh --order "qué tiempo hace en Madrid?"
+```
+
+Output:
+
+```
+Order: "qué tiempo hace en Madrid?"
+Claudito: <response from Claude>
+```
+
+This is useful for scripting, debugging, or quickly testing a prompt without using the microphone.
+
 The container mounts:
 | Mount | Purpose |
 |---|---|
@@ -144,6 +171,24 @@ The container mounts:
 | `~/.claude.json` | Claude Code authentication |
 | `.env` | Application environment variables |
 | `.orders_tokens` | Append-only token/cost log |
+
+### Telegram mode
+
+Run the assistant as a Telegram bot instead of using the microphone:
+
+```bash
+make run-telegram
+# or directly:
+./run.sh --telegram
+```
+
+In Telegram mode the PulseAudio socket is not mounted — no audio hardware is needed. Set `TELEGRAM_BOT_TOKEN` in `.env` before starting. Each Telegram chat gets its own independent Claude session. Available commands:
+
+| Command | Description |
+|---|---|
+| `/reset` | Clear the conversation session for the current chat |
+
+If `TELEGRAM_ALLOWED_CHAT_IDS` is empty, the bot responds to any chat. Populate it with a comma-separated list of numeric chat IDs to restrict access. Messages containing only `/commands` other than `/reset` are silently ignored. Responses longer than 4 096 characters are split and sent as multiple messages.
 
 ### Debug audio devices
 
@@ -196,7 +241,9 @@ If the wake word is recognised alone, a beep prompts you to speak the order sepa
 
 **Conversation continuation** — after `speak()` finishes, if the response contains a `?` the `waiting_for_answer` flag is set. On the next iteration `wait_for_wake_word()` is skipped and `listen_for_order()` is called directly, so the user can answer naturally. If no order is captured (timeout), the flag resets and wake word detection resumes.
 
-**Session resumption** — `ClaudeCodeHandler` tracks the Claude Code session ID returned from each `--output-format json` response. Subsequent orders within the same `make run` are sent with `--resume <session_id>`, preserving conversation context. `reset_session()` clears the stored ID; the service calls it after each complete interaction so that the next wake-word cycle starts a fresh context.
+**Session resumption** — `ClaudeCodeHandler` tracks the Claude Code session ID returned from each `--output-format json` response. Subsequent orders within the same `make run` are sent with `--resume <session_id>`, preserving conversation context. `reset_session()` clears the stored ID; the service calls it after each complete interaction so that the next wake-word cycle starts a fresh context. In Telegram mode, `/reset` calls `reset_session()` for the relevant chat.
+
+**Telegram bot** — `TelegramBot` runs a long-polling loop (`getUpdates` with a 30 s server timeout, 40 s HTTP timeout). Each chat ID gets its own `ClaudeCodeHandler` instance, giving every user an isolated Claude session. Unauthorised chats (when `TELEGRAM_ALLOWED_CHAT_IDS` is set) are silently dropped. Both `message` and `edited_message` update types are handled. Responses exceeding Telegram's 4 096-character limit are split on UTF-8 character boundaries and sent as sequential messages. The `TelegramGateway` trait is separated from `TelegramBot` so that tests can inject a fake gateway without any network calls.
 
 **Waiting melody** — `_handle_with_melody` starts a `play_melody` thread before calling `handle()`. The melody is a repeating sine tone (520 Hz, 400 ms, 200 ms gap) played via `ffplay`. A shared `AtomicBool` stop signal is set inside the `on_playback_start` callback, which fires just before `ffplay` begins TTS playback, stopping the melody at the exact moment audio output starts.
 
