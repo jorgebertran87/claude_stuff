@@ -230,7 +230,7 @@ fn split_sentences(text: &str) -> Vec<String> {
 }
 
 /// Generate TTS audio bytes for an Alexa+Spotify order, using the same multilingual
-/// segment logic as `GTTSSpeaker::speak()`. Returns concatenated MP3 bytes.
+/// segment logic as `GTTSSpeaker::speak()`, with the same 1.5× speed applied.
 /// Returns an empty `Vec` if synthesis fails entirely.
 pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
     let segments = alexa_spotify_parts(text)
@@ -240,13 +240,41 @@ pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
     for (chunk, chunk_lang) in &segments {
         if chunk.trim().is_empty() { continue; }
         for piece in tts_chunks(chunk) {
-            match tts_segment(&piece, &chunk_lang) {
+            match tts_segment(&piece, chunk_lang) {
                 Ok(seg) => all_bytes.extend_from_slice(seg.raw_data()),
                 Err(e)  => eprintln!("[tts error: {e}]"),
             }
         }
     }
-    all_bytes
+    apply_atempo(all_bytes, 1.5)
+}
+
+/// Apply an ffmpeg `atempo` filter to MP3 bytes, returning the processed bytes.
+/// Falls back to the original bytes if ffmpeg fails.
+fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
+    let input_path  = "/tmp/tts_atempo_in.mp3";
+    let output_path = "/tmp/tts_atempo_out.mp3";
+    if std::fs::write(input_path, &bytes).is_err() {
+        return bytes;
+    }
+    let ok = Command::new("ffmpeg")
+        .args([
+            "-y", "-loglevel", "quiet",
+            "-i", input_path,
+            "-af", &format!("atempo={speed}"),
+            "-f", "mp3", output_path,
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if ok {
+        std::fs::read(output_path).unwrap_or(bytes)
+    } else {
+        bytes
+    }
 }
 
 // ── GTTSSpeaker ───────────────────────────────────────────────────────────────
