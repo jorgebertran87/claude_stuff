@@ -8,6 +8,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::domain::ports::OrderHandler;
+use crate::infrastructure::speaker::synthesize_alexa_spotify;
 
 /// A single Telegram update containing message text.
 #[derive(Clone)]
@@ -22,6 +23,8 @@ pub struct TelegramUpdate {
 pub trait TelegramGateway: Send + Sync {
     fn fetch_updates(&self, offset: i64) -> Vec<TelegramUpdate>;
     fn post_message(&self, chat_id: i64, text: &str);
+    /// Send an audio file as a voice message (MP3 bytes).
+    fn send_voice(&self, chat_id: i64, data: &[u8]);
 }
 
 /// Real Telegram gateway using ureq HTTP client.
@@ -99,6 +102,34 @@ impl TelegramGateway for UreqGateway {
             {
                 eprintln!("[telegram send_message error: {e}]");
             }
+        }
+    }
+
+    fn send_voice(&self, chat_id: i64, data: &[u8]) {
+        let url = format!("{}/sendVoice", self.base_url());
+        let boundary = "TelegramVoiceBoundary";
+
+        let mut body: Vec<u8> = Vec::new();
+        // chat_id field
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(b"Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n");
+        body.extend_from_slice(chat_id.to_string().as_bytes());
+        body.extend_from_slice(b"\r\n");
+        // voice field
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(
+            b"Content-Disposition: form-data; name=\"voice\"; filename=\"voice.mp3\"\r\n",
+        );
+        body.extend_from_slice(b"Content-Type: audio/mpeg\r\n\r\n");
+        body.extend_from_slice(data);
+        body.extend_from_slice(b"\r\n");
+        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+        if let Err(e) = ureq::post(&url)
+            .set("Content-Type", &format!("multipart/form-data; boundary={boundary}"))
+            .send_bytes(&body)
+        {
+            eprintln!("[telegram send_voice error: {e}]");
         }
     }
 }
@@ -194,7 +225,19 @@ impl TelegramBot {
                 &update.text[..update.text.len().min(50)]
             );
             let response = handler.handle(&update.text);
-            self.gateway.post_message(update.chat_id, &response);
+            let lower = response.to_lowercase();
+            if lower.contains("alexa") && lower.contains("spotify") {
+                eprintln!("[telegram: alexa+spotify detected, synthesizing voice order]");
+                let bytes = synthesize_alexa_spotify(&response);
+                if !bytes.is_empty() {
+                    self.gateway.send_voice(update.chat_id, &bytes);
+                } else {
+                    eprintln!("[telegram: TTS synthesis failed, falling back to text]");
+                    self.gateway.post_message(update.chat_id, &response);
+                }
+            } else {
+                self.gateway.post_message(update.chat_id, &response);
+            }
         }
     }
 

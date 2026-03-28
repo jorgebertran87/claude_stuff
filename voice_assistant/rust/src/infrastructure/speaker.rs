@@ -229,6 +229,26 @@ fn split_sentences(text: &str) -> Vec<String> {
     result
 }
 
+/// Generate TTS audio bytes for an Alexa+Spotify order, using the same multilingual
+/// segment logic as `GTTSSpeaker::speak()`. Returns concatenated MP3 bytes.
+/// Returns an empty `Vec` if synthesis fails entirely.
+pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
+    let segments = alexa_spotify_parts(text)
+        .unwrap_or_else(|| vec![(strip_markdown(text), "es".to_string())]);
+
+    let mut all_bytes: Vec<u8> = Vec::new();
+    for (chunk, chunk_lang) in &segments {
+        if chunk.trim().is_empty() { continue; }
+        for piece in tts_chunks(chunk) {
+            match tts_segment(&piece, &chunk_lang) {
+                Ok(seg) => all_bytes.extend_from_slice(seg.raw_data()),
+                Err(e)  => eprintln!("[tts error: {e}]"),
+            }
+        }
+    }
+    all_bytes
+}
+
 // ── GTTSSpeaker ───────────────────────────────────────────────────────────────
 
 pub struct GTTSSpeaker {
