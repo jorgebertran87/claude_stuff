@@ -26,12 +26,5 @@ else
         ${IMAGE} "$@")
 fi
 
-cleanup() {
-    docker stop "$CONTAINER" >/dev/null 2>&1 || true
-    docker rm "$CONTAINER" >/dev/null 2>&1 || true
-}
-
-trap cleanup INT TERM EXIT
-
 docker logs -f "$CONTAINER" &
 wait $!
