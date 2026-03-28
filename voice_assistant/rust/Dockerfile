@@ -30,6 +30,6 @@ COPY src/ src/
 COPY tests/ tests/
 
 ENV RUST_MIN_STACK=16777216
-RUN cargo build --release --jobs 2
+RUN cargo build --release --jobs $(nproc)
 
 ENTRYPOINT ["./target/release/voice_assistant"]

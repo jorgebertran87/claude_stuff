@@ -108,7 +108,10 @@ pub fn alexa_spotify_parts(text: &str) -> Option<Vec<(String, String)>> {
     let title = m.get(1).or_else(|| m.get(2))?.as_str().to_string();
     let before = text[..m.get(0)?.start()].to_string();
     let after  = text[m.get(0)?.end()..].to_string();
-    let title_lang = detect_lang(&title);
+    let mut title_lang = detect_lang(&title);
+    if title_lang != "es" {
+        title_lang = "en".to_string(); // Force English for non-Spanish titles to ensure gTTS support
+    }
     Some(vec![
         (before, "es".into()),
         (title,  title_lang),
@@ -236,17 +239,88 @@ pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
     let segments = alexa_spotify_parts(text)
         .unwrap_or_else(|| vec![(strip_markdown(text), "es".to_string())]);
 
-    let mut all_bytes: Vec<u8> = Vec::new();
+    // Collect segments paired with their per-segment speed:
+    // Spanish parts → 1.5×, English title → 1.0×.
+    let mut segment_bytes: Vec<(Vec<u8>, f32)> = Vec::new();
     for (chunk, chunk_lang) in &segments {
         if chunk.trim().is_empty() { continue; }
+        let speed = if chunk_lang == "en" { 1.0_f32 } else { 1.5_f32 };
         for piece in tts_chunks(chunk) {
             match tts_segment(&piece, chunk_lang) {
-                Ok(seg) => all_bytes.extend_from_slice(seg.raw_data()),
+                Ok(seg) => segment_bytes.push((seg.raw_data().to_vec(), speed)),
                 Err(e)  => eprintln!("[tts error: {e}]"),
             }
         }
     }
-    apply_atempo(all_bytes, 1.5)
+
+    match segment_bytes.len() {
+        0 => Vec::new(),
+        1 => {
+            let (bytes, speed) = segment_bytes.remove(0);
+            apply_atempo(bytes, speed)
+        }
+        // Use ffmpeg per-segment atempo + concat filter so PCM is joined before
+        // re-encoding — avoids pops/gaps from raw MP3 byte concatenation.
+        _ => ffmpeg_concat_and_speed(segment_bytes),
+    }
+}
+
+/// Decode MP3 segments to PCM, apply per-segment atempo, concatenate, re-encode.
+/// Each entry is `(mp3_bytes, speed)`. Falls back to raw-concat + 1.5× if ffmpeg fails.
+fn ffmpeg_concat_and_speed(segments: Vec<(Vec<u8>, f32)>) -> Vec<u8> {
+    let output_path = "/tmp/tts_concat_out.mp3";
+    let input_paths: Vec<String> = (0..segments.len())
+        .map(|i| format!("/tmp/tts_seg_{i}.mp3"))
+        .collect();
+
+    // Pre-collect fallback bytes before consuming segments for file writes.
+    let fallback: Vec<u8> = segments.iter().flat_map(|(b, _)| b.iter().copied()).collect();
+
+    for (path, (bytes, _)) in input_paths.iter().zip(segments.iter()) {
+        if std::fs::write(path, bytes).is_err() {
+            return apply_atempo(fallback, 1.5);
+        }
+    }
+
+    let n = input_paths.len();
+    let mut cmd_args: Vec<String> = vec!["-y".into(), "-loglevel".into(), "quiet".into()];
+    for path in &input_paths {
+        cmd_args.extend(["-i".into(), path.clone()]);
+    }
+    // e.g. [0:a]atempo=1.5[a0];[1:a]atempo=1.0[a1];[a0][a1]concat=n=2:v=0:a=1[out]
+    let mut filter_parts: Vec<String> = segments.iter().enumerate()
+        .map(|(i, (_, speed))| format!("[{i}:a]atempo={speed}[a{i}]"))
+        .collect();
+    let tagged: String = (0..n).map(|i| format!("[a{i}]")).collect();
+    filter_parts.push(format!("{tagged}concat=n={n}:v=0:a=1[out]"));
+    let filter = filter_parts.join(";");
+
+    cmd_args.extend([
+        "-filter_complex".into(), filter,
+        "-map".into(), "[out]".into(),
+        "-f".into(), "mp3".into(),
+        output_path.into(),
+    ]);
+
+    let ok = Command::new("ffmpeg")
+        .args(&cmd_args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    for path in &input_paths {
+        let _ = std::fs::remove_file(path);
+    }
+
+    if ok {
+        if let Ok(out) = std::fs::read(output_path) {
+            return out;
+        }
+    }
+
+    apply_atempo(fallback, 1.5)
 }
 
 /// Apply an ffmpeg `atempo` filter to MP3 bytes, returning the processed bytes.

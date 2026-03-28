@@ -2,6 +2,7 @@
 //! Provides long-polling access to Telegram messages and routes them through OrderHandler.
 
 use std::collections::HashMap;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -134,6 +135,18 @@ impl TelegramGateway for UreqGateway {
     }
 }
 
+fn play_audio_bytes(bytes: &[u8]) {
+    let tmp = "/tmp/tts_telegram_play.mp3";
+    if std::fs::write(tmp, bytes).is_err() {
+        return;
+    }
+    let _ = Command::new("ffplay")
+        .args(["-nodisp", "-autoexit", "-loglevel", "quiet", tmp])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
 /// Main Telegram bot orchestrator.
 pub struct TelegramBot {
     gateway: Box<dyn TelegramGateway>,
@@ -229,15 +242,13 @@ impl TelegramBot {
             if lower.contains("alexa") && lower.contains("spotify") {
                 eprintln!("[telegram: alexa+spotify detected, synthesizing voice order]");
                 let bytes = synthesize_alexa_spotify(&response);
-                if !bytes.is_empty() {
-                    self.gateway.send_voice(update.chat_id, &bytes);
+                if bytes.is_empty() {
+                    eprintln!("[telegram: TTS synthesis failed]");
                 } else {
-                    eprintln!("[telegram: TTS synthesis failed, falling back to text]");
-                    self.gateway.post_message(update.chat_id, &response);
+                    play_audio_bytes(&bytes);
                 }
-            } else {
-                self.gateway.post_message(update.chat_id, &response);
             }
+            self.gateway.post_message(update.chat_id, &response);
         }
     }
 
