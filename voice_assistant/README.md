@@ -124,6 +124,7 @@ VOICE_LANGUAGE=es-ES
 WAKE_WORD=Claudito
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_CHAT_IDS=
+DOCKER_USERNAME=
 ```
 
 ## Running with Docker
@@ -132,8 +133,16 @@ Run all commands from the `rust/` folder.
 
 ### Build the image
 
+Build a local image for the current machine (amd64):
+
 ```bash
 make build
+```
+
+To build a multi-architecture image (amd64 + arm64) and push it to Docker Hub (requires `DOCKER_USERNAME` in `.env`):
+
+```bash
+make build-prod
 ```
 
 ### Run
@@ -187,8 +196,31 @@ In Telegram mode the PulseAudio socket is not mounted — no audio hardware is n
 | Command | Description |
 |---|---|
 | `/reset` | Clear the conversation session for the current chat |
+| `/usage` | Show a summary of token usage and cost logged in `.orders_tokens` |
 
 If `TELEGRAM_ALLOWED_CHAT_IDS` is empty, the bot responds to any chat. Populate it with a comma-separated list of numeric chat IDs to restrict access. Messages containing only `/commands` other than `/reset` are silently ignored. Responses longer than 4 096 characters are split and sent as multiple messages.
+
+### Run with the published Docker Hub image
+
+To pull the latest image from Docker Hub before running (useful on the Raspberry Pi or any machine without a local build):
+
+```bash
+make run-prod
+# or in Telegram mode:
+make run-telegram-prod
+```
+
+`run-prod` sets `RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE)`, which causes `run.sh` to pull the image before starting the container.
+
+### Deploy to a remote host (Raspberry Pi)
+
+Copy the `Makefile` and `run.sh` to a remote host configured as `pequenin` in `~/.ssh/config`:
+
+```bash
+make deploy
+```
+
+After deploying, SSH into the Pi and use `make run-prod` or `make run-telegram-prod` to pull and run the published image.
 
 ### Debug audio devices
 
