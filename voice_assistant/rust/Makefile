@@ -7,7 +7,8 @@ ifneq (,$(wildcard ./.env))
 endif
 
 build:
-	docker build -t $(DOCKER_USERNAME)/$(IMAGE) .
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t $(DOCKER_USERNAME)/$(IMAGE) --push .
 
 push:
 	docker push $(DOCKER_USERNAME)/$(IMAGE)
