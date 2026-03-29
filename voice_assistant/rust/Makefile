@@ -6,11 +6,11 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-build:
+build-prod:
 	docker buildx build --platform linux/amd64,linux/arm64 \
 		-t $(DOCKER_USERNAME)/$(IMAGE) --push .
 
-build-local:
+build:
 	docker build --platform linux/amd64 -t $(IMAGE) .
 
 push:
