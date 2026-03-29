@@ -4,6 +4,10 @@ set -e
 IMAGE=${RUN_IMAGE:-voice-assistant-rust}
 USER_UID=$(id -u)
 
+if [[ "${RUN_IMAGE}" ]]; then
+    docker pull "${IMAGE}"
+fi
+
 CONTAINER=$(docker run -d \
     -e PULSE_SERVER=unix:/tmp/pulse.sock \
     -e SDL_AUDIODRIVER=pulse \

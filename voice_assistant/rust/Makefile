@@ -10,6 +10,9 @@ build:
 	docker buildx build --platform linux/amd64,linux/arm64 \
 		-t $(DOCKER_USERNAME)/$(IMAGE) --push .
 
+build-local:
+	docker build --platform linux/amd64 -t $(IMAGE) .
+
 push:
 	docker push $(DOCKER_USERNAME)/$(IMAGE)
 
@@ -38,4 +41,4 @@ debug:
 		-v $(HOME)/.claude:/root/.claude \
 		$(DOCKER_USERNAME)/$(IMAGE) bash
 
-.PHONY: build run run-prod run-telegram run-telegram-prod test debug push
+.PHONY: build build-local run run-prod run-telegram run-telegram-prod test debug push
