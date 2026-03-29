@@ -1,18 +1,35 @@
-FROM rust:1.83-slim
+# ── Stage 1: build ────────────────────────────────────────────────────────────
+FROM rust:1.83-slim AS builder
 
-# System deps: PortAudio, PulseAudio, Node.js (for Claude Code CLI)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         portaudio19-dev \
-        ca-certificates \
         gcc \
         pkg-config \
         libpulse-dev \
+        libasound2-dev \
+        libsdl2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY Cargo.toml Cargo.lock* build.rs ./
+COPY src/ src/
+
+ENV RUST_MIN_STACK=16777216
+RUN cargo build --release --jobs $(nproc)
+
+# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libportaudio2 \
+        ca-certificates \
+        libpulse0 \
         pulseaudio-utils \
         alsa-utils \
-        sox \
-        libasound2-dev \
         libasound2-plugins \
-        libsdl2-dev \
+        sox \
+        libsdl2-2.0-0 \
         ffmpeg \
         curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -21,15 +38,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Route ALSA through PulseAudio (which PipeWire emulates)
-RUN echo 'pcm.default pulse\nctl.default pulse' > /etc/asound.conf
+RUN printf 'pcm.default pulse\nctl.default pulse\n' > /etc/asound.conf
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock* ./
-COPY src/ src/
-COPY tests/ tests/
+COPY --from=builder /app/target/release/voice_assistant ./
 
 ENV RUST_MIN_STACK=16777216
-RUN cargo build --release --jobs $(nproc)
 
-ENTRYPOINT ["./target/release/voice_assistant"]
+ENTRYPOINT ["./voice_assistant"]

@@ -222,6 +222,13 @@ impl TelegramBot {
                 continue;
             }
 
+            // Handle /usage command
+            if text == "/usage" {
+                let report = read_usage_report(".orders_tokens");
+                self.gateway.post_message(update.chat_id, &report);
+                continue;
+            }
+
             // Skip other /commands
             if text.starts_with('/') {
                 continue;
@@ -261,6 +268,89 @@ impl TelegramBot {
         loop {
             self.run_once(&make_handler, &mut handlers, &mut offset);
         }
+    }
+}
+
+/// Read and summarise the .orders_tokens log file.
+fn read_usage_report(log_file: &str) -> String {
+    let content = match std::fs::read_to_string(log_file) {
+        Ok(c) => c,
+        Err(_) => return "No hay datos de uso todavía.".to_string(),
+    };
+
+    let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.is_empty() {
+        return "No hay datos de uso todavía.".to_string();
+    }
+
+    let mut total_cost = 0.0f64;
+    let mut total_input: u64 = 0;
+    let mut total_output: u64 = 0;
+    let mut total_cache_read: u64 = 0;
+    let mut total_cache_creation: u64 = 0;
+    let mut total_tokens: u64 = 0;
+    let mut max_cost = 0.0f64;
+    let mut max_cost_query = String::new();
+    let mut count: u64 = 0;
+
+    for line in &lines {
+        let cost = match line.find("cost: $") {
+            Some(pos) => {
+                let s = &line[pos + 7..];
+                let end = s.find(' ').unwrap_or(s.len());
+                match s[..end].parse::<f64>() {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                }
+            }
+            None => continue,
+        };
+
+        total_cost += cost;
+        total_input += parse_token_field(line, "input: ");
+        total_output += parse_token_field(line, "output: ");
+        total_cache_read += parse_token_field(line, "cache_read: ");
+        total_cache_creation += parse_token_field(line, "cache_creation: ");
+        total_tokens += parse_token_field(line, "total: ");
+        count += 1;
+
+        if cost > max_cost {
+            max_cost = cost;
+            if let Some(pos) = line.find("Claude order: ") {
+                let s = &line[pos + 14..];
+                let end = s.find(" | ").unwrap_or(s.len().min(80));
+                max_cost_query = s[..end].to_string();
+            }
+        }
+    }
+
+    if count == 0 {
+        return "No hay datos de uso todavía.".to_string();
+    }
+
+    format!(
+        "Uso de tokens — {count} ordenes\n\n\
+         Coste total: ${total_cost:.4} USD\n\
+         Coste medio: ${:.4} USD\n\n\
+         Tokens totales: {total_tokens}\n\
+         \x20 Input:          {total_input}\n\
+         \x20 Output:         {total_output}\n\
+         \x20 Cache read:     {total_cache_read}\n\
+         \x20 Cache creation: {total_cache_creation}\n\n\
+         Orden mas cara: ${max_cost:.4} USD\n\
+         \x20 \"{max_cost_query}\"",
+        total_cost / count as f64,
+    )
+}
+
+fn parse_token_field(line: &str, field: &str) -> u64 {
+    match line.find(field) {
+        Some(pos) => {
+            let s = &line[pos + field.len()..];
+            let end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+            s[..end].parse::<u64>().unwrap_or(0)
+        }
+        None => 0,
     }
 }
 
@@ -380,5 +470,32 @@ mod tests {
     #[test]
     fn parse_updates_returns_empty_on_malformed_json() {
         assert!(parse_updates("not json at all").is_empty());
+    }
+
+    #[test]
+    fn read_usage_report_returns_no_data_when_file_missing() {
+        let report = read_usage_report("/tmp/nonexistent_orders_tokens_test");
+        assert_eq!(report, "No hay datos de uso todavía.");
+    }
+
+    #[test]
+    fn read_usage_report_summarises_log_lines() {
+        let path = "/tmp/test_orders_tokens_usage";
+        std::fs::write(
+            path,
+            "Claude order: hola | Tokens used — input: 10, output: 100, cache_read: 500, cache_creation: 50, total: 660 | cost: $0.002000 USD\n\
+             Claude order: adios | Tokens used — input: 20, output: 200, cache_read: 1000, cache_creation: 100, total: 1320 | cost: $0.008000 USD\n",
+        )
+        .unwrap();
+
+        let report = read_usage_report(path);
+
+        assert!(report.contains("2 ordenes"), "got: {report}");
+        assert!(report.contains("0.0100"), "total cost; got: {report}");
+        assert!(report.contains("0.0050"), "avg cost; got: {report}");
+        assert!(report.contains("1980"), "total tokens; got: {report}");
+        assert!(report.contains("adios"), "most expensive query; got: {report}");
+
+        std::fs::remove_file(path).ok();
     }
 }

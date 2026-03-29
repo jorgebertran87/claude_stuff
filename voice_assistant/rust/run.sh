@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-IMAGE=voice-assistant-rust
+IMAGE=${RUN_IMAGE:-voice-assistant-rust}
 USER_UID=$(id -u)
 
 CONTAINER=$(docker run -d \
