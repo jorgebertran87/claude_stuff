@@ -41,4 +41,7 @@ debug:
 		-v $(HOME)/.claude:/root/.claude \
 		$(DOCKER_USERNAME)/$(IMAGE) bash
 
+deploy:
+	scp Makefile run.sh pequenin:~/pequenin		
+
 .PHONY: build build-local run run-prod run-telegram run-telegram-prod test debug push
