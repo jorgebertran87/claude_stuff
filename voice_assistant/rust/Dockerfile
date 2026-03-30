@@ -12,11 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock* build.rs ./
+COPY Cargo.toml Cargo.lock* build.rs system_prompt system_prompt.example* ./
 COPY src/ src/
 
 ENV RUST_MIN_STACK=16777216
-RUN cargo build --release --jobs $(nproc)
+RUN cargo build --release
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM debian:bookworm-slim

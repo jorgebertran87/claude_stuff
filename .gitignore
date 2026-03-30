@@ -1,4 +1,4 @@
 gherkin/typescript/node_modules
 .env
-prompt
+system_prompt
 .orders_tokens

@@ -1,13 +1,17 @@
 fn main() {
-    let dir = std::path::Path::new("src/infrastructure");
-    let prompt = dir.join("prompt");
-    let example = dir.join("prompt.example");
+    let root = std::path::Path::new(".");
+    let src_prompt = root.join("system_prompt");
+    let src_example = root.join("system_prompt.example");
+    let dest = std::path::Path::new("src/infrastructure/prompt");
 
-    if !prompt.exists() {
-        std::fs::copy(&example, &prompt)
-            .expect("prompt file missing and prompt.example copy failed");
+    if src_prompt.exists() {
+        std::fs::copy(&src_prompt, &dest)
+            .expect("failed to copy system_prompt to src/infrastructure/prompt");
+    } else if !dest.exists() {
+        std::fs::copy(&src_example, &dest)
+            .expect("system_prompt missing and system_prompt.example copy failed");
     }
 
-    println!("cargo:rerun-if-changed=src/infrastructure/prompt");
-    println!("cargo:rerun-if-changed=src/infrastructure/prompt.example");
+    println!("cargo:rerun-if-changed=system_prompt");
+    println!("cargo:rerun-if-changed=system_prompt.example");
 }
