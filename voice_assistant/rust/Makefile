@@ -7,11 +7,11 @@ ifneq (,$(wildcard ./.env))
 endif
 
 build-prod:
-	docker buildx build --platform linux/amd64,linux/arm64 \
+	docker buildx build --platform $(PROD_PLATFORM) \
 		-t $(DOCKER_USERNAME)/$(IMAGE) --push .
 
 build:
-	docker build --platform linux/amd64 -t $(IMAGE) .
+	docker build --platform $(LOCAL_PLATFORM) -t $(IMAGE) .
 
 push:
 	docker push $(DOCKER_USERNAME)/$(IMAGE)
@@ -44,4 +44,4 @@ debug:
 deploy:
 	scp Makefile run.sh pequenin:~/pequenin		
 
-.PHONY: build build-local run run-prod run-telegram run-telegram-prod test debug push
+.PHONY: build build-local run run-prod run-telegram run-telegram-prod test debug push deploy
