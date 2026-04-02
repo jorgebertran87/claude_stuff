@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::domain::ports::OrderHandler;
-use crate::infrastructure::speaker::{synthesize_alexa_spotify, synthesize_text};
+use crate::infrastructure::speaker::{apply_whisper_effect, synthesize_alexa_spotify, synthesize_text};
 
 /// A single Telegram update containing message text.
 #[derive(Clone)]
@@ -199,15 +199,17 @@ impl TelegramBot {
     /// Split out for testability.
     ///
     /// `voice_mode_chats` tracks which chat IDs have voice mode enabled.
-    /// `speak_text` is called with the response text when voice mode is active —
+    /// `whisper_chats` tracks which chat IDs have whisper mode enabled.
+    /// `speak_text` is called with the response text and a whisper flag —
     /// injectable so tests can verify calls without real TTS/audio.
     pub fn run_once(
         &self,
         make_handler: &dyn Fn() -> Arc<dyn OrderHandler>,
         handlers: &mut HashMap<i64, Arc<dyn OrderHandler>>,
         voice_mode_chats: &mut HashSet<i64>,
+        whisper_chats: &mut HashSet<i64>,
         offset: &mut i64,
-        speak_text: &dyn Fn(&str),
+        speak_text: &dyn Fn(&str, bool),
     ) {
         let updates = self.gateway.fetch_updates(*offset);
 
@@ -248,11 +250,21 @@ impl TelegramBot {
                     voice_mode_chats.insert(update.chat_id);
                     true
                 };
-                let msg = if enabled {
-                    "Modo voz activado."
+                let msg = if enabled { "Modo voz activado." } else { "Modo voz desactivado." };
+                self.gateway.post_message(update.chat_id, msg);
+                continue;
+            }
+
+            // Handle /whisper command — toggle whisper mode for this chat
+            if text == "/whisper" {
+                let enabled = if whisper_chats.contains(&update.chat_id) {
+                    whisper_chats.remove(&update.chat_id);
+                    false
                 } else {
-                    "Modo voz desactivado."
+                    whisper_chats.insert(update.chat_id);
+                    true
                 };
+                let msg = if enabled { "Modo susurro activado." } else { "Modo susurro desactivado." };
                 self.gateway.post_message(update.chat_id, msg);
                 continue;
             }
@@ -275,18 +287,20 @@ impl TelegramBot {
             let response = handler.handle(&update.text);
             let lower = response.to_lowercase();
             let is_alexa_spotify = lower.contains("alexa") && lower.contains("spotify");
+            let whisper = whisper_chats.contains(&update.chat_id);
             if is_alexa_spotify {
                 eprintln!("[telegram: alexa+spotify detected, synthesizing voice order]");
                 let bytes = synthesize_alexa_spotify(&response);
                 if bytes.is_empty() {
                     eprintln!("[telegram: TTS synthesis failed]");
                 } else {
+                    let bytes = if whisper { apply_whisper_effect(bytes) } else { bytes };
                     play_audio_bytes(&bytes);
                 }
             }
             if voice_mode_chats.contains(&update.chat_id) && !is_alexa_spotify {
                 eprintln!("[telegram: voice mode active for chat {}, speaking response]", update.chat_id);
-                speak_text(&response);
+                speak_text(&response, whisper);
             }
             self.gateway.post_message(update.chat_id, &response);
         }
@@ -298,20 +312,22 @@ impl TelegramBot {
         let mut offset: i64 = 0;
         let mut handlers: HashMap<i64, Arc<dyn OrderHandler>> = HashMap::new();
         let mut voice_mode_chats: HashSet<i64> = HashSet::new();
+        let mut whisper_chats: HashSet<i64> = HashSet::new();
 
-        let speak_text = |text: &str| {
+        let speak_text = |text: &str, whisper: bool| {
             eprintln!("[voice_mode: synthesizing {} chars]", text.len());
             let bytes = synthesize_text(text);
             if bytes.is_empty() {
                 eprintln!("[voice_mode: synthesis returned empty bytes, skipping playback]");
             } else {
+                let bytes = if whisper { apply_whisper_effect(bytes) } else { bytes };
                 eprintln!("[voice_mode: playing {} bytes]", bytes.len());
                 play_audio_bytes(&bytes);
             }
         };
 
         loop {
-            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut offset, &speak_text);
+            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut whisper_chats, &mut offset, &speak_text);
         }
     }
 }
