@@ -253,6 +253,14 @@ impl TelegramBot {
                 continue;
             }
 
+            // Handle /volume [+N | -N | N] — adjust or report speaker volume
+            if text.starts_with("/volume") {
+                let arg = text["/volume".len()..].trim();
+                let msg = handle_volume(arg);
+                self.gateway.post_message(update.chat_id, &msg);
+                continue;
+            }
+
             // Skip other /commands
             if text.starts_with('/') {
                 continue;
@@ -309,6 +317,48 @@ impl TelegramBot {
         loop {
             self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut offset, &speak_text);
         }
+    }
+}
+
+/// Set or query the default PulseAudio sink volume via `pactl`.
+///
+/// `arg` forms:
+///   ""      → report current volume
+///   "70"    → set to 70 %
+///   "+10"   → increase by 10 %
+///   "-15"   → decrease by 15 %
+fn handle_volume(arg: &str) -> String {
+    if !arg.is_empty() {
+        let vol = if arg.starts_with('+') || arg.starts_with('-') {
+            format!("{}%", arg)
+        } else {
+            format!("{}%", arg.trim_end_matches('%'))
+        };
+        let ok = Command::new("pactl")
+            .args(["set-sink-volume", "@DEFAULT_SINK@", &vol])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ok {
+            return "Error al ajustar el volumen.".to_string();
+        }
+    }
+    // Report current level
+    match Command::new("pactl").args(["get-sink-volume", "@DEFAULT_SINK@"]).output() {
+        Ok(out) => {
+            let text = String::from_utf8_lossy(&out.stdout);
+            // Output: "Volume: front-left: 46000 /  70% / -8.58 dB, ..."
+            let pct = text.split('/')
+                .find(|s| s.trim().ends_with('%'))
+                .and_then(|s| s.trim().trim_end_matches('%').trim().parse::<u32>().ok());
+            match pct {
+                Some(p) => format!("Volumen: {}%", p),
+                None    => "Volumen ajustado.".to_string(),
+            }
+        }
+        Err(_) => "Volumen ajustado.".to_string(),
     }
 }
 
