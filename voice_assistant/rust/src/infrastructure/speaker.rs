@@ -309,15 +309,17 @@ fn ffmpeg_concat_and_speed(segments: Vec<(Vec<u8>, f32)>) -> Vec<u8> {
     for path in &input_paths {
         cmd_args.extend(["-i".into(), path.clone()]);
     }
-    // Add a small pad (80 ms) after each non-last segment so the gap between
-    // parts sounds like a natural human pause rather than the full gTTS silence.
+    // 80 ms pad between inner segments; 30 ms for the segment right before the
+    // title (last-1) since gTTS already adds trailing silence there.
     let last = n - 1;
     let mut filter_parts: Vec<String> = segments.iter().enumerate()
         .map(|(i, (_, speed))| {
-            if i < last {
-                format!("[{i}:a]atempo={speed},apad=pad_dur=0.08[a{i}]")
-            } else {
+            if i == last {
                 format!("[{i}:a]atempo={speed}[a{i}]")
+            } else if i == last - 1 {
+                format!("[{i}:a]atempo={speed},apad=pad_dur=0.03[a{i}]")
+            } else {
+                format!("[{i}:a]atempo={speed},apad=pad_dur=0.08[a{i}]")
             }
         })
         .collect();
