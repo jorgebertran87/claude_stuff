@@ -309,9 +309,13 @@ fn ffmpeg_concat_and_speed(segments: Vec<(Vec<u8>, f32)>) -> Vec<u8> {
     for path in &input_paths {
         cmd_args.extend(["-i".into(), path.clone()]);
     }
-    // e.g. [0:a]atempo=1.5[a0];[1:a]atempo=1.0[a1];[a0][a1]concat=n=2:v=0:a=1[out]
+    // Trim trailing silence from every segment and leading silence from all but the first,
+    // so gTTS padding does not create audible gaps when segments are concatenated.
     let mut filter_parts: Vec<String> = segments.iter().enumerate()
-        .map(|(i, (_, speed))| format!("[{i}:a]atempo={speed}[a{i}]"))
+        .map(|(i, (_, speed))| {
+            let trim = "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-50dB:stop_periods=-1:stop_duration=0.05:stop_threshold=-50dB";
+            format!("[{i}:a]atempo={speed},{trim}[a{i}]")
+        })
         .collect();
     let tagged: String = (0..n).map(|i| format!("[a{i}]")).collect();
     filter_parts.push(format!("{tagged}concat=n={n}:v=0:a=1[out]"));
