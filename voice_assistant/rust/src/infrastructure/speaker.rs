@@ -274,11 +274,12 @@ pub fn apply_whisper_effect(bytes: Vec<u8>) -> Vec<u8> {
         eprintln!("[whisper: failed to write tmp file]");
         return bytes;
     }
-    // Randomise phase to destroy voicing, boost volume to compensate, then
-    // band-pass and add a short echo for breathiness.
-    let filter = "afftfilt=real='hypot(re,im)*sin(0)':imag='hypot(re,im)*cos(0)',\
-                  volume=4,highpass=f=200,lowpass=f=4000,\
-                  aecho=0.8:0.88:8:0.4";
+    // Mix a fraction of the original speech with broadband noise, then
+    // band-pass to the speech range.  This destroys the voiced harmonics while
+    // keeping articulation (sibilants, plosives), replicating how Alexa
+    // produces its whisper mode.
+    let filter = "aeval='val(0)*0.15+random(0)*0.04':c=same,\
+                  highpass=f=250,lowpass=f=7000,volume=3.5";
     let status = Command::new("ffmpeg")
         .args(["-y", "-loglevel", "error", "-i", input_path,
                "-af", filter, "-f", "mp3", output_path])
