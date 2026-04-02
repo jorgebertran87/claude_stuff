@@ -137,14 +137,19 @@ impl TelegramGateway for UreqGateway {
 
 fn play_audio_bytes(bytes: &[u8]) {
     let tmp = "/tmp/tts_telegram_play.mp3";
-    if std::fs::write(tmp, bytes).is_err() {
+    if let Err(e) = std::fs::write(tmp, bytes) {
+        eprintln!("[play_audio_bytes: failed to write tmp file: {e}]");
         return;
     }
-    let _ = Command::new("ffplay")
-        .args(["-nodisp", "-autoexit", "-loglevel", "quiet", tmp])
+    match Command::new("ffplay")
+        .args(["-nodisp", "-autoexit", "-loglevel", "warning", tmp])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+        .status()
+    {
+        Ok(status) if status.success() => {}
+        Ok(status) => eprintln!("[play_audio_bytes: ffplay exited with {status}]"),
+        Err(e) => eprintln!("[play_audio_bytes: failed to spawn ffplay: {e}]"),
+    }
 }
 
 /// Main Telegram bot orchestrator.
@@ -294,8 +299,12 @@ impl TelegramBot {
         let mut voice_mode_chats: HashSet<i64> = HashSet::new();
 
         let speak_text = |text: &str| {
+            eprintln!("[voice_mode: synthesizing {} chars]", text.len());
             let bytes = synthesize_text(text);
-            if !bytes.is_empty() {
+            if bytes.is_empty() {
+                eprintln!("[voice_mode: synthesis returned empty bytes, skipping playback]");
+            } else {
+                eprintln!("[voice_mode: playing {} bytes]", bytes.len());
                 play_audio_bytes(&bytes);
             }
         };
