@@ -265,27 +265,34 @@ pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
 
 
 /// Apply a whisper audio effect to MP3 bytes using ffmpeg.
-/// Removes fundamental voicing (high-pass) and lowers volume to mimic a whisper.
+/// Strips voiced harmonics and adds breathiness to mimic a whisper.
 /// Falls back to the original bytes if ffmpeg fails.
 pub fn apply_whisper_effect(bytes: Vec<u8>) -> Vec<u8> {
     let input_path  = "/tmp/tts_whisper_in.mp3";
     let output_path = "/tmp/tts_whisper_out.mp3";
     if std::fs::write(input_path, &bytes).is_err() {
+        eprintln!("[whisper: failed to write tmp file]");
         return bytes;
     }
-    let ok = Command::new("ffmpeg")
-        .args([
-            "-y", "-loglevel", "quiet",
-            "-i", input_path,
-            "-af", "highpass=f=300,lowpass=f=3000,volume=0.6",
-            "-f", "mp3", output_path,
-        ])
+    // Randomise phase to destroy voicing, boost volume to compensate, then
+    // band-pass and add a short echo for breathiness.
+    let filter = "afftfilt=real='hypot(re,im)*sin(0)':imag='hypot(re,im)*cos(0)',\
+                  volume=4,highpass=f=200,lowpass=f=4000,\
+                  aecho=0.8:0.88:8:0.4";
+    let status = Command::new("ffmpeg")
+        .args(["-y", "-loglevel", "error", "-i", input_path,
+               "-af", filter, "-f", "mp3", output_path])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if ok { std::fs::read(output_path).unwrap_or(bytes) } else { bytes }
+        .stderr(Stdio::inherit())
+        .status();
+    match status {
+        Ok(s) if s.success() => {
+            eprintln!("[whisper: effect applied]");
+            std::fs::read(output_path).unwrap_or(bytes)
+        }
+        Ok(s) => { eprintln!("[whisper: ffmpeg exited {s}]"); bytes }
+        Err(e) => { eprintln!("[whisper: ffmpeg error {e}]"); bytes }
+    }
 }
 
 /// Apply an ffmpeg `atempo` filter to MP3 bytes, returning the processed bytes.
