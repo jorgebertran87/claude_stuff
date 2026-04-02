@@ -1,7 +1,7 @@
 //! Telegram bot adapter for the voice assistant.
 //! Provides long-polling access to Telegram messages and routes them through OrderHandler.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::domain::ports::OrderHandler;
-use crate::infrastructure::speaker::synthesize_alexa_spotify;
+use crate::infrastructure::speaker::{synthesize_alexa_spotify, synthesize_text};
 
 /// A single Telegram update containing message text.
 #[derive(Clone)]
@@ -176,7 +176,6 @@ impl TelegramBot {
     }
 
     /// Create a new bot with an injectable gateway (for testing).
-    #[allow(dead_code)]
     pub fn with_injectable(
         gateway: Box<dyn TelegramGateway>,
         allowed_chat_ids: Vec<i64>,
@@ -193,11 +192,17 @@ impl TelegramBot {
 
     /// Process one batch of updates from the API.
     /// Split out for testability.
+    ///
+    /// `voice_mode_chats` tracks which chat IDs have voice mode enabled.
+    /// `speak_text` is called with the response text when voice mode is active —
+    /// injectable so tests can verify calls without real TTS/audio.
     pub fn run_once(
         &self,
         make_handler: &dyn Fn() -> Arc<dyn OrderHandler>,
         handlers: &mut HashMap<i64, Arc<dyn OrderHandler>>,
+        voice_mode_chats: &mut HashSet<i64>,
         offset: &mut i64,
+        speak_text: &dyn Fn(&str),
     ) {
         let updates = self.gateway.fetch_updates(*offset);
 
@@ -229,6 +234,24 @@ impl TelegramBot {
                 continue;
             }
 
+            // Handle /voice_mode command — toggle voice mode for this chat
+            if text == "/voice_mode" {
+                let enabled = if voice_mode_chats.contains(&update.chat_id) {
+                    voice_mode_chats.remove(&update.chat_id);
+                    false
+                } else {
+                    voice_mode_chats.insert(update.chat_id);
+                    true
+                };
+                let msg = if enabled {
+                    "Modo voz activado."
+                } else {
+                    "Modo voz desactivado."
+                };
+                self.gateway.post_message(update.chat_id, msg);
+                continue;
+            }
+
             // Skip other /commands
             if text.starts_with('/') {
                 continue;
@@ -255,6 +278,10 @@ impl TelegramBot {
                     play_audio_bytes(&bytes);
                 }
             }
+            if voice_mode_chats.contains(&update.chat_id) {
+                eprintln!("[telegram: voice mode active for chat {}, speaking response]", update.chat_id);
+                speak_text(&response);
+            }
             self.gateway.post_message(update.chat_id, &response);
         }
     }
@@ -264,9 +291,17 @@ impl TelegramBot {
         eprintln!("[telegram bot starting, allowed chats: {:?}]", self.allowed_chat_ids);
         let mut offset: i64 = 0;
         let mut handlers: HashMap<i64, Arc<dyn OrderHandler>> = HashMap::new();
+        let mut voice_mode_chats: HashSet<i64> = HashSet::new();
+
+        let speak_text = |text: &str| {
+            let bytes = synthesize_text(text);
+            if !bytes.is_empty() {
+                play_audio_bytes(&bytes);
+            }
+        };
 
         loop {
-            self.run_once(&make_handler, &mut handlers, &mut offset);
+            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut offset, &speak_text);
         }
     }
 }

@@ -232,6 +232,28 @@ fn split_sentences(text: &str) -> Vec<String> {
     result
 }
 
+/// Synthesize arbitrary text to MP3 bytes at 1.5× speed.
+/// Strips markdown, detects language, chunks, and concatenates segments.
+/// Returns an empty `Vec` if synthesis fails entirely.
+pub fn synthesize_text(text: &str) -> Vec<u8> {
+    let clean = strip_markdown(text);
+    if clean.trim().is_empty() {
+        return Vec::new();
+    }
+    let lang = detect_lang(&clean);
+    let mut all_bytes: Vec<u8> = Vec::new();
+    for chunk in tts_chunks(&clean) {
+        match tts_segment(&chunk, &lang) {
+            Ok(seg) => all_bytes.extend_from_slice(seg.raw_data()),
+            Err(e) => eprintln!("[tts error: {e}]"),
+        }
+    }
+    if all_bytes.is_empty() {
+        return Vec::new();
+    }
+    apply_atempo(all_bytes, 1.5)
+}
+
 /// Generate TTS audio bytes for an Alexa+Spotify order, using the same multilingual
 /// segment logic as `GTTSSpeaker::speak()`, with the same 1.5× speed applied.
 /// Returns an empty `Vec` if synthesis fails entirely.
