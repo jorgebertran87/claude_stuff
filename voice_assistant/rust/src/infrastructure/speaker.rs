@@ -232,7 +232,7 @@ fn split_sentences(text: &str) -> Vec<String> {
     result
 }
 
-/// Synthesize arbitrary text to MP3 bytes at 1.5× speed.
+/// Synthesize arbitrary text to MP3 bytes at 1.2× speed.
 /// Strips markdown, detects language, chunks, and concatenates segments.
 /// Returns an empty `Vec` if synthesis fails entirely.
 pub fn synthesize_text(text: &str) -> Vec<u8> {
@@ -255,18 +255,18 @@ pub fn synthesize_text(text: &str) -> Vec<u8> {
 }
 
 /// Generate TTS audio bytes for an Alexa+Spotify order, using the same multilingual
-/// segment logic as `GTTSSpeaker::speak()`, with the same 1.5× speed applied.
+/// segment logic as `GTTSSpeaker::speak()`, with the same 1.2× speed applied.
 /// Returns an empty `Vec` if synthesis fails entirely.
 pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
     let segments = alexa_spotify_parts(text)
         .unwrap_or_else(|| vec![(strip_markdown(text), "es".to_string())]);
 
     // Collect segments paired with their per-segment speed:
-    // Spanish parts → 1.5×, English title → 1.0×.
+    // Spanish parts → 1.2×, English title → 1.0×.
     let mut segment_bytes: Vec<(Vec<u8>, f32)> = Vec::new();
     for (chunk, chunk_lang) in &segments {
         if chunk.trim().is_empty() { continue; }
-        let speed = if chunk_lang == "en" { 1.0_f32 } else { 1.5_f32 };
+        let speed = if chunk_lang == "en" { 1.0_f32 } else { 1.2_f32 };
         for piece in tts_chunks(chunk) {
             match tts_segment(&piece, chunk_lang) {
                 Ok(seg) => segment_bytes.push((seg.raw_data().to_vec(), speed)),
@@ -288,7 +288,7 @@ pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
 }
 
 /// Decode MP3 segments to PCM, apply per-segment atempo, concatenate, re-encode.
-/// Each entry is `(mp3_bytes, speed)`. Falls back to raw-concat + 1.5× if ffmpeg fails.
+/// Each entry is `(mp3_bytes, speed)`. Falls back to raw-concat + 1.2× if ffmpeg fails.
 fn ffmpeg_concat_and_speed(segments: Vec<(Vec<u8>, f32)>) -> Vec<u8> {
     let output_path = "/tmp/tts_concat_out.mp3";
     let input_paths: Vec<String> = (0..segments.len())
@@ -300,7 +300,7 @@ fn ffmpeg_concat_and_speed(segments: Vec<(Vec<u8>, f32)>) -> Vec<u8> {
 
     for (path, (bytes, _)) in input_paths.iter().zip(segments.iter()) {
         if std::fs::write(path, bytes).is_err() {
-            return apply_atempo(fallback, 1.5);
+            return apply_atempo(fallback, 1.2);
         }
     }
 
@@ -309,12 +309,16 @@ fn ffmpeg_concat_and_speed(segments: Vec<(Vec<u8>, f32)>) -> Vec<u8> {
     for path in &input_paths {
         cmd_args.extend(["-i".into(), path.clone()]);
     }
-    // Trim trailing silence from every segment and leading silence from all but the first,
-    // so gTTS padding does not create audible gaps when segments are concatenated.
+    // Add a small pad (80 ms) after each non-last segment so the gap between
+    // parts sounds like a natural human pause rather than the full gTTS silence.
+    let last = n - 1;
     let mut filter_parts: Vec<String> = segments.iter().enumerate()
         .map(|(i, (_, speed))| {
-            let trim = "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-50dB:stop_periods=-1:stop_duration=0.05:stop_threshold=-50dB";
-            format!("[{i}:a]atempo={speed},{trim}[a{i}]")
+            if i < last {
+                format!("[{i}:a]atempo={speed},apad=pad_dur=0.08[a{i}]")
+            } else {
+                format!("[{i}:a]atempo={speed}[a{i}]")
+            }
         })
         .collect();
     let tagged: String = (0..n).map(|i| format!("[a{i}]")).collect();
@@ -346,7 +350,7 @@ fn ffmpeg_concat_and_speed(segments: Vec<(Vec<u8>, f32)>) -> Vec<u8> {
         }
     }
 
-    apply_atempo(fallback, 1.5)
+    apply_atempo(fallback, 1.2)
 }
 
 /// Apply an ffmpeg `atempo` filter to MP3 bytes, returning the processed bytes.
@@ -398,7 +402,7 @@ impl GTTSSpeaker {
 
         if let Ok(mut child) = Command::new("ffplay")
             .args(["-nodisp", "-autoexit", "-loglevel", "quiet",
-                   "-af", "atempo=1.5",
+                   "-af", "atempo=1.2",
                    tmp])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
