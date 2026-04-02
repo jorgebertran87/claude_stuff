@@ -94,29 +94,27 @@ pub fn detect_lang(text: &str) -> String {
     .to_string()
 }
 
-/// If `text` contains "alexa" and "spotify" and a quoted song title, return
-/// `[(chunk, lang_code), …]` with Spanish for the framing and detected language
-/// for the title; otherwise `None`.
-pub fn alexa_spotify_parts(text: &str) -> Option<Vec<(String, String)>> {
+/// If `text` contains "alexa", "spotify", and a quoted title, return
+/// `(title, lang_code)` where lang is "es" for Spanish titles, "en" otherwise.
+pub fn alexa_spotify_title(text: &str) -> Option<(String, String)> {
     let lower = text.to_lowercase();
     if !lower.contains("alexa") || !lower.contains("spotify") {
         return None;
     }
     let re = Regex::new(r#""([^"]+)"|'([^']+)'"#).unwrap();
-    let m  = re.captures(text)?;
-    // group 1 = double-quoted title, group 2 = single-quoted title
+    let m = re.captures(text)?;
     let title = m.get(1).or_else(|| m.get(2))?.as_str().to_string();
-    let before = text[..m.get(0)?.start()].to_string();
-    let after  = text[m.get(0)?.end()..].to_string();
-    let mut title_lang = detect_lang(&title);
-    if title_lang != "es" {
-        title_lang = "en".to_string(); // Force English for non-Spanish titles to ensure gTTS support
+    let lang = if detect_lang(&title) == "es" { "es".into() } else { "en".into() };
+    Some((title, lang))
+}
+
+/// Build the Alexa+Spotify voice command in the title's language.
+/// Spanish titles keep the original Spanish phrasing; everything else uses English.
+fn build_alexa_command(title: &str, lang: &str) -> String {
+    match lang {
+        "es" => format!("Alexa, pon {} en Spotify", title),
+        _    => format!("Alexa, play {} on Spotify", title),
     }
-    Some(vec![
-        (before, "es".into()),
-        (title,  title_lang),
-        (after,  "es".into()),
-    ])
 }
 
 // ── private ───────────────────────────────────────────────────────────────────
@@ -254,105 +252,17 @@ pub fn synthesize_text(text: &str) -> Vec<u8> {
     apply_atempo(all_bytes, 1.2)
 }
 
-/// Generate TTS audio bytes for an Alexa+Spotify order, using the same multilingual
-/// segment logic as `GTTSSpeaker::speak()`, with the same 1.2× speed applied.
+/// Generate TTS audio bytes for an Alexa+Spotify order.
+/// Translates the whole command into the title's language and synthesizes it
+/// as a single TTS call — no multilingual splitting.
 /// Returns an empty `Vec` if synthesis fails entirely.
 pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
-    let segments = alexa_spotify_parts(text)
-        .unwrap_or_else(|| vec![(strip_markdown(text), "es".to_string())]);
-
-    // Collect segments paired with their per-segment speed:
-    // Spanish parts → 1.2×, English title → 1.0×.
-    let mut segment_bytes: Vec<(Vec<u8>, f32)> = Vec::new();
-    for (chunk, chunk_lang) in &segments {
-        if chunk.trim().is_empty() { continue; }
-        let speed = if chunk_lang == "en" { 1.0_f32 } else { 1.2_f32 };
-        for piece in tts_chunks(chunk) {
-            match tts_segment(&piece, chunk_lang) {
-                Ok(seg) => segment_bytes.push((seg.raw_data().to_vec(), speed)),
-                Err(e)  => eprintln!("[tts error: {e}]"),
-            }
-        }
-    }
-
-    match segment_bytes.len() {
-        0 => Vec::new(),
-        1 => {
-            let (bytes, speed) = segment_bytes.remove(0);
-            apply_atempo(bytes, speed)
-        }
-        // Use ffmpeg per-segment atempo + concat filter so PCM is joined before
-        // re-encoding — avoids pops/gaps from raw MP3 byte concatenation.
-        _ => ffmpeg_concat_and_speed(segment_bytes),
-    }
+    let unified = alexa_spotify_title(text)
+        .map(|(title, lang)| build_alexa_command(&title, &lang))
+        .unwrap_or_else(|| strip_markdown(text));
+    synthesize_text(&unified)
 }
 
-/// Decode MP3 segments to PCM, apply per-segment atempo, concatenate, re-encode.
-/// Each entry is `(mp3_bytes, speed)`. Falls back to raw-concat + 1.2× if ffmpeg fails.
-fn ffmpeg_concat_and_speed(segments: Vec<(Vec<u8>, f32)>) -> Vec<u8> {
-    let output_path = "/tmp/tts_concat_out.mp3";
-    let input_paths: Vec<String> = (0..segments.len())
-        .map(|i| format!("/tmp/tts_seg_{i}.mp3"))
-        .collect();
-
-    // Pre-collect fallback bytes before consuming segments for file writes.
-    let fallback: Vec<u8> = segments.iter().flat_map(|(b, _)| b.iter().copied()).collect();
-
-    for (path, (bytes, _)) in input_paths.iter().zip(segments.iter()) {
-        if std::fs::write(path, bytes).is_err() {
-            return apply_atempo(fallback, 1.2);
-        }
-    }
-
-    let n = input_paths.len();
-    let mut cmd_args: Vec<String> = vec!["-y".into(), "-loglevel".into(), "quiet".into()];
-    for path in &input_paths {
-        cmd_args.extend(["-i".into(), path.clone()]);
-    }
-    // Trim gTTS trailing silence on every non-last segment (otherwise it's too
-    // long before the title), then add back 30 ms for a natural short pause.
-    let last = n - 1;
-    let trim = "silenceremove=stop_periods=-1:stop_duration=0.05:stop_threshold=-50dB";
-    let mut filter_parts: Vec<String> = segments.iter().enumerate()
-        .map(|(i, (_, speed))| {
-            if i < last {
-                format!("[{i}:a]atempo={speed},{trim},apad=pad_dur=0.03[a{i}]")
-            } else {
-                format!("[{i}:a]atempo={speed}[a{i}]")
-            }
-        })
-        .collect();
-    let tagged: String = (0..n).map(|i| format!("[a{i}]")).collect();
-    filter_parts.push(format!("{tagged}concat=n={n}:v=0:a=1[out]"));
-    let filter = filter_parts.join(";");
-
-    cmd_args.extend([
-        "-filter_complex".into(), filter,
-        "-map".into(), "[out]".into(),
-        "-f".into(), "mp3".into(),
-        output_path.into(),
-    ]);
-
-    let ok = Command::new("ffmpeg")
-        .args(&cmd_args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-
-    for path in &input_paths {
-        let _ = std::fs::remove_file(path);
-    }
-
-    if ok {
-        if let Ok(out) = std::fs::read(output_path) {
-            return out;
-        }
-    }
-
-    apply_atempo(fallback, 1.2)
-}
 
 /// Apply an ffmpeg `atempo` filter to MP3 bytes, returning the processed bytes.
 /// Falls back to the original bytes if ffmpeg fails.
@@ -418,18 +328,16 @@ impl GTTSSpeaker {
 
 impl AudioSpeaker for GTTSSpeaker {
     fn speak(&self, text: &str, language: &Language, on_playback_start: Option<Box<dyn FnOnce() + Send>>) {
-        let lang = language.lang_prefix();
-        let segments = alexa_spotify_parts(text)
-            .unwrap_or_else(|| vec![(strip_markdown(text), lang.to_string())]);
+        let (unified, lang) = match alexa_spotify_title(text) {
+            Some((title, ref tl)) => (build_alexa_command(&title, tl), tl.clone()),
+            None => (strip_markdown(text), language.lang_prefix().to_string()),
+        };
 
         let mut all_bytes: Vec<u8> = Vec::new();
-        for (chunk, chunk_lang) in &segments {
-            if chunk.trim().is_empty() { continue; }
-            for piece in tts_chunks(chunk) {
-                match tts_segment(&piece, chunk_lang) {
-                    Ok(seg) => all_bytes.extend_from_slice(seg.raw_data()),
-                    Err(e)  => eprintln!("TTS error: {e}"),
-                }
+        for piece in tts_chunks(&unified) {
+            match tts_segment(&piece, &lang) {
+                Ok(seg) => all_bytes.extend_from_slice(seg.raw_data()),
+                Err(e)  => eprintln!("TTS error: {e}"),
             }
         }
 
