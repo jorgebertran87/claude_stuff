@@ -46,7 +46,7 @@ fn make_bot_with_updates(updates: Vec<TelegramUpdate>) -> (TelegramBot, Arc<Mute
     (bot, posted)
 }
 
-fn no_speak(_: &str, _: bool) {}
+fn no_speak(_: &str) {}
 
 // ── /voice_mode command ───────────────────────────────────────────────────────
 
@@ -56,14 +56,12 @@ fn voice_mode_command_sends_activation_confirmation() {
     let (bot, posted) = make_bot_with_updates(updates);
     let mut handlers = HashMap::new();
     let mut voice_mode_chats = HashSet::new();
-    let mut whisper_chats = HashSet::new();
     let mut offset = 0i64;
 
     bot.run_once(
         &|| Arc::new(FakeHandler { response: "ok".into() }),
         &mut handlers,
         &mut voice_mode_chats,
-        &mut whisper_chats,
         &mut offset,
         &no_speak,
     );
@@ -82,7 +80,6 @@ fn voice_mode_enabled_speaks_response_via_speak_text() {
     let (bot, _posted) = make_bot_with_updates(updates);
     let mut handlers = HashMap::new();
     let mut voice_mode_chats = HashSet::new();
-    let mut whisper_chats = HashSet::new();
     let mut offset = 0i64;
     let spoken: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
     let spoken_clone = spoken.clone();
@@ -91,9 +88,8 @@ fn voice_mode_enabled_speaks_response_via_speak_text() {
         &|| Arc::new(FakeHandler { response: "respuesta".into() }),
         &mut handlers,
         &mut voice_mode_chats,
-        &mut whisper_chats,
         &mut offset,
-        &move |text, _whisper| spoken_clone.lock().unwrap().push(text.to_string()),
+        &move |text| spoken_clone.lock().unwrap().push(text.to_string()),
     );
 
     let s = spoken.lock().unwrap();
@@ -110,14 +106,12 @@ fn voice_mode_command_second_time_deactivates_and_sends_confirmation() {
     let (bot, posted) = make_bot_with_updates(updates);
     let mut handlers = HashMap::new();
     let mut voice_mode_chats = HashSet::new();
-    let mut whisper_chats = HashSet::new();
     let mut offset = 0i64;
 
     bot.run_once(
         &|| Arc::new(FakeHandler { response: "ok".into() }),
         &mut handlers,
         &mut voice_mode_chats,
-        &mut whisper_chats,
         &mut offset,
         &no_speak,
     );
@@ -135,7 +129,6 @@ fn voice_mode_disabled_does_not_speak_response() {
     let (bot, _posted) = make_bot_with_updates(updates);
     let mut handlers = HashMap::new();
     let mut voice_mode_chats = HashSet::new();
-    let mut whisper_chats = HashSet::new();
     let mut offset = 0i64;
     let spoken: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
     let spoken_clone = spoken.clone();
@@ -144,9 +137,8 @@ fn voice_mode_disabled_does_not_speak_response() {
         &|| Arc::new(FakeHandler { response: "respuesta".into() }),
         &mut handlers,
         &mut voice_mode_chats,
-        &mut whisper_chats,
         &mut offset,
-        &move |text, _whisper| spoken_clone.lock().unwrap().push(text.to_string()),
+        &move |text| spoken_clone.lock().unwrap().push(text.to_string()),
     );
 
     assert!(spoken.lock().unwrap().is_empty(), "speak_text must not be called when voice mode is off");
@@ -161,7 +153,6 @@ fn voice_mode_does_not_speak_alexa_spotify_responses() {
     let (bot, _posted) = make_bot_with_updates(updates);
     let mut handlers = HashMap::new();
     let mut voice_mode_chats = HashSet::new();
-    let mut whisper_chats = HashSet::new();
     let mut offset = 0i64;
     let spoken: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
     let spoken_clone = spoken.clone();
@@ -170,90 +161,9 @@ fn voice_mode_does_not_speak_alexa_spotify_responses() {
         &|| Arc::new(FakeHandler { response: "Alexa, pon \"Bohemian Rhapsody\" en Spotify".into() }),
         &mut handlers,
         &mut voice_mode_chats,
-        &mut whisper_chats,
         &mut offset,
-        &move |text, _whisper| spoken_clone.lock().unwrap().push(text.to_string()),
+        &move |text| spoken_clone.lock().unwrap().push(text.to_string()),
     );
 
     assert!(spoken.lock().unwrap().is_empty(), "speak_text must not be called for alexa+spotify responses");
-}
-
-// ── /whisper command ──────────────────────────────────────────────────────────
-
-#[test]
-fn whisper_command_sends_activation_confirmation() {
-    let updates = vec![TelegramUpdate { update_id: 1, chat_id: 10, text: "/whisper".into() }];
-    let (bot, posted) = make_bot_with_updates(updates);
-    let mut handlers = HashMap::new();
-    let mut voice_mode_chats = HashSet::new();
-    let mut whisper_chats = HashSet::new();
-    let mut offset = 0i64;
-
-    bot.run_once(
-        &|| Arc::new(FakeHandler { response: "ok".into() }),
-        &mut handlers,
-        &mut voice_mode_chats,
-        &mut whisper_chats,
-        &mut offset,
-        &no_speak,
-    );
-
-    let msgs = posted.lock().unwrap();
-    assert_eq!(msgs.len(), 1);
-    assert_eq!(msgs[0], (10, "Modo susurro activado.".to_string()));
-}
-
-#[test]
-fn whisper_command_second_time_deactivates() {
-    let updates = vec![
-        TelegramUpdate { update_id: 1, chat_id: 10, text: "/whisper".into() },
-        TelegramUpdate { update_id: 2, chat_id: 10, text: "/whisper".into() },
-    ];
-    let (bot, posted) = make_bot_with_updates(updates);
-    let mut handlers = HashMap::new();
-    let mut voice_mode_chats = HashSet::new();
-    let mut whisper_chats = HashSet::new();
-    let mut offset = 0i64;
-
-    bot.run_once(
-        &|| Arc::new(FakeHandler { response: "ok".into() }),
-        &mut handlers,
-        &mut voice_mode_chats,
-        &mut whisper_chats,
-        &mut offset,
-        &no_speak,
-    );
-
-    let msgs = posted.lock().unwrap();
-    assert_eq!(msgs[0].1, "Modo susurro activado.");
-    assert_eq!(msgs[1].1, "Modo susurro desactivado.");
-}
-
-#[test]
-fn whisper_mode_passes_true_flag_to_speak_text() {
-    let updates = vec![
-        TelegramUpdate { update_id: 1, chat_id: 10, text: "/voice_mode".into() },
-        TelegramUpdate { update_id: 2, chat_id: 10, text: "/whisper".into() },
-        TelegramUpdate { update_id: 3, chat_id: 10, text: "hola".into() },
-    ];
-    let (bot, _posted) = make_bot_with_updates(updates);
-    let mut handlers = HashMap::new();
-    let mut voice_mode_chats = HashSet::new();
-    let mut whisper_chats = HashSet::new();
-    let mut offset = 0i64;
-    let whisper_flags: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(vec![]));
-    let flags_clone = whisper_flags.clone();
-
-    bot.run_once(
-        &|| Arc::new(FakeHandler { response: "respuesta".into() }),
-        &mut handlers,
-        &mut voice_mode_chats,
-        &mut whisper_chats,
-        &mut offset,
-        &move |_text, whisper| flags_clone.lock().unwrap().push(whisper),
-    );
-
-    let flags = whisper_flags.lock().unwrap();
-    assert_eq!(flags.len(), 1, "speak_text should be called once");
-    assert!(flags[0], "whisper flag should be true when /whisper is active");
 }

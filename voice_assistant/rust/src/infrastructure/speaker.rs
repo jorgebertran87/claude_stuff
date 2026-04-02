@@ -262,41 +262,6 @@ pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
         .unwrap_or_else(|| strip_markdown(text));
     synthesize_text(&unified)
 }
-
-
-/// Apply a whisper audio effect to MP3 bytes using ffmpeg.
-/// Strips voiced harmonics and adds breathiness to mimic a whisper.
-/// Falls back to the original bytes if ffmpeg fails.
-pub fn apply_whisper_effect(bytes: Vec<u8>) -> Vec<u8> {
-    let input_path  = "/tmp/tts_whisper_in.mp3";
-    let output_path = "/tmp/tts_whisper_out.mp3";
-    if std::fs::write(input_path, &bytes).is_err() {
-        eprintln!("[whisper: failed to write tmp file]");
-        return bytes;
-    }
-    // Amplitude-modulated noise: noise amplitude follows the original speech
-    // envelope (abs(val(0))), preserving syllable rhythm while replacing the
-    // periodic vocal-cord excitation with broadband breathiness.
-    // A tiny fraction of the original (0.05) is kept so sibilants (s, sh)
-    // remain intelligible. High-pass removes sub-vocal-tract rumble.
-    let filter = "aeval='val(0)*0.05 + abs(val(0))*(random(0)-0.5)*2.0':c=same,\
-                  highpass=f=150,lowpass=f=8000,volume=2.5";
-    let status = Command::new("ffmpeg")
-        .args(["-y", "-loglevel", "error", "-i", input_path,
-               "-af", filter, "-f", "mp3", output_path])
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
-        .status();
-    match status {
-        Ok(s) if s.success() => {
-            eprintln!("[whisper: effect applied]");
-            std::fs::read(output_path).unwrap_or(bytes)
-        }
-        Ok(s) => { eprintln!("[whisper: ffmpeg exited {s}]"); bytes }
-        Err(e) => { eprintln!("[whisper: ffmpeg error {e}]"); bytes }
-    }
-}
-
 /// Apply an ffmpeg `atempo` filter to MP3 bytes, returning the processed bytes.
 /// Falls back to the original bytes if ffmpeg fails.
 fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
