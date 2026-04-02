@@ -251,7 +251,7 @@ pub fn synthesize_text(text: &str) -> Vec<u8> {
     if all_bytes.is_empty() {
         return Vec::new();
     }
-    apply_atempo(all_bytes, 1.5)
+    apply_atempo(all_bytes, 1.2)
 }
 
 /// Generate TTS audio bytes for an Alexa+Spotify order, using the same multilingual
