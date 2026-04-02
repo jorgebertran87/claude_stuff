@@ -274,7 +274,8 @@ impl TelegramBot {
             );
             let response = handler.handle(&update.text);
             let lower = response.to_lowercase();
-            if lower.contains("alexa") && lower.contains("spotify") {
+            let is_alexa_spotify = lower.contains("alexa") && lower.contains("spotify");
+            if is_alexa_spotify {
                 eprintln!("[telegram: alexa+spotify detected, synthesizing voice order]");
                 let bytes = synthesize_alexa_spotify(&response);
                 if bytes.is_empty() {
@@ -283,7 +284,7 @@ impl TelegramBot {
                     play_audio_bytes(&bytes);
                 }
             }
-            if voice_mode_chats.contains(&update.chat_id) {
+            if voice_mode_chats.contains(&update.chat_id) && !is_alexa_spotify {
                 eprintln!("[telegram: voice mode active for chat {}, speaking response]", update.chat_id);
                 speak_text(&response);
             }

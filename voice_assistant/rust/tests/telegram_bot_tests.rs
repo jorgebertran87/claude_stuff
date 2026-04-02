@@ -143,3 +143,27 @@ fn voice_mode_disabled_does_not_speak_response() {
 
     assert!(spoken.lock().unwrap().is_empty(), "speak_text must not be called when voice mode is off");
 }
+
+#[test]
+fn voice_mode_does_not_speak_alexa_spotify_responses() {
+    let updates = vec![
+        TelegramUpdate { update_id: 1, chat_id: 10, text: "/voice_mode".into() },
+        TelegramUpdate { update_id: 2, chat_id: 10, text: "pon música".into() },
+    ];
+    let (bot, _posted) = make_bot_with_updates(updates);
+    let mut handlers = HashMap::new();
+    let mut voice_mode_chats = HashSet::new();
+    let mut offset = 0i64;
+    let spoken: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let spoken_clone = spoken.clone();
+
+    bot.run_once(
+        &|| Arc::new(FakeHandler { response: "Alexa, pon \"Bohemian Rhapsody\" en Spotify".into() }),
+        &mut handlers,
+        &mut voice_mode_chats,
+        &mut offset,
+        &move |text| spoken_clone.lock().unwrap().push(text.to_string()),
+    );
+
+    assert!(spoken.lock().unwrap().is_empty(), "speak_text must not be called for alexa+spotify responses");
+}
