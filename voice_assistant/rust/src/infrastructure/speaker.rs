@@ -309,12 +309,18 @@ fn ffmpeg_concat_and_speed(segments: Vec<(Vec<u8>, f32)>) -> Vec<u8> {
     for path in &input_paths {
         cmd_args.extend(["-i".into(), path.clone()]);
     }
-    // For "Alexa, pon [title] en Spotify" the comma pause is generated naturally
-    // by gTTS inside the first segment; no artificial gaps are added between
-    // segments — the gTTS trailing silence on each clip is already enough.
+    // Trim gTTS trailing silence on every non-last segment (otherwise it's too
+    // long before the title), then add back 30 ms for a natural short pause.
     let last = n - 1;
+    let trim = "silenceremove=stop_periods=-1:stop_duration=0.05:stop_threshold=-50dB";
     let mut filter_parts: Vec<String> = segments.iter().enumerate()
-        .map(|(i, (_, speed))| format!("[{i}:a]atempo={speed}[a{i}]"))
+        .map(|(i, (_, speed))| {
+            if i < last {
+                format!("[{i}:a]atempo={speed},{trim},apad=pad_dur=0.03[a{i}]")
+            } else {
+                format!("[{i}:a]atempo={speed}[a{i}]")
+            }
+        })
         .collect();
     let tagged: String = (0..n).map(|i| format!("[a{i}]")).collect();
     filter_parts.push(format!("{tagged}concat=n={n}:v=0:a=1[out]"));
