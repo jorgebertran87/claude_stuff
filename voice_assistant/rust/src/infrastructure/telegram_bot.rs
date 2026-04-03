@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -208,7 +208,7 @@ impl TelegramBot {
         make_handler: &dyn Fn() -> Arc<dyn OrderHandler>,
         handlers: &mut HashMap<i64, Arc<dyn OrderHandler>>,
         voice_mode_chats: &mut HashSet<i64>,
-        pending_auth_chats: &mut HashSet<i64>,
+        pending_auth_chats: &mut HashMap<i64, Instant>,
         offset: &mut i64,
         speak_text: &dyn Fn(&str),
         on_voice: &dyn Fn(),
@@ -239,19 +239,25 @@ impl TelegramBot {
                 continue;
             }
 
-            // Handle pending OAuth2 code exchange
-            if pending_auth_chats.contains(&update.chat_id) && !text.starts_with('/') {
-                pending_auth_chats.remove(&update.chat_id);
-                use crate::infrastructure::google_sheets::exchange_and_save_token;
-                let msg = match exchange_and_save_token(text) {
-                    Ok(()) => "Token de Google guardado. Ya puedes usar /cuentas.".to_string(),
-                    Err(e) => {
-                        eprintln!("[auth_google: exchange error: {e}]");
-                        format!("Error al intercambiar el código: {e}")
-                    }
-                };
-                self.gateway.post_message(update.chat_id, &msg);
-                continue;
+            // Handle pending OAuth2 code exchange (expires after 10 minutes)
+            if let Some(&started) = pending_auth_chats.get(&update.chat_id) {
+                if !text.starts_with('/') {
+                    pending_auth_chats.remove(&update.chat_id);
+                    let msg = if started.elapsed() > Duration::from_secs(600) {
+                        "El código ha expirado. Usa /auth_google para obtener uno nuevo.".to_string()
+                    } else {
+                        use crate::infrastructure::google_sheets::exchange_and_save_token;
+                        match exchange_and_save_token(text) {
+                            Ok(()) => "Token de Google guardado. Ya puedes usar /cuentas.".to_string(),
+                            Err(e) => {
+                                eprintln!("[auth_google: exchange error: {e}]");
+                                "Error al intercambiar el código. Comprueba que es correcto e inténtalo de nuevo con /auth_google.".to_string()
+                            }
+                        }
+                    };
+                    self.gateway.post_message(update.chat_id, &msg);
+                    continue;
+                }
             }
 
             // Handle /auth_google — start OAuth2 flow for Google Sheets
@@ -259,7 +265,7 @@ impl TelegramBot {
                 use crate::infrastructure::google_sheets::auth_url;
                 let msg = match auth_url() {
                     Some(url) => {
-                        pending_auth_chats.insert(update.chat_id);
+                        pending_auth_chats.insert(update.chat_id, Instant::now());
                         format!("Abre este enlace en tu navegador y autoriza el acceso:\n\n{url}\n\nCuando Google te muestre el código, envíamelo aquí.")
                     }
                     None => "GOOGLE_CLIENT_ID no configurado en .env.".to_string(),
@@ -360,7 +366,7 @@ impl TelegramBot {
         let mut offset: i64 = 0;
         let mut handlers: HashMap<i64, Arc<dyn OrderHandler>> = HashMap::new();
         let mut voice_mode_chats: HashSet<i64> = HashSet::new();
-        let mut pending_auth_chats: HashSet<i64> = HashSet::new();
+        let mut pending_auth_chats: HashMap<i64, Instant> = HashMap::new();
 
         // None = voice never used this session; Some(t) = time of last audio playback.
         let last_voice: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));

@@ -36,7 +36,7 @@ impl SheetsClient {
     fn access_token(&self) -> Result<String, String> {
         let body = format!(
             "client_id={}&client_secret={}&refresh_token={}&grant_type=refresh_token",
-            self.client_id, self.client_secret, self.refresh_token
+            urlencode(&self.client_id), urlencode(&self.client_secret), urlencode(&self.refresh_token)
         );
         let resp = ureq::post("https://oauth2.googleapis.com/token")
             .set("Content-Type", "application/x-www-form-urlencoded")
@@ -46,7 +46,7 @@ impl SheetsClient {
         let json: Value = serde_json::from_str(&body).map_err(|e| format!("token parse: {e}"))?;
         json["access_token"]
             .as_str()
-            .ok_or_else(|| format!("no access_token in response: {json}"))
+            .ok_or_else(|| "no access_token in Google response".to_string())
             .map(|s| s.to_string())
     }
 
@@ -97,7 +97,7 @@ pub fn exchange_and_save_token(code: &str) -> Result<(), String> {
     let body = format!(
         "client_id={}&client_secret={}&code={}&grant_type=authorization_code\
          &redirect_uri=urn:ietf:wg:oauth:2.0:oob",
-        client_id, client_secret, code
+        urlencode(&client_id), urlencode(&client_secret), urlencode(code)
     );
     let resp = ureq::post("https://oauth2.googleapis.com/token")
         .set("Content-Type", "application/x-www-form-urlencoded")
@@ -107,9 +107,18 @@ pub fn exchange_and_save_token(code: &str) -> Result<(), String> {
     let json: Value = serde_json::from_str(&body).map_err(|e| format!("token parse: {e}"))?;
     let token = json["refresh_token"]
         .as_str()
-        .ok_or_else(|| format!("no refresh_token in response: {json}"))?;
+        .ok_or_else(|| "no refresh_token in Google response".to_string())?;
 
     std::fs::write(TOKEN_FILE, token).map_err(|e| format!("write {TOKEN_FILE}: {e}"))
+}
+
+fn urlencode(s: &str) -> String {
+    s.bytes().flat_map(|b| match b {
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+            vec![b as char]
+        }
+        _ => format!("%{b:02X}").chars().collect(),
+    }).collect()
 }
 
 /// Build the Google OAuth2 authorization URL using GOOGLE_CLIENT_ID from env.

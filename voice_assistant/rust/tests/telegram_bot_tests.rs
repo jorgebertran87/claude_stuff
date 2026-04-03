@@ -1,7 +1,7 @@
 //! Unit tests for TelegramBot behaviour.
 //! Detroit School: hand-rolled fakes, no mock library.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use voice_assistant::domain::ports::OrderHandler;
@@ -62,7 +62,7 @@ fn voice_mode_command_sends_activation_confirmation() {
         &|| Arc::new(FakeHandler { response: "ok".into() }),
         &mut handlers,
         &mut voice_mode_chats,
-        &mut HashSet::new(),
+        &mut HashMap::new(),
         &mut offset,
         &no_speak,
         &|| {},
@@ -90,7 +90,7 @@ fn voice_mode_enabled_speaks_response_via_speak_text() {
         &|| Arc::new(FakeHandler { response: "respuesta".into() }),
         &mut handlers,
         &mut voice_mode_chats,
-        &mut HashSet::new(),
+        &mut HashMap::new(),
         &mut offset,
         &move |text| spoken_clone.lock().unwrap().push(text.to_string()),
         &|| {},
@@ -116,7 +116,7 @@ fn voice_mode_command_second_time_deactivates_and_sends_confirmation() {
         &|| Arc::new(FakeHandler { response: "ok".into() }),
         &mut handlers,
         &mut voice_mode_chats,
-        &mut HashSet::new(),
+        &mut HashMap::new(),
         &mut offset,
         &no_speak,
         &|| {},
@@ -143,7 +143,7 @@ fn voice_mode_disabled_does_not_speak_response() {
         &|| Arc::new(FakeHandler { response: "respuesta".into() }),
         &mut handlers,
         &mut voice_mode_chats,
-        &mut HashSet::new(),
+        &mut HashMap::new(),
         &mut offset,
         &move |text| spoken_clone.lock().unwrap().push(text.to_string()),
         &|| {},
@@ -169,7 +169,7 @@ fn voice_mode_does_not_speak_alexa_spotify_responses() {
         &|| Arc::new(FakeHandler { response: "Alexa, pon \"Bohemian Rhapsody\" en Spotify".into() }),
         &mut handlers,
         &mut voice_mode_chats,
-        &mut HashSet::new(),
+        &mut HashMap::new(),
         &mut offset,
         &move |text| spoken_clone.lock().unwrap().push(text.to_string()),
         &|| {},
