@@ -8,6 +8,8 @@ if [[ "${RUN_IMAGE}" ]]; then
     docker pull "${IMAGE}"
 fi
 
+touch "${PWD}/.google_refresh_token"
+
 CONTAINER=$(docker run -d \
     -e PULSE_SERVER=unix:/tmp/pulse.sock \
     -e SDL_AUDIODRIVER=pulse \
@@ -17,6 +19,7 @@ CONTAINER=$(docker run -d \
     -v ${HOME}/.claude:/root/.claude \
     -v ${HOME}/.claude.json:/root/.claude.json \
     -v ${PWD}/.orders_tokens:/app/.orders_tokens:rw \
+    -v ${PWD}/.google_refresh_token:/app/.google_refresh_token:rw \
     ${IMAGE} "$@")
 
 docker logs -f "$CONTAINER" &

@@ -208,6 +208,7 @@ impl TelegramBot {
         make_handler: &dyn Fn() -> Arc<dyn OrderHandler>,
         handlers: &mut HashMap<i64, Arc<dyn OrderHandler>>,
         voice_mode_chats: &mut HashSet<i64>,
+        pending_auth_chats: &mut HashSet<i64>,
         offset: &mut i64,
         speak_text: &dyn Fn(&str),
         on_voice: &dyn Fn(),
@@ -224,6 +225,35 @@ impl TelegramBot {
             }
 
             let text = update.text.trim();
+
+            // Handle pending OAuth2 code exchange
+            if pending_auth_chats.contains(&update.chat_id) && !text.starts_with('/') {
+                pending_auth_chats.remove(&update.chat_id);
+                use crate::infrastructure::google_sheets::exchange_and_save_token;
+                let msg = match exchange_and_save_token(text) {
+                    Ok(()) => "Token de Google guardado. Ya puedes usar /cuentas.".to_string(),
+                    Err(e) => {
+                        eprintln!("[auth_google: exchange error: {e}]");
+                        format!("Error al intercambiar el código: {e}")
+                    }
+                };
+                self.gateway.post_message(update.chat_id, &msg);
+                continue;
+            }
+
+            // Handle /auth_google — start OAuth2 flow for Google Sheets
+            if text == "/auth_google" {
+                use crate::infrastructure::google_sheets::auth_url;
+                let msg = match auth_url() {
+                    Some(url) => {
+                        pending_auth_chats.insert(update.chat_id);
+                        format!("Abre este enlace en tu navegador y autoriza el acceso:\n\n{url}\n\nCuando Google te muestre el código, envíamelo aquí.")
+                    }
+                    None => "GOOGLE_CLIENT_ID no configurado en .env.".to_string(),
+                };
+                self.gateway.post_message(update.chat_id, &msg);
+                continue;
+            }
 
             // Handle /reset command
             if text == "/reset" {
@@ -253,6 +283,13 @@ impl TelegramBot {
                 };
                 let msg = if enabled { "Modo voz activado." } else { "Modo voz desactivado." };
                 self.gateway.post_message(update.chat_id, msg);
+                continue;
+            }
+
+            if text == "/cuentas" {
+                let handler = handlers.entry(update.chat_id).or_insert_with(make_handler);
+                let msg = handle_cuentas(Arc::clone(handler));
+                self.gateway.post_message(update.chat_id, &msg);
                 continue;
             }
 
@@ -310,6 +347,7 @@ impl TelegramBot {
         let mut offset: i64 = 0;
         let mut handlers: HashMap<i64, Arc<dyn OrderHandler>> = HashMap::new();
         let mut voice_mode_chats: HashSet<i64> = HashSet::new();
+        let mut pending_auth_chats: HashSet<i64> = HashSet::new();
 
         // None = voice never used this session; Some(t) = time of last audio playback.
         let last_voice: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
@@ -344,9 +382,41 @@ impl TelegramBot {
         };
 
         loop {
-            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut offset, &speak_text, &on_voice);
+            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut pending_auth_chats, &mut offset, &speak_text, &on_voice);
         }
     }
+}
+
+fn handle_cuentas(handler: Arc<dyn OrderHandler>) -> String {
+    use crate::infrastructure::google_sheets::SheetsClient;
+
+    let client = match SheetsClient::from_env() {
+        Some(c) => c,
+        None => return "Google Sheets no configurado. Añade GOOGLE_SPREADSHEET_ID, \
+                        GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y GOOGLE_REFRESH_TOKEN al .env."
+            .to_string(),
+    };
+
+    let data = match client.fetch_as_text() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("[cuentas: fetch error: {e}]");
+            return "Error al acceder a Google Sheets. Comprueba las credenciales en .env."
+                .to_string();
+        }
+    };
+
+    let sheet_name = std::env::var("CUENTAS_SHEET_NAME")
+        .unwrap_or_else(|_| "Cuentas Personales".to_string());
+
+    let prompt = format!(
+        "Analiza estos datos de mi hoja de cálculo '{sheet_name}' y dame un resumen claro y detallado:\n\n\
+         {data}\n\n\
+         Incluye: saldo total por cuenta, ingresos y gastos del período, categorías de gasto principales, \
+         y cualquier observación relevante sobre el estado financiero."
+    );
+
+    handler.handle(&prompt)
 }
 
 /// Set or query the default PulseAudio sink volume via `pactl`.
