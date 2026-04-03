@@ -25,4 +25,4 @@ Feature: Conversation flow and state transitions
     And the user says the wake word "claudito" during playback
     When the speech is interrupted
     Then waiting_for_answer is set to True
-    So that the next order is captured directly without requiring the wake word again
+    And the next order is captured directly without requiring the wake word again

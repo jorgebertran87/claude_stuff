@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use crate::domain::ports::OrderHandler;
 
 /// Detect which skill to use based on the order text.
-pub(crate) fn detect_intent(order: &str) -> &'static str {
+pub fn detect_intent(order: &str) -> &'static str {
     let lower = order.to_lowercase();
     if lower.contains("bus") || lower.contains("autobús") || lower.contains("autobus")
         || lower.contains("parada") || lower.contains("línea") || lower.contains("linea")
@@ -18,7 +18,8 @@ pub(crate) fn detect_intent(order: &str) -> &'static str {
         || lower.contains("reproduce") || lower.contains("pon ")
     {
         "music"
-    } else if lower.contains("tiempo") || lower.contains("lluvia") || lower.contains("temperatura")
+    } else if lower.contains("tiempo") || lower.contains("lluvia") || lower.contains("llover")
+        || lower.contains("temperatura")
         || lower.contains("calor") || lower.contains("frío") || lower.contains("frio")
         || lower.contains("clima") || lower.contains("sol") || lower.contains("nube")
         || lower.contains("weather")
@@ -30,7 +31,7 @@ pub(crate) fn detect_intent(order: &str) -> &'static str {
 }
 
 /// Strip YAML frontmatter from a skill `.md` file, returning only the prompt body.
-pub(crate) fn strip_frontmatter(content: &str) -> String {
+pub fn strip_frontmatter(content: &str) -> String {
     if let Some(rest) = content.strip_prefix("---") {
         if let Some(end) = rest.find("\n---") {
             return rest[end + 4..].trim().to_string();

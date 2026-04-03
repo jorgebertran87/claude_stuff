@@ -14,6 +14,8 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock* build.rs ./
 COPY src/ src/
+COPY tests/ tests/
+COPY features/ features/
 
 ENV RUST_MIN_STACK=16777216
 RUN cargo build --release

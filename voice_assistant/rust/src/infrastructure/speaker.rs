@@ -110,7 +110,7 @@ pub fn alexa_spotify_title(text: &str) -> Option<(String, String)> {
 
 /// Build the Alexa+Spotify voice command in the title's language.
 /// Spanish titles keep the original Spanish phrasing; everything else uses English.
-fn build_alexa_command(title: &str, lang: &str) -> String {
+pub fn build_alexa_command(title: &str, lang: &str) -> String {
     match lang {
         "es" => format!("Alexa, pon {} en Spotify", title),
         _    => format!("Alexa, play {} on Spotify", title),

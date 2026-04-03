@@ -27,13 +27,34 @@ run-telegram:
 run-telegram-prod:
 	@RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) ./run.sh --telegram &
 
-test:
+UNIT_TESTS = --lib \
+	--test wake_word_detection \
+	--test order_capture \
+	--test interruptible_speech \
+	--test audio_processing \
+	--test conversation_flow \
+	--test claude_handler_token_logging \
+	--test session_continuity \
+	--test skill_routing \
+	--test cli_direct_order
+
+test tests:
+	rsync -a --delete ../features/ features/
 	docker build --platform $(LOCAL_PLATFORM) --target builder -t $(IMAGE)-builder .
 	docker run --rm \
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \
 		$(IMAGE)-builder \
-		cargo test
+		cargo test $(UNIT_TESTS)
+
+test-integration:
+	rsync -a --delete ../features/ features/
+	docker build --platform $(LOCAL_PLATFORM) --target builder -t $(IMAGE)-builder .
+	docker run --rm \
+		-e SDL_AUDIODRIVER=dummy \
+		-e SDL_VIDEODRIVER=dummy \
+		$(IMAGE)-builder \
+		cargo test --test tts_pipeline --test tts_http_integration --test speech_recognition_integration --test claude_cli_integration
 
 debug:
 	docker run -it --rm \
@@ -47,4 +68,4 @@ deploy:
 	scp Makefile run.sh pequenin:~/pequenin	
 	scp -r .claude pequenin:~/pequenin/.claude
 
-.PHONY: build build-local run run-prod run-telegram run-telegram-prod test debug deploy
+.PHONY: build build-local run run-prod run-telegram run-telegram-prod test tests test-integration debug deploy
