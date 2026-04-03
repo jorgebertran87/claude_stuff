@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use crate::domain::ports::OrderHandler;
 
 /// Detect which skill to use based on the order text.
-fn detect_intent(order: &str) -> &'static str {
+pub(crate) fn detect_intent(order: &str) -> &'static str {
     let lower = order.to_lowercase();
     if lower.contains("bus") || lower.contains("autobús") || lower.contains("autobus")
         || lower.contains("parada") || lower.contains("línea") || lower.contains("linea")
@@ -30,7 +30,7 @@ fn detect_intent(order: &str) -> &'static str {
 }
 
 /// Strip YAML frontmatter from a skill `.md` file, returning only the prompt body.
-fn strip_frontmatter(content: &str) -> String {
+pub(crate) fn strip_frontmatter(content: &str) -> String {
     if let Some(rest) = content.strip_prefix("---") {
         if let Some(end) = rest.find("\n---") {
             return rest[end + 4..].trim().to_string();

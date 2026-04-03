@@ -31,7 +31,11 @@ run-telegram-prod:
 	@RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) ./run.sh --telegram &
 
 test:
-	docker run --rm -e SDL_AUDIODRIVER=dummy -e SDL_VIDEODRIVER=dummy $(DOCKER_USERNAME)/$(IMAGE) \
+	docker build --platform $(LOCAL_PLATFORM) --target builder -t $(IMAGE)-builder .
+	docker run --rm \
+		-e SDL_AUDIODRIVER=dummy \
+		-e SDL_VIDEODRIVER=dummy \
+		$(IMAGE)-builder \
 		cargo test
 
 debug:
