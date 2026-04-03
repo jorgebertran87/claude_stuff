@@ -46,6 +46,7 @@ debug:
 		$(DOCKER_USERNAME)/$(IMAGE) bash
 
 deploy:
-	scp Makefile run.sh pequenin:~/pequenin		
+	scp Makefile run.sh pequenin:~/pequenin	
+	scp -r .claude pequenin:~/pequenin/.claude
 
 .PHONY: build build-local run run-prod run-telegram run-telegram-prod test debug push deploy
