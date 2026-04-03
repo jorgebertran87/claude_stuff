@@ -77,7 +77,7 @@ ClaudeCodeHandler.handle(order)    claude-haiku-4-5 via Claude Code CLI
 print response to log
     │  melody still playing
     ▼
-GTTSSpeaker.speak() — TTS generation (gTTS) + playback at 1.5× speed (ffplay atempo)
+GTTSSpeaker.speak() — TTS generation (gTTS) + playback at 1.2× speed (ffplay atempo)
     │  melody still playing
     ▼
 on_playback_start() fires ─────────► melody thread stopped
@@ -115,6 +115,7 @@ All configuration lives in `rust/.env`. See `rust/.env.example`.
 | `DEFAULT_USER_CITY` | _(required)_ | Default city for weather queries with no location specified |
 | `TELEGRAM_BOT_TOKEN` | _(required for `--telegram`)_ | Bot token from BotFather |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | _(empty = allow all)_ | Comma-separated list of chat IDs that may use the bot |
+| `BT_SPEAKER_MAC` | _(optional)_ | Bluetooth MAC address of the speaker; disconnected automatically after 5 min of voice inactivity |
 
 ### `.env.example`
 
@@ -125,6 +126,7 @@ WAKE_WORD=Claudito
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_CHAT_IDS=
 DOCKER_USERNAME=
+BT_SPEAKER_MAC=
 ```
 
 ## Running with Docker
@@ -191,14 +193,16 @@ make run-telegram
 ./run.sh --telegram
 ```
 
-In Telegram mode the PulseAudio socket is not mounted — no audio hardware is needed. Set `TELEGRAM_BOT_TOKEN` in `.env` before starting. Each Telegram chat gets its own independent Claude session. Available commands:
+Set `TELEGRAM_BOT_TOKEN` in `.env` before starting. Each Telegram chat gets its own independent Claude session. Available commands:
 
 | Command | Description |
 |---|---|
 | `/reset` | Clear the conversation session for the current chat |
 | `/usage` | Show a summary of token usage and cost logged in `.orders_tokens` |
+| `/voice_mode` | Toggle spoken audio responses for the current chat (plays through the local speaker) |
+| `/volume [+N\|-N\|N]` | Adjust or query the speaker volume (e.g. `/volume 70`, `/volume +10`, `/volume`) |
 
-If `TELEGRAM_ALLOWED_CHAT_IDS` is empty, the bot responds to any chat. Populate it with a comma-separated list of numeric chat IDs to restrict access. Messages containing only `/commands` other than `/reset` are silently ignored. Responses longer than 4 096 characters are split and sent as multiple messages.
+If `TELEGRAM_ALLOWED_CHAT_IDS` is empty, the bot responds to any chat. Populate it with a comma-separated list of numeric chat IDs to restrict access. Messages containing only `/commands` other than the ones listed above are silently ignored. Responses longer than 4 096 characters are split and sent as multiple messages.
 
 ### Run with the published Docker Hub image
 
@@ -239,7 +243,7 @@ Opens an interactive shell inside the container. Useful for inspecting audio dev
 3. Say **"Claudito"** — the app prints `Wake word detected!`
 4. Speak your order — capture ends automatically after 2 seconds of silence
 5. A melody plays while Claude processes the order and prepares the audio
-6. Claude speaks the response at 1.5× speed
+6. Claude speaks the response at 1.2× speed
 7. If the response is a question, speak your answer directly — no wake word needed
 8. While Claude is speaking, say the wake word to interrupt and ask something new
 9. Repeat from step 3, or press `Ctrl+C` to quit
@@ -279,11 +283,15 @@ If the wake word is recognised alone, a beep prompts you to speak the order sepa
 
 **Waiting melody** — `_handle_with_melody` starts a `play_melody` thread before calling `handle()`. The melody is a repeating sine tone (520 Hz, 400 ms, 200 ms gap) played via `ffplay`. A shared `AtomicBool` stop signal is set inside the `on_playback_start` callback, which fires just before `ffplay` begins TTS playback, stopping the melody at the exact moment audio output starts.
 
-**Audio processing** — TTS MP3 bytes from gTTS are written to a temp file and played via `ffplay -af atempo=1.5`, speeding up playback 1.5× without pitch distortion. No additional post-processing is applied.
+**Audio processing** — TTS MP3 bytes from gTTS are written to a temp file and played via `ffplay -af atempo=1.2`, speeding up playback 1.2× without pitch distortion. No additional post-processing is applied.
 
 **TTS chunking** — long responses are split at sentence boundaries (`.`, `!`, `?`, newlines) into chunks of ≤ 180 characters before being sent to gTTS, mirroring gTTS's own internal limit. The resulting MP3 segments are concatenated into a single byte buffer and played in one `ffplay` call.
 
-**Alexa/Spotify handling** — if the response contains "alexa" and "spotify" and a double- or single-quoted song title, `alexa_spotify_parts` splits it into `(frame, es)`, `(title, detected_lang)`, `(suffix, es)` so the title is spoken in its own language rather than being forced into Spanish.
+**Alexa/Spotify handling** — if the response contains "alexa", "spotify", and a quoted song or playlist title, `alexa_spotify_title` extracts the title and detects its language. The entire voice command is then rebuilt and synthesised as a single TTS call in that language: Spanish titles produce `"Alexa, pon X en Spotify"`, English titles produce `"Alexa, play X on Spotify"`. This avoids any multilingual segment splitting and the audio gaps it caused.
+
+**Voice mode (Telegram)** — `/voice_mode` toggles spoken audio output for a chat. When active, Claude's text responses are synthesised with gTTS and played through the local speaker (PulseAudio). Alexa+Spotify orders are always spoken regardless of voice mode. `/volume [+N|-N|N]` adjusts the PulseAudio default sink volume via `pactl` and replies with the resulting percentage.
+
+**Bluetooth auto-disconnect** — when `BT_SPEAKER_MAC` is set, a background thread checks every 30 seconds whether 5 minutes have elapsed since the last audio playback (voice mode response or Alexa+Spotify order in Telegram mode; any voice order in listen mode). If so, `bluetoothctl disconnect <MAC>` is called automatically. The timer resets after each playback and after each disconnect.
 
 **TTS preprocessing** strips markdown (links, bold, bullets, headers, inline code) from Claude's response before passing it to gTTS, so the spoken output is clean plain text.
 
