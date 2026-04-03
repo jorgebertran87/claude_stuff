@@ -18,7 +18,8 @@ Feature: Text-to-speech audio generation
     When the full TTS pipeline processes the response
     Then the combined audio is longer than the song title spoken alone
 
-  Scenario: Command frame and song title are spoken with different voices
+  Scenario: Full Alexa+Spotify command is synthesized as a single phrase in the title's detected language
     Given the response 'Alexa, pon "Shape of You" en Spotify'
-    When the command frame and the song title are each converted to audio
-    Then the resulting audio bytes are different from each other
+    When alexa_spotify_title extracts the title and detects its language as "en"
+    Then build_alexa_command produces "Alexa, play Shape of You on Spotify"
+    And synthesize_alexa_spotify produces non-empty audio bytes for the unified command
