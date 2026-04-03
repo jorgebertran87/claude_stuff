@@ -8,6 +8,13 @@ Claudito listens for a wake word, captures a voice order, sends it to Claude Cod
 
 ```
 voice_assistant/
+├── .claude/
+│   └── commands/                     # Claude Code skills (one per intent)
+│       ├── claudito.md               # Base behavioural rules
+│       ├── bus.md                    # Bus schedule prompt
+│       ├── weather.md                # Weather forecast prompt
+│       ├── music.md                  # Spotify / Alexa music prompt
+│       └── search.md                 # General Google search prompt
 ├── features/                         # BDD feature specs
 │   ├── audio_processing.feature
 │   ├── claude_handler_token_logging.feature
@@ -188,6 +195,7 @@ The container mounts:
 | `~/.claude.json` | Claude Code authentication |
 | `.env` | Application environment variables |
 | `.orders_tokens` | Append-only token/cost log |
+| `.claude/commands/` | Skill files — loaded at runtime as per-intent system prompts |
 
 ### Telegram mode
 
@@ -285,6 +293,8 @@ If the wake word is recognised alone, a beep prompts you to speak the order sepa
 **Wake word interruption** — during playback the microphone stays active. `_speak_interruptible` runs `speak()` in a background thread while the main thread calls `capturer.capture()` in a loop (1-second timeout, 2-second phrase limit). If the transcribed audio matches the wake word, `speaker.stop()` is called immediately (kills the `ffplay` process), the speak thread is joined, and the service proceeds directly to order capture without returning to wake word detection.
 
 **Conversation continuation** — after `speak()` finishes, if the response contains a `?` the `waiting_for_answer` flag is set. On the next iteration `wait_for_wake_word()` is skipped and `listen_for_order()` is called directly, so the user can answer naturally. If no order is captured (timeout), the flag resets and wake word detection resumes.
+
+**Skills-based prompting** — instead of a single static `system_prompt` file, `ClaudeCodeHandler` detects the intent of each order at runtime (bus / music / weather / search) and builds the system prompt by combining `claudito.md` (base behavioural rules) with the matching skill file. Skill files live in `.claude/commands/` and are mounted into the Docker container via `run.sh`; editing them takes effect on the next container start with no rebuild required.
 
 **Session resumption** — `ClaudeCodeHandler` tracks the Claude Code session ID returned from each `--output-format json` response. Subsequent orders within the same `make run` are sent with `--resume <session_id>`, preserving conversation context. `reset_session()` clears the stored ID; the service calls it after each complete interaction so that the next wake-word cycle starts a fresh context. In Telegram mode, `/reset` calls `reset_session()` for the relevant chat.
 

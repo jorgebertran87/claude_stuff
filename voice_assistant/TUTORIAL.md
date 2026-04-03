@@ -88,6 +88,20 @@ CUENTAS_SHEET_NAME=               # Name of your spreadsheet (optional)
 
 Save the file.
 
+### Customising the assistant's behaviour
+
+The assistant's instructions are split into skill files inside `.claude/commands/`:
+
+| File | Purpose |
+|---|---|
+| `claudito.md` | Base rules: concise replies, plain text, no markdown |
+| `bus.md` | How to answer bus schedule queries |
+| `weather.md` | How to answer weather queries |
+| `music.md` | How to search Spotify and format the Alexa command |
+| `search.md` | How to search Google and summarise results |
+
+You can edit any of these files with a text editor — changes take effect the next time the container starts, no rebuild needed.
+
 ---
 
 ## Step 5 — Build the Docker image
@@ -332,6 +346,20 @@ CUENTAS_SHEET_NAME=               # Nombre de tu hoja de cálculo (opcional)
 ```
 
 Guarda el fichero.
+
+### Personalizar el comportamiento del asistente
+
+Las instrucciones del asistente están divididas en ficheros de skill dentro de `.claude/commands/`:
+
+| Fichero | Propósito |
+|---|---|
+| `claudito.md` | Reglas base: respuestas concisas, texto plano, sin markdown |
+| `bus.md` | Cómo responder consultas de autobús |
+| `weather.md` | Cómo responder consultas del tiempo |
+| `music.md` | Cómo buscar en Spotify y formatear el comando de Alexa |
+| `search.md` | Cómo buscar en Google y resumir resultados |
+
+Puedes editar cualquiera de estos ficheros con un editor de texto — los cambios surten efecto la próxima vez que arranque el contenedor, sin necesidad de reconstruir la imagen.
 
 ---
 
