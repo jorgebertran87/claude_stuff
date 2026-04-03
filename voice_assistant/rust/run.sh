@@ -17,6 +17,7 @@ CONTAINER=$(docker run -d \
     --env-file .env \
     -v /run/user/${USER_UID}/pulse/native:/tmp/pulse.sock \
     -v ${HOME}/.claude:/root/.claude \
+    -v ${PWD}/../.claude:/app/.claude:ro \
     -v ${HOME}/.claude.json:/root/.claude.json \
     -v ${PWD}/.orders_tokens:/app/.orders_tokens:rw \
     -v ${PWD}/.google_refresh_token:/app/.google_refresh_token:rw \

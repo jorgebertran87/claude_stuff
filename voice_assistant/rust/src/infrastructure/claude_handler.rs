@@ -6,15 +6,71 @@ use std::sync::Mutex;
 
 use crate::domain::ports::OrderHandler;
 
-// `prompt` is gitignored; build.rs copies prompt.example → prompt when absent.
-const PROMPT_TEMPLATE: &str = include_str!("prompt");
+/// Detect which skill to use based on the order text.
+fn detect_intent(order: &str) -> &'static str {
+    let lower = order.to_lowercase();
+    if lower.contains("bus") || lower.contains("autobús") || lower.contains("autobus")
+        || lower.contains("parada") || lower.contains("línea") || lower.contains("linea")
+    {
+        "bus"
+    } else if lower.contains("música") || lower.contains("musica") || lower.contains("spotify")
+        || lower.contains("canción") || lower.contains("cancion") || lower.contains("playlist")
+        || lower.contains("reproduce") || lower.contains("pon ")
+    {
+        "music"
+    } else if lower.contains("tiempo") || lower.contains("lluvia") || lower.contains("temperatura")
+        || lower.contains("calor") || lower.contains("frío") || lower.contains("frio")
+        || lower.contains("clima") || lower.contains("sol") || lower.contains("nube")
+        || lower.contains("weather")
+    {
+        "weather"
+    } else {
+        "search"
+    }
+}
 
-fn load_prompt() -> String {
-    let voice_language   = std::env::var("VOICE_LANGUAGE").unwrap_or_else(|_| "es".into());
-    let default_user_city = std::env::var("DEFAULT_USER_CITY").unwrap_or_default();
-    PROMPT_TEMPLATE
-        .replace("{voice_language}", &voice_language)
-        .replace("{default_user_city}", &default_user_city)
+/// Strip YAML frontmatter from a skill `.md` file, returning only the prompt body.
+fn strip_frontmatter(content: &str) -> String {
+    if let Some(rest) = content.strip_prefix("---") {
+        if let Some(end) = rest.find("\n---") {
+            return rest[end + 4..].trim().to_string();
+        }
+    }
+    content.trim().to_string()
+}
+
+/// Load a skill file by name. Tries several candidate paths so it works both
+/// inside Docker (mounted at /app/.claude/commands/) and in local dev.
+fn load_skill(name: &str) -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+    let candidates = [
+        format!("/app/.claude/commands/{name}.md"),
+        format!("{home}/.claude/commands/{name}.md"),
+        format!("../.claude/commands/{name}.md"),
+        format!(".claude/commands/{name}.md"),
+    ];
+    for path in &candidates {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            return strip_frontmatter(&content);
+        }
+    }
+    eprintln!("[claude: skill '{name}' not found in any candidate path]");
+    String::new()
+}
+
+/// Build the system prompt for a given order: base behavioural rules + intent-specific skill.
+fn load_prompt(order: &str) -> String {
+    let voice_language = std::env::var("VOICE_LANGUAGE").unwrap_or_else(|_| "es".into());
+    let lang_rule = format!("Responde en el idioma oficial del país con código '{voice_language}'.");
+
+    let base     = load_skill("claudito");
+    let specific = load_skill(detect_intent(order));
+
+    [lang_rule, base, specific]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 // ── Public data types ─────────────────────────────────────────────────────────
@@ -106,7 +162,7 @@ struct ClaudeCliBackend;
 
 impl ClaudeBackend for ClaudeCliBackend {
     fn query(&self, order: &str, session_id: Option<&str>) -> Result<TokenUsage, String> {
-        let prompt = load_prompt();
+        let prompt = load_prompt(order);
         let mut cmd = Command::new("claude");
         cmd.args(["--print", "--output-format", "json", "--model", "claude-haiku-4-5",
                   "--allowedTools", "Bash,WebSearch"]);

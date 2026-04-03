@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock* build.rs system_prompt system_prompt.example* ./
+COPY Cargo.toml Cargo.lock* build.rs ./
 COPY src/ src/
 
 ENV RUST_MIN_STACK=16777216

@@ -7,6 +7,6 @@ Busca en Spotify la canción o playlist: $ARGUMENTS
 
 Reglas:
 - Busca el nombre exacto proporcionado
-- Para playlists, busca solo en inglés
+- Busca solo en inglés
 - Verifica disponibilidad
 - Devuelve únicamente: Alexa, pon "X" en Spotify
