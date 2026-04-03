@@ -10,19 +10,19 @@ pub struct TtsHttpWorld {
     synth_bytes: Vec<u8>,
 }
 
-#[given(regex = r#"^the text "(.+)" and the language code "(.+)"$"#)]
+#[given(regex = r#"^the text "([^"]+)" and the language code "([^"]+)"$"#)]
 fn given_text_lang(world: &mut TtsHttpWorld, text: String, lang: String) {
     world.text = text;
     world.lang = lang;
 }
 
-#[given(regex = r#"^the text "(.+)" and the unsupported language code "(.+)"$"#)]
+#[given(regex = r#"^the text "([^"]+)" and the unsupported language code "([^"]+)"$"#)]
 fn given_text_unsupported(world: &mut TtsHttpWorld, text: String, lang: String) {
     world.text = text;
     world.lang = lang;
 }
 
-#[given(regex = r#"^the text "(.+)"$"#)]
+#[given(regex = r#"^the text "([^"]+)"$"#)]
 fn given_text(world: &mut TtsHttpWorld, text: String) {
     world.text = text;
 }
@@ -50,8 +50,6 @@ fn then_non_empty_bytes(world: &mut TtsHttpWorld) {
 
 #[then("the bytes start with a valid MP3 header")]
 fn then_mp3_header(world: &mut TtsHttpWorld) {
-    // MP3 frames start with sync bits 0xFF 0xFB (or 0xFF 0xE0..0xFF)
-    // or ID3 tag starts with "ID3"
     assert!(world.synth_bytes.len() >= 3, "too few bytes for MP3 header");
     let has_mp3_sync = world.synth_bytes[0] == 0xFF && (world.synth_bytes[1] & 0xE0) == 0xE0;
     let has_id3 = &world.synth_bytes[0..3] == b"ID3";

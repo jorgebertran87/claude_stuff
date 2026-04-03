@@ -159,7 +159,7 @@ impl OrderHandler for ClaudeCodeHandler {
 
 // ── Real backend: calls the `claude` CLI ─────────────────────────────────────
 
-struct ClaudeCliBackend;
+pub struct ClaudeCliBackend;
 
 impl ClaudeBackend for ClaudeCliBackend {
     fn query(&self, order: &str, session_id: Option<&str>) -> Result<TokenUsage, String> {

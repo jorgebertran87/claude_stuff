@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpulse-dev \
         libasound2-dev \
         libsdl2-dev \
+        ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -16,6 +17,7 @@ COPY Cargo.toml Cargo.lock* build.rs ./
 COPY src/ src/
 COPY tests/ tests/
 COPY features/ features/
+COPY test.wav test2.wav ./
 
 ENV RUST_MIN_STACK=16777216
 RUN cargo build --release
