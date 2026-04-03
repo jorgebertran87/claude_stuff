@@ -226,6 +226,19 @@ impl TelegramBot {
 
             let text = update.text.trim();
 
+            // Handle /list — show all available commands
+            if text == "/list" {
+                self.gateway.post_message(update.chat_id, "\
+/list         — muestra este mensaje\n\
+/reset        — reinicia la sesión de Claude\n\
+/usage        — resumen de tokens y coste acumulado\n\
+/voice_mode   — activa/desactiva respuestas por voz\n\
+/volume [+N|-N|N] — consulta o ajusta el volumen del altavoz\n\
+/cuentas      — analiza tu hoja de cálculo de Google Sheets\n\
+/auth_google  — inicia el flujo OAuth2 para Google Sheets");
+                continue;
+            }
+
             // Handle pending OAuth2 code exchange
             if pending_auth_chats.contains(&update.chat_id) && !text.starts_with('/') {
                 pending_auth_chats.remove(&update.chat_id);

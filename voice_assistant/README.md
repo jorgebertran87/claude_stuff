@@ -203,6 +203,7 @@ Set `TELEGRAM_BOT_TOKEN` in `.env` before starting. Each Telegram chat gets its 
 
 | Command | Description |
 |---|---|
+| `/list` | Show all available commands |
 | `/reset` | Clear the conversation session for the current chat |
 | `/usage` | Show a summary of token usage and cost logged in `.orders_tokens` |
 | `/voice_mode` | Toggle spoken audio responses for the current chat (plays through the local speaker) |
