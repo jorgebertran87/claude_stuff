@@ -13,9 +13,6 @@ build-prod:
 build:
 	docker build --platform $(LOCAL_PLATFORM) -t $(IMAGE) .
 
-push:
-	docker push $(DOCKER_USERNAME)/$(IMAGE)
-
 UID := $(shell id -u)
 
 run:
@@ -46,7 +43,8 @@ debug:
 		$(DOCKER_USERNAME)/$(IMAGE) bash
 
 deploy:
+	$(MAKE) build-prod
 	scp Makefile run.sh pequenin:~/pequenin	
 	scp -r .claude pequenin:~/pequenin/.claude
 
-.PHONY: build build-local run run-prod run-telegram run-telegram-prod test debug push deploy
+.PHONY: build build-local run run-prod run-telegram run-telegram-prod test debug deploy
