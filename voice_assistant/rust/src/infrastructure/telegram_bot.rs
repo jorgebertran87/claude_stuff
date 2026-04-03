@@ -201,6 +201,8 @@ impl TelegramBot {
     /// `voice_mode_chats` tracks which chat IDs have voice mode enabled.
     /// `speak_text` is called with the response text when voice mode is active —
     /// injectable so tests can verify calls without real TTS/audio.
+    /// `on_voice` is called whenever audio is actually played; used to reset
+    /// the inactivity timer that disconnects the Bluetooth speaker.
     pub fn run_once(
         &self,
         make_handler: &dyn Fn() -> Arc<dyn OrderHandler>,
@@ -208,6 +210,7 @@ impl TelegramBot {
         voice_mode_chats: &mut HashSet<i64>,
         offset: &mut i64,
         speak_text: &dyn Fn(&str),
+        on_voice: &dyn Fn(),
     ) {
         let updates = self.gateway.fetch_updates(*offset);
 
@@ -286,11 +289,13 @@ impl TelegramBot {
                     eprintln!("[telegram: TTS synthesis failed]");
                 } else {
                     play_audio_bytes(&bytes);
+                    on_voice();
                 }
             }
             if voice_mode_chats.contains(&update.chat_id) && !is_alexa_spotify {
                 eprintln!("[telegram: voice mode active for chat {}, speaking response]", update.chat_id);
                 speak_text(&response);
+                on_voice();
             }
             self.gateway.post_message(update.chat_id, &response);
         }
@@ -298,10 +303,30 @@ impl TelegramBot {
 
     /// Main event loop: fetch updates and process them indefinitely.
     pub fn run(&self, make_handler: impl Fn() -> Arc<dyn OrderHandler>) {
+        use std::sync::Mutex;
+        use std::time::Instant;
+
         eprintln!("[telegram bot starting, allowed chats: {:?}]", self.allowed_chat_ids);
         let mut offset: i64 = 0;
         let mut handlers: HashMap<i64, Arc<dyn OrderHandler>> = HashMap::new();
         let mut voice_mode_chats: HashSet<i64> = HashSet::new();
+
+        // None = voice never used this session; Some(t) = time of last audio playback.
+        let last_voice: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+        let last_voice_bg = Arc::clone(&last_voice);
+
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(30));
+                let elapsed = last_voice_bg.lock().unwrap()
+                    .map(|t| t.elapsed())
+                    .unwrap_or(Duration::ZERO);
+                if elapsed >= Duration::from_secs(300) {
+                    crate::infrastructure::speaker::disconnect_bt_speaker();
+                    *last_voice_bg.lock().unwrap() = None;
+                }
+            }
+        });
 
         let speak_text = |text: &str| {
             eprintln!("[voice_mode: synthesizing {} chars]", text.len());
@@ -314,8 +339,12 @@ impl TelegramBot {
             }
         };
 
+        let on_voice = || {
+            *last_voice.lock().unwrap() = Some(Instant::now());
+        };
+
         loop {
-            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut offset, &speak_text);
+            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut offset, &speak_text, &on_voice);
         }
     }
 }

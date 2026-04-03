@@ -262,6 +262,24 @@ pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
         .unwrap_or_else(|| strip_markdown(text));
     synthesize_text(&unified)
 }
+/// Disconnect the Bluetooth speaker whose MAC address is in `BT_SPEAKER_MAC`.
+/// No-op (with a log) if the env var is not set.
+pub fn disconnect_bt_speaker() {
+    let mac = match std::env::var("BT_SPEAKER_MAC") {
+        Ok(m) if !m.is_empty() => m,
+        _ => {
+            eprintln!("[bt: BT_SPEAKER_MAC not set, skipping disconnect]");
+            return;
+        }
+    };
+    eprintln!("[bt: disconnecting {mac} after inactivity]");
+    let _ = Command::new("bluetoothctl")
+        .args(["disconnect", &mac])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
 /// Apply an ffmpeg `atempo` filter to MP3 bytes, returning the processed bytes.
 /// Falls back to the original bytes if ffmpeg fails.
 fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {

@@ -1,8 +1,10 @@
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::domain::model::{Language, WakeWord};
 use crate::domain::ports::{AudioCapturer, AudioSpeaker, OrderHandler, Transcriber};
+use crate::infrastructure::speaker::disconnect_bt_speaker;
 
 const ORDER_TIMEOUT_MS:       u64   = 10_000;
 const ORDER_RETRIES:          usize = 2;
@@ -92,6 +94,19 @@ impl VoiceListenerService {
         println!("====================");
         println!("Press Ctrl+C to quit.\n");
 
+        // Disconnect the BT speaker after 5 minutes without a voice order.
+        let last_activity: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
+        let last_activity_bg = Arc::clone(&last_activity);
+        thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_secs(30));
+                if last_activity_bg.lock().unwrap().elapsed() >= Duration::from_secs(300) {
+                    disconnect_bt_speaker();
+                    *last_activity_bg.lock().unwrap() = Instant::now();
+                }
+            }
+        });
+
         let mut waiting_for_answer = false;
         loop {
             let order = if waiting_for_answer {
@@ -102,6 +117,7 @@ impl VoiceListenerService {
             };
 
             if let Some(ref order_text) = order {
+                *last_activity.lock().unwrap() = Instant::now();
                 println!("Order received: {order_text:?}");
                 let (response, stop_melody, melody_thread) =
                     self.handle_with_melody(order_text);

@@ -64,6 +64,7 @@ fn voice_mode_command_sends_activation_confirmation() {
         &mut voice_mode_chats,
         &mut offset,
         &no_speak,
+        &|| {},
     );
 
     let msgs = posted.lock().unwrap();
@@ -90,6 +91,7 @@ fn voice_mode_enabled_speaks_response_via_speak_text() {
         &mut voice_mode_chats,
         &mut offset,
         &move |text| spoken_clone.lock().unwrap().push(text.to_string()),
+        &|| {},
     );
 
     let s = spoken.lock().unwrap();
@@ -114,6 +116,7 @@ fn voice_mode_command_second_time_deactivates_and_sends_confirmation() {
         &mut voice_mode_chats,
         &mut offset,
         &no_speak,
+        &|| {},
     );
 
     let msgs = posted.lock().unwrap();
@@ -139,6 +142,7 @@ fn voice_mode_disabled_does_not_speak_response() {
         &mut voice_mode_chats,
         &mut offset,
         &move |text| spoken_clone.lock().unwrap().push(text.to_string()),
+        &|| {},
     );
 
     assert!(spoken.lock().unwrap().is_empty(), "speak_text must not be called when voice mode is off");
@@ -163,6 +167,7 @@ fn voice_mode_does_not_speak_alexa_spotify_responses() {
         &mut voice_mode_chats,
         &mut offset,
         &move |text| spoken_clone.lock().unwrap().push(text.to_string()),
+        &|| {},
     );
 
     assert!(spoken.lock().unwrap().is_empty(), "speak_text must not be called for alexa+spotify responses");
