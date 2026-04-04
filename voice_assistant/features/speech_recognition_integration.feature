@@ -3,14 +3,14 @@ Feature: Google Speech recognition integration
   I want to transcribe real audio files using the Google Speech HTTP API
   So that voice input is converted to text without any stub
 
-  Scenario: A valid WAV file produces a non-empty transcription
-    Given the audio file "test.wav" at 16000 Hz mono 16-bit
+  Scenario: A Spanish WAV file produces a non-empty transcription
+    Given the audio file "test_speech_es.wav" at 16000 Hz mono 16-bit
     And the language is "es-ES"
     When GoogleTranscriber transcribes the audio
     Then the result is a non-empty string
 
-  Scenario: Transcribing with language "en-US" returns a non-empty result
-    Given the audio file "test.wav" at 16000 Hz mono 16-bit
+  Scenario: An English WAV file produces a non-empty transcription
+    Given the audio file "test_speech_en.wav" at 16000 Hz mono 16-bit
     And the language is "en-US"
     When GoogleTranscriber transcribes the audio
     Then the result is a non-empty string

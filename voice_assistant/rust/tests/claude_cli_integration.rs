@@ -1,24 +1,14 @@
 use cucumber::{given, when, then, World};
 use std::path::PathBuf;
-use std::process::Command;
 
 use voice_assistant::domain::ports::OrderHandler;
 use voice_assistant::infrastructure::claude_handler::{ClaudeCliBackend, ClaudeCodeHandler};
-
-fn claude_is_available() -> bool {
-    Command::new("claude")
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
 
 #[derive(World)]
 pub struct ClaudeCliWorld {
     handler: Option<ClaudeCodeHandler>,
     log_path: PathBuf,
     result: String,
-    skipped: bool,
 }
 
 impl std::fmt::Debug for ClaudeCliWorld {
@@ -26,7 +16,6 @@ impl std::fmt::Debug for ClaudeCliWorld {
         f.debug_struct("ClaudeCliWorld")
             .field("log_path", &self.log_path)
             .field("result", &self.result)
-            .field("skipped", &self.skipped)
             .finish()
     }
 }
@@ -40,18 +29,12 @@ impl Default for ClaudeCliWorld {
             handler: None,
             log_path,
             result: String::new(),
-            skipped: false,
         }
     }
 }
 
 #[given("the claude CLI is available and authenticated")]
 fn given_claude_available(world: &mut ClaudeCliWorld) {
-    if !claude_is_available() {
-        eprintln!("[skip: claude CLI not available]");
-        world.skipped = true;
-        return;
-    }
     world.handler = Some(ClaudeCodeHandler::with_injectable(
         Box::new(ClaudeCliBackend),
         world.log_path.clone(),
@@ -65,27 +48,23 @@ fn given_no_log(world: &mut ClaudeCliWorld) {
 
 #[when(regex = r#"^ClaudeCodeHandler handles "(.+)"$"#)]
 fn when_handle(world: &mut ClaudeCliWorld, order: String) {
-    if world.skipped { return; }
     let handler = world.handler.as_ref().unwrap();
     world.result = handler.handle(&order);
 }
 
 #[then("the returned string is non-empty")]
 fn then_non_empty(world: &mut ClaudeCliWorld) {
-    if world.skipped { return; }
     assert!(!world.result.is_empty(), "result should not be empty");
 }
 
 #[then("the stored session_id is non-empty after the call")]
 fn then_session_non_empty(world: &mut ClaudeCliWorld) {
-    if world.skipped { return; }
     // The handler stores session_id internally after a successful call.
     // If handle() returned a real response (not error), session_id was stored.
 }
 
 #[then("the token log file exists on disk")]
 fn then_log_exists(world: &mut ClaudeCliWorld) {
-    if world.skipped { return; }
     assert!(
         world.log_path.exists(),
         "token log file should exist at {:?}",
@@ -95,21 +74,18 @@ fn then_log_exists(world: &mut ClaudeCliWorld) {
 
 #[then(regex = r#"^the token log contains the text "(.+)"$"#)]
 fn then_log_contains_text(world: &mut ClaudeCliWorld, needle: String) {
-    if world.skipped { return; }
     let content = std::fs::read_to_string(&world.log_path).unwrap_or_default();
     assert!(content.contains(&needle), "log should contain \"{needle}\"");
 }
 
 #[then(regex = r#"^the token log contains "(.+)"$"#)]
 fn then_log_contains(world: &mut ClaudeCliWorld, needle: String) {
-    if world.skipped { return; }
     let content = std::fs::read_to_string(&world.log_path).unwrap_or_default();
     assert!(content.contains(&needle), "log should contain \"{needle}\"");
 }
 
 #[then(regex = r"^the token log file has exactly (\d+) lines$")]
 fn then_line_count(world: &mut ClaudeCliWorld, expected: usize) {
-    if world.skipped { return; }
     let content = std::fs::read_to_string(&world.log_path).unwrap_or_default();
     let count = content.lines().filter(|l| !l.trim().is_empty()).count();
     assert_eq!(count, expected, "expected {expected} log lines, got {count}");

@@ -49,12 +49,9 @@ test tests:
 
 test-integration:
 	rsync -a --delete ../features/ features/
-	docker build --platform $(LOCAL_PLATFORM) --target builder -t $(IMAGE)-builder .
-	docker run --rm \
-		-e SDL_AUDIODRIVER=dummy \
-		-e SDL_VIDEODRIVER=dummy \
-		$(IMAGE)-builder \
-		cargo test --test tts_pipeline --test tts_http_integration --test speech_recognition_integration --test claude_cli_integration
+	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
+	docker compose -f docker-compose.test.yml up --abort-on-container-exit
+	docker compose -f docker-compose.test.yml down
 
 mutants:
 	rsync -a --delete ../features/ features/

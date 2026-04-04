@@ -9,12 +9,10 @@ pub struct SpeechWorld {
     audio: Option<AudioCapture>,
     language: String,
     result: Option<Option<String>>,
-    requires_api: bool,
 }
 
 #[given(regex = r#"^the audio file "([^"]+)" at (\d+) Hz mono 16-bit$"#)]
 fn given_audio_file(world: &mut SpeechWorld, filename: String, sample_rate: u32) {
-    world.requires_api = true;
     let bytes = std::fs::read(&filename).unwrap_or_else(|_| {
         std::fs::read(format!("../{}", filename))
             .unwrap_or_else(|_| panic!("Cannot read audio file: {filename}"))
@@ -52,10 +50,6 @@ fn when_transcribe(world: &mut SpeechWorld) {
 #[then("the result is a non-empty string")]
 fn then_non_empty(world: &mut SpeechWorld) {
     let r = world.result.as_ref().unwrap();
-    if world.requires_api && r.is_none() {
-        eprintln!("[skip: Google Speech API returned no result — API may be unreachable]");
-        return;
-    }
     assert!(r.is_some(), "expected Some(string), got None");
     assert!(!r.as_ref().unwrap().is_empty(), "transcription should not be empty");
 }

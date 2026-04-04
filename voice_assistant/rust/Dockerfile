@@ -18,12 +18,21 @@ COPY .cargo/ .cargo/
 COPY src/ src/
 COPY tests/ tests/
 COPY features/ features/
-COPY test.wav test2.wav ./
+COPY test.wav test2.wav test_speech_es.wav test_speech_en.wav ./
 
 RUN cargo install --locked cargo-mutants@26.0.0
 
 ENV RUST_MIN_STACK=16777216
 RUN cargo build --release
+
+# ── Stage 1b: test (builder + claude CLI for integration tests) ───────────────
+FROM builder AS test
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
