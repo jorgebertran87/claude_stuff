@@ -55,3 +55,7 @@ harness = false
 [[test]]
 name = "claude_cli_integration"
 harness = false
+
+[[test]]
+name = "google_sheets_integration"
+harness = false

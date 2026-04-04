@@ -15,7 +15,6 @@ pub struct TtsWorld {
     extracted_title: String,
     detected_lang: String,
     alexa_command: String,
-    alexa_bytes: Vec<u8>,
 }
 
 #[given(regex = r#"^the text "(.+)" and the language code "(.+)"$"#)]

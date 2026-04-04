@@ -42,7 +42,8 @@ INTEGRATION_TESTS = \
 	--test tts_pipeline \
 	--test tts_http_integration \
 	--test speech_recognition_integration \
-	--test claude_cli_integration
+	--test claude_cli_integration \
+	--test google_sheets_integration
 
 test tests:
 	rsync -a --delete ../features/ features/
@@ -72,11 +73,12 @@ mutants-integration:
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker run --rm \
 		--network host \
+		--env-file .env \
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \
 		-v $(HOME)/.claude:/root/.claude \
 		$(IMAGE)-test \
-		cargo mutants -- $(INTEGRATION_TESTS)
+		cargo mutants -j 3 --config .cargo/mutants-integration.toml $(if $(FILE),-f $(FILE)) -- $(INTEGRATION_TESTS)
 
 debug:
 	docker run -it --rm \

@@ -2,6 +2,7 @@ services:
   integration-tests:
     image: voice-assistant-rust-test
     network_mode: host
+    env_file: .env
     environment:
       - SDL_AUDIODRIVER=dummy
       - SDL_VIDEODRIVER=dummy
