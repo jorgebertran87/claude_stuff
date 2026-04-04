@@ -1,7 +1,5 @@
 use cucumber::{given, when, then, World};
 
-use voice_assistant::domain::model::WakeWord;
-
 /// This feature tests conversation state transitions. We test the logic at the
 /// model / decision level because `VoiceListenerService::run` is an infinite
 /// loop that requires real threading.
@@ -11,7 +9,6 @@ pub struct ConvoWorld {
     response: String,
     waiting_for_answer: bool,
     interrupted: bool,
-    order_captured: Option<String>,
     melody_stopped: bool,
     echo_cleared: bool,
 }
@@ -56,7 +53,7 @@ fn then_echo_none(world: &mut ConvoWorld) {
 // ── Scenario: Response ending with a question ───────────────────────────────
 
 #[given(regex = r#"^the user says "(.+)" followed by "(.+)"$"#)]
-fn given_user_says(world: &mut ConvoWorld, _wake: String, _order: String) {
+fn given_user_says(_world: &mut ConvoWorld, _wake: String, _order: String) {
     // Setup context; the order has been processed.
 }
 
@@ -78,7 +75,7 @@ fn then_waiting_true(world: &mut ConvoWorld) {
 }
 
 #[then(regex = r#"^the next order "(.+)" is captured without requiring the wake word again$"#)]
-fn then_next_order_no_wake(world: &mut ConvoWorld, order: String) {
+fn then_next_order_no_wake(world: &mut ConvoWorld, _order: String) {
     // When waiting_for_answer is true, listen_for_order() is called directly
     // (skipping wait_for_wake_word). We verify the flag is set.
     assert!(world.waiting_for_answer);

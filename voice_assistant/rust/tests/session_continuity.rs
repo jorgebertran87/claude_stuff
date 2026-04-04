@@ -5,38 +5,7 @@ use std::sync::Mutex;
 use voice_assistant::domain::ports::OrderHandler;
 use voice_assistant::infrastructure::claude_handler::{ClaudeBackend, ClaudeCodeHandler, TokenUsage};
 
-// ── Fake backend that tracks calls ───────────────────────────────────────────
-
-struct FakeSessionBackend {
-    session_id_to_return: String,
-    calls: Mutex<Vec<Option<String>>>, // session_id received on each call
-}
-
-impl FakeSessionBackend {
-    fn new(session_id: &str) -> Self {
-        Self {
-            session_id_to_return: session_id.into(),
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-}
-
-impl ClaudeBackend for FakeSessionBackend {
-    fn query(&self, _order: &str, session_id: Option<&str>) -> Result<TokenUsage, String> {
-        self.calls.lock().unwrap().push(session_id.map(|s| s.to_string()));
-        Ok(TokenUsage {
-            input_tokens: 10,
-            output_tokens: 20,
-            cache_read_input_tokens: 0,
-            cache_creation_input_tokens: 0,
-            total_cost_usd: 0.001,
-            session_id: Some(self.session_id_to_return.clone()),
-            result: "ok".into(),
-        })
-    }
-}
-
-// ── World ────────────────────────────────────────────────────────────────────
+// ── Fake backend ────────────────────────────────────────────────────────────
 
 /// We need shared access to both the handler and the backend's call log.
 /// Since ClaudeCodeHandler takes ownership of the backend, we use a wrapper

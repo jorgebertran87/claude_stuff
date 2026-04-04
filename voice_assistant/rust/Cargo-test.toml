@@ -1,0 +1,57 @@
+[dev-dependencies]
+tempfile = "3"
+cucumber = "0.21"
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "macros"] }
+
+[[test]]
+name = "wake_word_detection"
+harness = false
+
+[[test]]
+name = "order_capture"
+harness = false
+
+[[test]]
+name = "interruptible_speech"
+harness = false
+
+[[test]]
+name = "audio_processing"
+harness = false
+
+[[test]]
+name = "conversation_flow"
+harness = false
+
+[[test]]
+name = "claude_handler_token_logging"
+harness = false
+
+[[test]]
+name = "tts_pipeline"
+harness = false
+
+[[test]]
+name = "session_continuity"
+harness = false
+
+[[test]]
+name = "skill_routing"
+harness = false
+
+[[test]]
+name = "cli_direct_order"
+harness = false
+
+[[test]]
+name = "tts_http_integration"
+harness = false
+
+[[test]]
+name = "speech_recognition_integration"
+harness = false
+
+[[test]]
+name = "claude_cli_integration"
+harness = false

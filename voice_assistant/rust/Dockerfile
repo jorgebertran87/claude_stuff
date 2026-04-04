@@ -14,19 +14,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock* build.rs ./
-COPY .cargo/ .cargo/
 COPY src/ src/
+
+ENV RUST_MIN_STACK=16777216
+RUN cargo build --release
+
+# ── Stage 1b: test (builder + claude CLI + cargo-mutants) ─────────────────────
+FROM builder AS test
+
+COPY Cargo-test.toml Cargo.toml ./
+RUN echo "" >> Cargo.toml
+RUN cat Cargo-test.toml >> Cargo.toml
+COPY .cargo/ .cargo/
 COPY tests/ tests/
 COPY features/ features/
 COPY test_speech_es.wav test_speech_en.wav ./
 
 RUN cargo install --locked cargo-mutants@26.0.0
-
-ENV RUST_MIN_STACK=16777216
-RUN cargo build --release
-
-# ── Stage 1b: test (builder + claude CLI for integration tests) ───────────────
-FROM builder AS test
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \

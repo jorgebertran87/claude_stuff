@@ -40,11 +40,11 @@ UNIT_TESTS = --lib \
 
 test tests:
 	rsync -a --delete ../features/ features/
-	docker build --platform $(LOCAL_PLATFORM) --target builder -t $(IMAGE)-builder .
+	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker run --rm \
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \
-		$(IMAGE)-builder \
+		$(IMAGE)-test \
 		cargo test $(UNIT_TESTS)
 
 test-integration:
@@ -55,11 +55,11 @@ test-integration:
 
 mutants:
 	rsync -a --delete ../features/ features/
-	docker build --platform $(LOCAL_PLATFORM) --target builder -t $(IMAGE)-builder .
+	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker run --rm \
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \
-		$(IMAGE)-builder \
+		$(IMAGE)-test \
 		cargo mutants -- $(UNIT_TESTS)
 
 debug:
