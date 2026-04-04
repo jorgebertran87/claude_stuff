@@ -50,7 +50,7 @@ test tests:
 test-integration:
 	rsync -a --delete ../features/ features/
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
-	docker compose -f docker-compose.test.yml up --abort-on-container-exit
+	docker compose -f docker-compose.test.yml up --abort-on-container-exit --exit-code-from integration-tests
 	docker compose -f docker-compose.test.yml down
 
 mutants:

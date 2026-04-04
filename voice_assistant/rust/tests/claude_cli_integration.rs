@@ -7,6 +7,7 @@ use voice_assistant::infrastructure::claude_handler::{ClaudeCliBackend, ClaudeCo
 #[derive(World)]
 pub struct ClaudeCliWorld {
     handler: Option<ClaudeCodeHandler>,
+    _temp_dir: Option<tempfile::TempDir>,
     log_path: PathBuf,
     result: String,
 }
@@ -24,9 +25,9 @@ impl Default for ClaudeCliWorld {
     fn default() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let log_path = dir.path().join("integration_tokens.log");
-        std::mem::forget(dir);
         Self {
             handler: None,
+            _temp_dir: Some(dir),
             log_path,
             result: String::new(),
         }
@@ -57,12 +58,6 @@ fn then_non_empty(world: &mut ClaudeCliWorld) {
     assert!(!world.result.is_empty(), "result should not be empty");
 }
 
-#[then("the stored session_id is non-empty after the call")]
-fn then_session_non_empty(world: &mut ClaudeCliWorld) {
-    // The handler stores session_id internally after a successful call.
-    // If handle() returned a real response (not error), session_id was stored.
-}
-
 #[then("the token log file exists on disk")]
 fn then_log_exists(world: &mut ClaudeCliWorld) {
     assert!(
@@ -72,13 +67,7 @@ fn then_log_exists(world: &mut ClaudeCliWorld) {
     );
 }
 
-#[then(regex = r#"^the token log contains the text "(.+)"$"#)]
-fn then_log_contains_text(world: &mut ClaudeCliWorld, needle: String) {
-    let content = std::fs::read_to_string(&world.log_path).unwrap_or_default();
-    assert!(content.contains(&needle), "log should contain \"{needle}\"");
-}
-
-#[then(regex = r#"^the token log contains "(.+)"$"#)]
+#[then(regex = r#"^the token log contains (?:the text )?"(.+)"$"#)]
 fn then_log_contains(world: &mut ClaudeCliWorld, needle: String) {
     let content = std::fs::read_to_string(&world.log_path).unwrap_or_default();
     assert!(content.contains(&needle), "log should contain \"{needle}\"");

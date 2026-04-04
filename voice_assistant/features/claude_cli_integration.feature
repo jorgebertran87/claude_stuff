@@ -8,11 +8,6 @@ Feature: Claude CLI integration
     When ClaudeCodeHandler handles "qué hora es"
     Then the returned string is non-empty
 
-  Scenario: The response includes a session id
-    Given the claude CLI is available and authenticated
-    When ClaudeCodeHandler handles "hola"
-    Then the stored session_id is non-empty after the call
-
   Scenario: The token log file is created on first use
     Given the claude CLI is available and authenticated
     And no token log file exists yet

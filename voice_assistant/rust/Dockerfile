@@ -18,7 +18,7 @@ COPY .cargo/ .cargo/
 COPY src/ src/
 COPY tests/ tests/
 COPY features/ features/
-COPY test.wav test2.wav test_speech_es.wav test_speech_en.wav ./
+COPY test_speech_es.wav test_speech_en.wav ./
 
 RUN cargo install --locked cargo-mutants@26.0.0
 
