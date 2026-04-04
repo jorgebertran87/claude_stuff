@@ -38,6 +38,12 @@ UNIT_TESTS = --lib \
 	--test skill_routing \
 	--test cli_direct_order
 
+INTEGRATION_TESTS = \
+	--test tts_pipeline \
+	--test tts_http_integration \
+	--test speech_recognition_integration \
+	--test claude_cli_integration
+
 test tests:
 	rsync -a --delete ../features/ features/
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
@@ -50,8 +56,7 @@ test tests:
 test-integration:
 	rsync -a --delete ../features/ features/
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
-	docker compose -f docker-compose.test.yml up --abort-on-container-exit --exit-code-from integration-tests
-	docker compose -f docker-compose.test.yml down
+	docker compose -f docker-compose.test.yml run --rm integration-tests cargo test $(INTEGRATION_TESTS)
 
 mutants:
 	rsync -a --delete ../features/ features/
@@ -61,6 +66,17 @@ mutants:
 		-e SDL_VIDEODRIVER=dummy \
 		$(IMAGE)-test \
 		cargo mutants -- $(UNIT_TESTS)
+
+mutants-integration:
+	rsync -a --delete ../features/ features/
+	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
+	docker run --rm \
+		--network host \
+		-e SDL_AUDIODRIVER=dummy \
+		-e SDL_VIDEODRIVER=dummy \
+		-v $(HOME)/.claude:/root/.claude \
+		$(IMAGE)-test \
+		cargo mutants -- $(INTEGRATION_TESTS)
 
 debug:
 	docker run -it --rm \
@@ -74,4 +90,4 @@ deploy:
 	scp Makefile run.sh pequenin:~/pequenin	
 	scp -r .claude pequenin:~/pequenin/.claude
 
-.PHONY: build build-local run run-prod run-telegram run-telegram-prod test tests test-integration mutants debug deploy
+.PHONY: build build-local run run-prod run-telegram run-telegram-prod test tests test-integration mutants mutants-integration debug deploy

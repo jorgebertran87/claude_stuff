@@ -7,4 +7,3 @@ services:
       - SDL_VIDEODRIVER=dummy
     volumes:
       - ${HOME}/.claude:/root/.claude
-    command: cargo test --test tts_pipeline --test tts_http_integration --test speech_recognition_integration --test claude_cli_integration
