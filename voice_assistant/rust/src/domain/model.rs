@@ -39,6 +39,65 @@ impl WakeWord {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matches_exact() {
+        let ww = WakeWord::new("claudito").unwrap();
+        assert!(ww.matches("claudito"));
+    }
+
+    #[test]
+    fn matches_fuzzy() {
+        let ww = WakeWord::new("claudito").unwrap();
+        assert!(ww.matches("clauditto"));
+    }
+
+    #[test]
+    fn matches_rejects_unrelated() {
+        let ww = WakeWord::new("claudito").unwrap();
+        assert!(!ww.matches("hola mundo"));
+    }
+
+    #[test]
+    fn extract_order_exact_with_trailing() {
+        let ww = WakeWord::new("claudito").unwrap();
+        assert_eq!(ww.extract_order("claudito pon música"), Some("pon música".into()));
+    }
+
+    #[test]
+    fn extract_order_fuzzy_with_trailing() {
+        let ww = WakeWord::new("claudito").unwrap();
+        assert_eq!(ww.extract_order("clauditto pon música"), Some("pon música".into()));
+    }
+
+    #[test]
+    fn extract_order_no_trailing() {
+        let ww = WakeWord::new("claudito").unwrap();
+        assert_eq!(ww.extract_order("claudito"), None);
+    }
+
+    #[test]
+    fn extract_order_no_match() {
+        let ww = WakeWord::new("claudito").unwrap();
+        assert_eq!(ww.extract_order("hola mundo"), None);
+    }
+
+    #[test]
+    fn lang_prefix_strips_region() {
+        let lang = Language::new("es-ES").unwrap();
+        assert_eq!(lang.lang_prefix(), "es");
+    }
+
+    #[test]
+    fn lang_prefix_returns_code_when_no_dash() {
+        let lang = Language::new("en").unwrap();
+        assert_eq!(lang.lang_prefix(), "en");
+    }
+}
+
 fn words_of(text: &str) -> Vec<String> {
     Regex::new(r"\w+")
         .unwrap()

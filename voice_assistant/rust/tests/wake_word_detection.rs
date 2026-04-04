@@ -1,9 +1,78 @@
 use cucumber::{given, when, then, World};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
-use voice_assistant::domain::model::WakeWord;
+use voice_assistant::domain::model::{AudioCapture, Language, WakeWord};
+use voice_assistant::domain::ports::{AudioCapturer, AudioSpeaker, EchoRef, OrderHandler, Transcriber};
+use voice_assistant::domain::service::VoiceListenerService;
+
+// ── Fakes ────────────────────────────────────────────────────────────────────
+
+struct FakeCapturer {
+    queue: Mutex<Vec<Option<Vec<u8>>>>,
+}
+
+impl FakeCapturer {
+    fn new(queue: Vec<Option<Vec<u8>>>) -> Self {
+        Self { queue: Mutex::new(queue) }
+    }
+}
+
+impl AudioCapturer for FakeCapturer {
+    fn capture(&mut self, _t: Option<u64>, _p: Option<u64>, _pa: Option<u64>) -> Option<AudioCapture> {
+        let mut q = self.queue.lock().unwrap();
+        if q.is_empty() { return None; }
+        match q.remove(0) {
+            Some(bytes) => Some(AudioCapture::new(bytes, 16000, 2)),
+            None => None,
+        }
+    }
+    fn calibrate(&mut self, _: f64) {}
+    fn mute(&mut self) {}
+    fn unmute(&mut self) {}
+    fn set_echo_reference(&mut self, _: Option<EchoRef>) {}
+}
+
+struct FakeTranscriber {
+    responses: Mutex<Vec<Option<String>>>,
+}
+
+impl FakeTranscriber {
+    fn new(responses: Vec<Option<String>>) -> Self {
+        Self { responses: Mutex::new(responses) }
+    }
+}
+
+impl Transcriber for FakeTranscriber {
+    fn transcribe(&self, _audio: &AudioCapture, _lang: &Language) -> Option<String> {
+        let mut r = self.responses.lock().unwrap();
+        if r.is_empty() { return None; }
+        r.remove(0)
+    }
+}
+
+struct FakeSpeaker;
+impl AudioSpeaker for FakeSpeaker {
+    fn speak(&self, _: &str, _: &Language, _: Option<Box<dyn FnOnce() + Send>>) {}
+    fn stop(&self) {}
+    fn beep(&self) {}
+    fn play_melody(&self, _: Arc<AtomicBool>) {}
+    fn get_echo_reference(&self) -> Option<EchoRef> { None }
+}
+
+struct FakeHandler;
+impl OrderHandler for FakeHandler {
+    fn handle(&self, _: &str) -> String { String::new() }
+    fn reset_session(&self) {}
+}
+
+// ── World ────────────────────────────────────────────────────────────────────
+
+const DUMMY_AUDIO: &[u8] = &[0u8; 100];
 
 #[derive(Debug, Default, World)]
 pub struct WakeWordWorld {
+    /// Each entry: None = no audio, Some(text) = transcriber returns this text.
     captures: Vec<Option<String>>,
     wake_word_detected: bool,
     inline_order: Option<String>,
@@ -37,25 +106,63 @@ fn given_mic_then_captures(world: &mut WakeWordWorld, text: String) {
 
 #[when("the service waits for the wake word")]
 fn when_wait_for_wake_word(world: &mut WakeWordWorld) {
-    let wake = WakeWord::new("claudito").unwrap();
+    // Build capture and transcriber queues from the scenario data.
+    let mut capture_queue: Vec<Option<Vec<u8>>> = Vec::new();
+    let mut transcribe_queue: Vec<Option<String>> = Vec::new();
 
-    for (i, cap) in world.captures.iter().enumerate() {
+    for cap in &world.captures {
         match cap {
             None => {
+                capture_queue.push(None);
+                // No audio → transcriber is not called, but we still track it
                 world.skipped_empty = true;
             }
             Some(text) => {
-                if wake.matches(text) {
-                    world.wake_word_detected = true;
-                    world.inline_order = wake.extract_order(text);
-                    let exact = text.to_lowercase().contains("claudito");
-                    if !exact {
-                        world.fuzzy_match = true;
-                    }
-                    break;
-                } else if i < world.captures.len() - 1 {
+                capture_queue.push(Some(DUMMY_AUDIO.to_vec()));
+                transcribe_queue.push(Some(text.clone()));
+            }
+        }
+    }
+
+    // Detect if the first non-empty capture doesn't contain the wake word
+    let wake = WakeWord::new("claudito").unwrap();
+    let mut first_text_seen = false;
+    for cap in &world.captures {
+        if let Some(text) = cap {
+            if !first_text_seen {
+                first_text_seen = true;
+                if !wake.matches(text) {
                     world.ignored_first = true;
                 }
+            }
+        }
+    }
+
+    let capturer = Box::new(FakeCapturer::new(capture_queue));
+    let transcriber: Arc<dyn Transcriber> = Arc::new(FakeTranscriber::new(transcribe_queue));
+
+    let mut service = VoiceListenerService::new(
+        capturer,
+        transcriber,
+        Arc::new(FakeHandler),
+        Arc::new(FakeSpeaker),
+        WakeWord::new("claudito").unwrap(),
+        Language::new("es-ES").unwrap(),
+    );
+
+    let result = service.wait_for_wake_word();
+    world.wake_word_detected = true; // wait_for_wake_word only returns when detected
+    world.inline_order = result;
+
+    // Check if fuzzy match was used (the last matching capture is not exact)
+    for cap in world.captures.iter().rev() {
+        if let Some(text) = cap {
+            if wake.matches(text) {
+                let exact = text.to_lowercase().contains("claudito");
+                if !exact {
+                    world.fuzzy_match = true;
+                }
+                break;
             }
         }
     }

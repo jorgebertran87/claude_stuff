@@ -34,3 +34,9 @@ Feature: Wake word detection
     When the service waits for the wake word
     Then it detects the wake word via fuzzy matching
     And it returns no inline order
+
+  Scenario: User pronounces the wake word with a typo followed by an order
+    Given the microphone captures "clauditto pon música"
+    When the service waits for the wake word
+    Then it detects the wake word via fuzzy matching
+    And it returns "pon música" as the inline order

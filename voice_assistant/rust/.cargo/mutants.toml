@@ -1,0 +1,6 @@
+exclude_globs = ["src/main.rs", "src/infrastructure/**"]
+exclude_re = [
+    "VoiceListenerService::listen_for_order",
+    "VoiceListenerService::run",
+    "VoiceListenerService::speak_interruptible",
+]

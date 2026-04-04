@@ -14,10 +14,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock* build.rs ./
+COPY .cargo/ .cargo/
 COPY src/ src/
 COPY tests/ tests/
 COPY features/ features/
 COPY test.wav test2.wav ./
+
+RUN cargo install --locked cargo-mutants@26.0.0
 
 ENV RUST_MIN_STACK=16777216
 RUN cargo build --release

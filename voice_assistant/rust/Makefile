@@ -56,6 +56,15 @@ test-integration:
 		$(IMAGE)-builder \
 		cargo test --test tts_pipeline --test tts_http_integration --test speech_recognition_integration --test claude_cli_integration
 
+mutants:
+	rsync -a --delete ../features/ features/
+	docker build --platform $(LOCAL_PLATFORM) --target builder -t $(IMAGE)-builder .
+	docker run --rm \
+		-e SDL_AUDIODRIVER=dummy \
+		-e SDL_VIDEODRIVER=dummy \
+		$(IMAGE)-builder \
+		cargo mutants -- $(UNIT_TESTS)
+
 debug:
 	docker run -it --rm \
 		-e PULSE_SERVER=unix:/tmp/pulse.sock \
@@ -68,4 +77,4 @@ deploy:
 	scp Makefile run.sh pequenin:~/pequenin	
 	scp -r .claude pequenin:~/pequenin/.claude
 
-.PHONY: build build-local run run-prod run-telegram run-telegram-prod test tests test-integration debug deploy
+.PHONY: build build-local run run-prod run-telegram run-telegram-prod test tests test-integration mutants debug deploy
