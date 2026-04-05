@@ -62,6 +62,6 @@ fn then_none(world: &mut SpeechWorld) {
 
 fn main() {
     futures::executor::block_on(
-        SpeechWorld::run("features/speech_recognition_integration.feature"),
+        SpeechWorld::run("features/transcriber_integration.feature"),
     );
 }

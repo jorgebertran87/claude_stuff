@@ -45,13 +45,25 @@ name = "speaker_integration"
 harness = false
 
 [[test]]
-name = "speech_recognition_integration"
+name = "transcriber_integration"
 harness = false
 
 [[test]]
-name = "claude_cli_integration"
+name = "claude_handler_integration"
 harness = false
 
 [[test]]
 name = "google_sheets_integration"
+harness = false
+
+[[test]]
+name = "audio_integration"
+harness = false
+
+[[test]]
+name = "speech_integration"
+harness = false
+
+[[test]]
+name = "telegram_bot_integration"
 harness = false

@@ -82,6 +82,6 @@ fn then_line_count(world: &mut ClaudeCliWorld, expected: usize) {
 
 fn main() {
     futures::executor::block_on(
-        ClaudeCliWorld::run("features/claude_cli_integration.feature"),
+        ClaudeCliWorld::run("features/claude_handler_integration.feature"),
     );
 }

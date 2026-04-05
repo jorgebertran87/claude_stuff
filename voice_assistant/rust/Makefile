@@ -40,16 +40,22 @@ UNIT_TESTS = --lib \
 
 INTEGRATION_TESTS = \
 	--test speaker_integration \
-	--test speech_recognition_integration \
-	--test claude_cli_integration \
-	--test google_sheets_integration
+	--test transcriber_integration \
+	--test claude_handler_integration \
+	--test google_sheets_integration \
+	--test audio_integration \
+	--test speech_integration \
+	--test telegram_bot_integration
 
 # Map infrastructure source file → relevant integration test(s)
 file_tests = $(if $(FILE),$(or \
-    $(if $(findstring google_sheets,$(FILE)),--test google_sheets_integration),\
     $(if $(findstring speaker,$(FILE)),--test speaker_integration),\
-    $(if $(findstring transcriber,$(FILE)),--test speech_recognition_integration),\
-    $(if $(findstring claude_handler,$(FILE)),--test claude_cli_integration),\
+    $(if $(findstring transcriber,$(FILE)),--test transcriber_integration),\
+    $(if $(findstring claude_handler,$(FILE)),--test claude_handler_integration),\
+    $(if $(findstring google_sheets,$(FILE)),--test google_sheets_integration),\
+    $(if $(findstring audio,$(FILE)),--test audio_integration),\
+    $(if $(findstring speech.rs,$(FILE)),--test speech_integration),\
+    $(if $(findstring telegram_bot,$(FILE)),--test telegram_bot_integration),\
     $(INTEGRATION_TESTS)),$(INTEGRATION_TESTS))
 
 test tests:
