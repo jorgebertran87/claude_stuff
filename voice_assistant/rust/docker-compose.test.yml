@@ -6,5 +6,7 @@ services:
     environment:
       - SDL_AUDIODRIVER=dummy
       - SDL_VIDEODRIVER=dummy
+      - RUST_BACKTRACE=full
+      - RUST_LOG=debug
     volumes:
       - ${HOME}/.claude:/root/.claude

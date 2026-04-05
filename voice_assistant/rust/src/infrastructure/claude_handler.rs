@@ -42,7 +42,7 @@ pub fn strip_frontmatter(content: &str) -> String {
 
 /// Load a skill file by name. Tries several candidate paths so it works both
 /// inside Docker (mounted at /app/.claude/commands/) and in local dev.
-fn load_skill(name: &str) -> String {
+pub fn load_skill(name: &str) -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
     let candidates = [
         format!("/app/.claude/commands/{name}.md"),
@@ -60,7 +60,7 @@ fn load_skill(name: &str) -> String {
 }
 
 /// Build the system prompt for a given order: base behavioural rules + intent-specific skill.
-fn load_prompt(order: &str) -> String {
+pub fn load_prompt(order: &str) -> String {
     let voice_language = std::env::var("VOICE_LANGUAGE").unwrap_or_else(|_| "es".into());
     let lang_rule = format!("Responde en el idioma oficial del país con código '{voice_language}'.");
 
@@ -194,7 +194,8 @@ impl ClaudeBackend for ClaudeCliBackend {
         }
 
         let json = String::from_utf8_lossy(&output.stdout);
-        eprintln!("[claude raw json: {}]", &json[..json.len().min(200)]);
+        let preview_end = json.char_indices().nth(200).map(|(i, _)| i).unwrap_or(json.len());
+        eprintln!("[claude raw json: {}]", &json[..preview_end]);
         parse_result_json(&json)
     }
 }
@@ -216,7 +217,7 @@ fn parse_result_json(json: &str) -> Result<TokenUsage, String> {
     })
 }
 
-fn extract_u64(json: &str, key: &str) -> u64 {
+pub fn extract_u64(json: &str, key: &str) -> u64 {
     json.find(key)
         .and_then(|pos| {
             let rest = json[pos + key.len()..].trim_start();
@@ -226,7 +227,7 @@ fn extract_u64(json: &str, key: &str) -> u64 {
         .unwrap_or(0)
 }
 
-fn extract_str(json: &str, key: &str) -> Option<String> {
+pub fn extract_str(json: &str, key: &str) -> Option<String> {
     let pos = json.find(key)?;
     let rest = json[pos + key.len()..].trim_start();
     if rest.starts_with('"') {

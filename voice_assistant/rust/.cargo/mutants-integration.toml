@@ -1,2 +1,1 @@
 exclude_globs = ["src/main.rs", "src/domain/**"]
-exclude_re = ["MicrophoneCapturer::capture"]

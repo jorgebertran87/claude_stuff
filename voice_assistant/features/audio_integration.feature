@@ -43,4 +43,22 @@ Feature: Audio infrastructure integration
   Scenario: Echo cancellation with half-rate matching reference achieves strong amplitude reduction
     Given a MicrophoneCapturer with an echo reference at 8000 Hz matching 160 mic samples at 16000 Hz
     When apply_echo_cancellation is called
-    Then the output RMS is less than 20 percent of the input RMS
+    Then the output RMS is between 2 and 20 percent of the input RMS
+
+  Scenario: capture returns Some audio when recording writes sufficient data
+    Given a fake rec that writes 100 bytes of audio to the capture file
+    And a MicrophoneCapturer with no echo reference
+    When capture is called
+    Then the capture result contains audio sampled at 16000 Hz
+
+  Scenario: capture returns None when the recording contains only a WAV header
+    Given a fake rec that writes only the 44-byte WAV header to the capture file
+    And a MicrophoneCapturer with no echo reference
+    When capture is called
+    Then the capture result is None
+
+  Scenario: capture passes correct timing arguments to rec
+    Given a fake rec that logs its arguments and writes 100 bytes of audio
+    And a MicrophoneCapturer with no echo reference
+    When capture is called with timeout_ms 3000 and pause_threshold_ms 2000
+    Then rec was invoked with trim duration "3" and pause threshold "2.0"
