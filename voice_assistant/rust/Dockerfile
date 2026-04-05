@@ -22,14 +22,7 @@ RUN cargo build --release
 # ── Stage 1b: test (builder + claude CLI + cargo-mutants) ─────────────────────
 FROM builder AS test
 
-COPY Cargo-test.toml Cargo.toml ./
-RUN echo "" >> Cargo.toml
-RUN cat Cargo-test.toml >> Cargo.toml
-COPY .cargo/ .cargo/
-COPY tests/ tests/
-COPY features/ features/
-COPY test_speech_es.wav test_speech_en.wav ./
-
+# Expensive installs first (rarely change → good Docker cache hits)
 RUN cargo install --locked cargo-mutants@26.0.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
@@ -37,6 +30,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @anthropic-ai/claude-code \
     && rm -rf /var/lib/apt/lists/*
+
+# Frequently changing files last
+COPY Cargo-test.toml Cargo.toml ./
+RUN echo "" >> Cargo.toml
+RUN cat Cargo-test.toml >> Cargo.toml
+COPY .cargo/ .cargo/
+COPY tests/ tests/
+COPY features/ features/
+COPY test_speech_es.wav test_speech_en.wav ./
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM debian:bookworm-slim

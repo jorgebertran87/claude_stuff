@@ -45,8 +45,16 @@ INTEGRATION_TESTS = \
 	--test claude_cli_integration \
 	--test google_sheets_integration
 
+# Map infrastructure source file → relevant integration test(s)
+file_tests = $(if $(FILE),$(or \
+    $(if $(findstring google_sheets,$(FILE)),--test google_sheets_integration),\
+    $(if $(findstring speaker,$(FILE)),--test tts_pipeline --test tts_http_integration),\
+    $(if $(findstring transcriber,$(FILE)),--test speech_recognition_integration),\
+    $(if $(findstring claude_handler,$(FILE)),--test claude_cli_integration),\
+    $(INTEGRATION_TESTS)),$(INTEGRATION_TESTS))
+
 test tests:
-	rsync -a --delete ../features/ features/
+	rsync -a --checksum --delete ../features/ features/
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker run --rm \
 		-e SDL_AUDIODRIVER=dummy \
@@ -55,12 +63,12 @@ test tests:
 		cargo test $(UNIT_TESTS)
 
 test-integration:
-	rsync -a --delete ../features/ features/
+	rsync -a --checksum --delete ../features/ features/
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker compose -f docker-compose.test.yml run --rm integration-tests cargo test $(INTEGRATION_TESTS)
 
 mutants:
-	rsync -a --delete ../features/ features/
+	rsync -a --checksum --delete ../features/ features/
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker run --rm \
 		-e SDL_AUDIODRIVER=dummy \
@@ -69,7 +77,7 @@ mutants:
 		cargo mutants -- $(UNIT_TESTS)
 
 mutants-integration:
-	rsync -a --delete ../features/ features/
+	rsync -a --checksum --delete ../features/ features/
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker run --rm \
 		--network host \
@@ -78,7 +86,7 @@ mutants-integration:
 		-e SDL_VIDEODRIVER=dummy \
 		-v $(HOME)/.claude:/root/.claude \
 		$(IMAGE)-test \
-		cargo mutants -j 3 --config .cargo/mutants-integration.toml $(if $(FILE),-f $(FILE)) -- $(INTEGRATION_TESTS)
+		cargo mutants -j 3 --config .cargo/mutants-integration.toml $(if $(FILE),-f $(FILE)) -- $(file_tests)
 
 debug:
 	docker run -it --rm \
