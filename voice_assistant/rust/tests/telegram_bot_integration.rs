@@ -119,7 +119,7 @@ fn given_update(world: &mut TelegramWorld, text: String, chat_id: i64) {
     });
 }
 
-#[given(regex = r"^an update with id (\d+) and text \"(.+)\" from chat (\d+)$")]
+#[given(regex = r#"^an update with id (\d+) and text "(.+)" from chat (\d+)$"#)]
 fn given_update_with_id(world: &mut TelegramWorld, id: i64, text: String, chat_id: i64) {
     world.gateway.updates.lock().unwrap().push(TelegramUpdate {
         update_id: id,

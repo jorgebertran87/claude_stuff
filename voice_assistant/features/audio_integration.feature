@@ -26,3 +26,21 @@ Feature: Audio infrastructure integration
     And raw audio bytes of 200 samples at 16000 Hz
     When apply_echo_cancellation is called
     Then the output length matches the input length
+    And the output differs from the raw input
+
+  Scenario: Echo cancellation with a same-content reference at different rate reduces amplitude
+    Given a MicrophoneCapturer with an echo reference matching the mic signal at 44100 Hz
+    And raw audio bytes of 512 samples at 16000 Hz
+    When apply_echo_cancellation is called
+    Then the output RMS is less than the input RMS
+
+  Scenario: Same-rate self-cancellation achieves partial but not total suppression
+    Given raw audio bytes of 160 samples at 16000 Hz
+    And a MicrophoneCapturer using the current audio bytes as its own echo reference at 16000 Hz
+    When apply_echo_cancellation is called
+    Then the output RMS is between 2 and 10 percent of the input RMS
+
+  Scenario: Echo cancellation with half-rate matching reference achieves strong amplitude reduction
+    Given a MicrophoneCapturer with an echo reference at 8000 Hz matching 160 mic samples at 16000 Hz
+    When apply_echo_cancellation is called
+    Then the output RMS is less than 20 percent of the input RMS

@@ -22,7 +22,7 @@ fn rms(samples: &[i16]) -> f64 {
 fn given_signal(world: &mut SpeechProcessingWorld, n: usize) {
     // Generate a deterministic signal with meaningful amplitude
     world.input_samples = (0..n).map(|i| {
-        (((i as f64 * 0.1).sin() * 10000.0) as i16)
+        ((i as f64 * 0.1).sin() * 10000.0) as i16
     }).collect();
     world.input_rms = rms(&world.input_samples);
 }

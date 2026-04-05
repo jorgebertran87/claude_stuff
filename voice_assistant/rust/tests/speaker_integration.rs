@@ -19,19 +19,19 @@ pub struct SpeakerWorld {
 
 // ── Given steps ────────────────────────────────────────────────────────────────
 
-#[given(regex = r#"^the text "(.+)" and the language code "(.+)"$"#)]
+#[given(regex = r#"^the text "([^"]+)" and the language code "([^"]+)"$"#)]
 fn given_text_and_lang(world: &mut SpeakerWorld, text: String, lang: String) {
     world.text = text;
     world.lang = lang;
 }
 
-#[given(regex = r#"^the text "(.+)" and the unsupported language code "(.+)"$"#)]
+#[given(regex = r#"^the text "([^"]+)" and the unsupported language code "([^"]+)"$"#)]
 fn given_text_unsupported(world: &mut SpeakerWorld, text: String, lang: String) {
     world.text = text;
     world.lang = lang;
 }
 
-#[given(regex = r#"^the text "(.+)"$"#)]
+#[given(regex = r#"^the text "([^"]+)"$"#)]
 fn given_text(world: &mut SpeakerWorld, text: String) {
     world.text = text;
 }
