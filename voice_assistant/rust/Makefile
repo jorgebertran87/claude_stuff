@@ -39,8 +39,7 @@ UNIT_TESTS = --lib \
 	--test cli_direct_order
 
 INTEGRATION_TESTS = \
-	--test tts_pipeline \
-	--test tts_http_integration \
+	--test speaker_integration \
 	--test speech_recognition_integration \
 	--test claude_cli_integration \
 	--test google_sheets_integration
@@ -48,7 +47,7 @@ INTEGRATION_TESTS = \
 # Map infrastructure source file → relevant integration test(s)
 file_tests = $(if $(FILE),$(or \
     $(if $(findstring google_sheets,$(FILE)),--test google_sheets_integration),\
-    $(if $(findstring speaker,$(FILE)),--test tts_pipeline --test tts_http_integration),\
+    $(if $(findstring speaker,$(FILE)),--test speaker_integration),\
     $(if $(findstring transcriber,$(FILE)),--test speech_recognition_integration),\
     $(if $(findstring claude_handler,$(FILE)),--test claude_cli_integration),\
     $(INTEGRATION_TESTS)),$(INTEGRATION_TESTS))

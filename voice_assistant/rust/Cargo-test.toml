@@ -29,10 +29,6 @@ name = "claude_handler_token_logging"
 harness = false
 
 [[test]]
-name = "tts_pipeline"
-harness = false
-
-[[test]]
 name = "session_continuity"
 harness = false
 
@@ -45,7 +41,7 @@ name = "cli_direct_order"
 harness = false
 
 [[test]]
-name = "tts_http_integration"
+name = "speaker_integration"
 harness = false
 
 [[test]]
