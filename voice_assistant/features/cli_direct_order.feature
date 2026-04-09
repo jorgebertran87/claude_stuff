@@ -23,6 +23,11 @@ Feature: CLI direct order mode
     When the arguments are parsed
     Then the mode is ListenMode
 
+  Scenario: --both flag selects both mode
+    Given the CLI arguments are "--both"
+    When the arguments are parsed
+    Then the mode is BothMode
+
   Scenario: --order takes precedence when combined with other flags
     Given the CLI arguments are "--order hola --telegram"
     When the arguments are parsed

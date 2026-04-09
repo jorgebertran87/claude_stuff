@@ -27,6 +27,12 @@ run-telegram:
 run-telegram-prod:
 	@RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) ./run.sh --telegram &
 
+run-both:
+	@./run.sh --both &
+
+run-both-prod:
+	@RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) ./run.sh --both &
+
 UNIT_TESTS = --lib \
 	--test wake_word_detection \
 	--test order_capture \
@@ -105,4 +111,4 @@ deploy:
 	scp Makefile run.sh pequenin:~/pequenin	
 	scp -r .claude pequenin:~/pequenin/.claude
 
-.PHONY: build build-local run run-prod run-telegram run-telegram-prod test tests test-integration mutants mutants-integration debug deploy
+.PHONY: build build-local run run-prod run-telegram run-telegram-prod run-both run-both-prod test tests test-integration mutants mutants-integration debug deploy
