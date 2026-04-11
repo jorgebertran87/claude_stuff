@@ -64,8 +64,7 @@ file_tests = $(if $(FILE),$(or \
     $(if $(findstring telegram_bot,$(FILE)),--test telegram_bot_integration),\
     $(INTEGRATION_TESTS)),$(INTEGRATION_TESTS))
 
-test tests:
-	rsync -a --checksum --delete ../features/ features/
+test:
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker run --rm \
 		-e SDL_AUDIODRIVER=dummy \
@@ -74,29 +73,28 @@ test tests:
 		cargo test $(UNIT_TESTS)
 
 test-integration:
-	rsync -a --checksum --delete ../features/ features/
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker compose -f docker-compose.test.yml run --rm integration-tests cargo test $(INTEGRATION_TESTS)
 
 mutants:
 	rsync -a --checksum --delete ../features/ features/
-	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
+	docker build --platform $(LOCAL_PLATFORM) --target mutants -t $(IMAGE)-mutants .
 	docker run --rm \
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \
-		$(IMAGE)-test \
+		$(IMAGE)-mutants \
 		cargo mutants -- $(UNIT_TESTS)
 
 mutants-integration:
 	rsync -a --checksum --delete ../features/ features/
-	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
+	docker build --platform $(LOCAL_PLATFORM) --target mutants -t $(IMAGE)-mutants .
 	docker run --rm \
 		--network host \
 		--env-file .env \
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \
 		-v $(HOME)/.claude:/root/.claude \
-		$(IMAGE)-test \
+		$(IMAGE)-mutants \
 		cargo mutants -j 3 --config .cargo/mutants-integration.toml $(if $(FILE),-f $(FILE)) -- $(file_tests)
 
 debug:

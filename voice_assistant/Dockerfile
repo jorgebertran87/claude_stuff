@@ -19,11 +19,8 @@ COPY src/ src/
 ENV RUST_MIN_STACK=16777216
 RUN cargo build --release
 
-# ── Stage 1b: test (builder + claude CLI + cargo-mutants) ─────────────────────
+# ── Stage 1b: test (builder + claude CLI) ─────────────────────────────────────
 FROM builder AS test
-
-# Expensive installs first (rarely change → good Docker cache hits)
-RUN cargo install --locked cargo-mutants@26.0.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -39,6 +36,11 @@ COPY .cargo/ .cargo/
 COPY tests/ tests/
 COPY features/ features/
 COPY test_speech_es.wav test_speech_en.wav ./
+
+# ── Stage 1c: mutants (test + cargo-mutants) ───────────────────────────────────
+FROM test AS mutants
+
+RUN cargo install --locked cargo-mutants@26.0.0
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
