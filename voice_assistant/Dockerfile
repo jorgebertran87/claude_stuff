@@ -68,9 +68,10 @@ COPY features/ features/
 COPY tests/files/ tests/files/
 
 # ── Stage 6: runtime ──────────────────────────────────────────────────────────
-FROM node-installer
+FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
         libportaudio2 \
         ca-certificates \
         libpulse0 \
@@ -80,6 +81,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         sox \
         libsdl2-2.0-0 \
         ffmpeg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
+    && apt-get purge -y --auto-remove curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Route ALSA through PulseAudio (which PipeWire emulates)
