@@ -50,36 +50,36 @@ path = "tests/unit/cli_direct_order.rs"
 harness = false
 
 [[test]]
-name = "speaker_integration"
-path = "tests/integration/speaker_integration.rs"
+name = "speaker"
+path = "tests/integration/speaker.rs"
 harness = false
 
 [[test]]
-name = "transcriber_integration"
-path = "tests/integration/transcriber_integration.rs"
+name = "transcriber"
+path = "tests/integration/transcriber.rs"
 harness = false
 
 [[test]]
-name = "claude_handler_integration"
-path = "tests/integration/claude_handler_integration.rs"
+name = "claude_handler"
+path = "tests/integration/claude_handler.rs"
 harness = false
 
 [[test]]
-name = "google_sheets_integration"
-path = "tests/integration/google_sheets_integration.rs"
+name = "google_sheets"
+path = "tests/integration/google_sheets.rs"
 harness = false
 
 [[test]]
-name = "audio_integration"
-path = "tests/integration/audio_integration.rs"
+name = "audio"
+path = "tests/integration/audio.rs"
 harness = false
 
 [[test]]
-name = "speech_integration"
-path = "tests/integration/speech_integration.rs"
+name = "speech"
+path = "tests/integration/speech.rs"
 harness = false
 
 [[test]]
-name = "telegram_bot_integration"
-path = "tests/integration/telegram_bot_integration.rs"
+name = "telegram_bot"
+path = "tests/integration/telegram_bot.rs"
 harness = false

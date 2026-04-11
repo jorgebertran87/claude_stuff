@@ -45,23 +45,23 @@ UNIT_TESTS = --lib \
 	--test cli_direct_order
 
 INTEGRATION_TESTS = \
-	--test speaker_integration \
-	--test transcriber_integration \
-	--test claude_handler_integration \
-	--test google_sheets_integration \
-	--test audio_integration \
-	--test speech_integration \
-	--test telegram_bot_integration
+	--test speaker \
+	--test transcriber \
+	--test claude_handler \
+	--test google_sheets \
+	--test audio \
+	--test speech \
+	--test telegram_bot
 
 # Map infrastructure source file → relevant integration test(s)
 file_tests = $(if $(FILE),$(or \
-    $(if $(findstring speaker,$(FILE)),--test speaker_integration),\
-    $(if $(findstring transcriber,$(FILE)),--test transcriber_integration),\
-    $(if $(findstring claude_handler,$(FILE)),--test claude_handler_integration),\
-    $(if $(findstring google_sheets,$(FILE)),--test google_sheets_integration),\
-    $(if $(findstring audio,$(FILE)),--test audio_integration),\
-    $(if $(findstring speech.rs,$(FILE)),--test speech_integration),\
-    $(if $(findstring telegram_bot,$(FILE)),--test telegram_bot_integration),\
+    $(if $(findstring speaker,$(FILE)),--test speaker),\
+    $(if $(findstring transcriber,$(FILE)),--test transcriber),\
+    $(if $(findstring claude_handler,$(FILE)),--test claude_handler),\
+    $(if $(findstring google_sheets,$(FILE)),--test google_sheets),\
+    $(if $(findstring audio,$(FILE)),--test audio),\
+    $(if $(findstring speech.rs,$(FILE)),--test speech),\
+    $(if $(findstring telegram_bot,$(FILE)),--test telegram_bot),\
     $(INTEGRATION_TESTS)),$(INTEGRATION_TESTS))
 
 test:
