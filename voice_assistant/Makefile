@@ -53,16 +53,8 @@ INTEGRATION_TESTS = \
 	--test speech \
 	--test telegram_bot
 
-# Map infrastructure source file → relevant integration test(s)
-file_tests = $(if $(FILE),$(or \
-    $(if $(findstring speaker,$(FILE)),--test speaker),\
-    $(if $(findstring transcriber,$(FILE)),--test transcriber),\
-    $(if $(findstring claude_handler,$(FILE)),--test claude_handler),\
-    $(if $(findstring google_sheets,$(FILE)),--test google_sheets),\
-    $(if $(findstring audio,$(FILE)),--test audio),\
-    $(if $(findstring speech.rs,$(FILE)),--test speech),\
-    $(if $(findstring telegram_bot,$(FILE)),--test telegram_bot),\
-    $(INTEGRATION_TESTS)),$(INTEGRATION_TESTS))
+# Map infrastructure source file → relevant integration test (name matches file stem)
+file_tests = $(if $(FILE),--test $(basename $(notdir $(FILE))),$(INTEGRATION_TESTS))
 
 test:
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
