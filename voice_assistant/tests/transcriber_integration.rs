@@ -13,10 +13,9 @@ pub struct SpeechWorld {
 
 #[given(regex = r#"^the audio file "([^"]+)" at (\d+) Hz mono 16-bit$"#)]
 fn given_audio_file(world: &mut SpeechWorld, filename: String, sample_rate: u32) {
-    let bytes = std::fs::read(&filename).unwrap_or_else(|_| {
-        std::fs::read(format!("../{}", filename))
-            .unwrap_or_else(|_| panic!("Cannot read audio file: {filename}"))
-    });
+    let bytes = std::fs::read(format!("tests/{filename}"))
+        .or_else(|_| std::fs::read(&filename))
+        .unwrap_or_else(|_| panic!("Cannot read audio file: {filename}"));
     world.audio = Some(AudioCapture::new(bytes, sample_rate, 2));
 }
 

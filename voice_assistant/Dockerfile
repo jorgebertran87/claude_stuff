@@ -53,7 +53,7 @@ FROM test-base AS test
 
 COPY tests/ tests/
 COPY features/ features/
-COPY test_speech_es.wav test_speech_en.wav ./
+COPY tests/test_speech_es.wav tests/test_speech_en.wav tests/
 
 # ── Stage 5: mutants (test-base + cargo-mutants + .cargo/ + test files) ───────
 FROM test-base AS mutants
@@ -63,7 +63,7 @@ RUN cargo install --locked cargo-mutants@26.0.0
 COPY config/mutants.toml config/mutants-integration.toml config/
 COPY tests/ tests/
 COPY features/ features/
-COPY test_speech_es.wav test_speech_en.wav ./
+COPY tests/test_speech_es.wav tests/test_speech_en.wav tests/
 
 # ── Stage 6: runtime ──────────────────────────────────────────────────────────
 FROM node-installer
