@@ -75,7 +75,7 @@ test:
 test-integration:
 	touch .google_refresh_token
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
-	docker compose -f docker-compose.test.yml run --rm integration-tests cargo test $(INTEGRATION_TESTS)
+	docker compose -f config/docker-compose.test.yml run --rm integration-tests cargo test $(INTEGRATION_TESTS)
 
 mutants:
 	rsync -a --checksum --delete ../features/ features/
@@ -96,7 +96,7 @@ mutants-integration:
 		-e SDL_VIDEODRIVER=dummy \
 		-v $(HOME)/.claude:/root/.claude \
 		$(IMAGE)-mutants \
-		cargo mutants -j 3 --config .cargo/mutants-integration.toml $(if $(FILE),-f $(FILE)) -- $(file_tests)
+		cargo mutants -j 3 --config config/mutants-integration.toml $(if $(FILE),-f $(FILE)) -- $(file_tests)
 
 debug:
 	docker run -it --rm \

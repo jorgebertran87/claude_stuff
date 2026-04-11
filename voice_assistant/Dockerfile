@@ -45,7 +45,7 @@ COPY --from=node-installer /usr/local/bin/npx         /usr/local/bin/
 COPY --from=node-installer /usr/local/bin/claude      /usr/local/bin/
 COPY --from=node-installer /usr/local/lib/node_modules /usr/local/lib/node_modules
 
-COPY Cargo-test.toml ./
+COPY config/Cargo-test.toml ./
 RUN cat Cargo-test.toml >> Cargo.toml
 
 # ── Stage 4: test (test-base + test files) ────────────────────────────────────
@@ -60,7 +60,7 @@ FROM test-base AS mutants
 
 RUN cargo install --locked cargo-mutants@26.0.0
 
-COPY .cargo/ .cargo/
+COPY config/mutants.toml config/mutants-integration.toml config/
 COPY tests/ tests/
 COPY features/ features/
 COPY test_speech_es.wav test_speech_en.wav ./
