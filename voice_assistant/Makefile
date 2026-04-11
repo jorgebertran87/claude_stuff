@@ -53,7 +53,6 @@ test-integration:
 	docker compose -f config/docker-compose.test.yml run --rm integration-tests cargo test $(INTEGRATION_TESTS)
 
 mutants:
-	rsync -a --checksum --delete ../features/ features/
 	docker build --platform $(LOCAL_PLATFORM) --target mutants -t $(IMAGE)-mutants .
 	docker run --rm \
 		-e SDL_AUDIODRIVER=dummy \
@@ -62,7 +61,7 @@ mutants:
 		cargo mutants -- $(UNIT_TESTS)
 
 mutants-integration:
-	rsync -a --checksum --delete ../features/ features/
+	touch .google_refresh_token
 	docker build --platform $(LOCAL_PLATFORM) --target mutants -t $(IMAGE)-mutants .
 	docker run --rm \
 		--network host \
@@ -70,6 +69,7 @@ mutants-integration:
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \
 		-v $(HOME)/.claude:/root/.claude \
+		-v $(PWD)/.google_refresh_token:/app/.google_refresh_token \
 		$(IMAGE)-mutants \
 		cargo mutants -j 3 --config config/mutants-integration.toml $(if $(FILE),-f $(FILE)) -- $(FILE_TESTS)
 
