@@ -33,25 +33,8 @@ run-both:
 run-both-prod:
 	@RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) ./run.sh --both &
 
-UNIT_TESTS = --lib \
-	--test wake_word_detection \
-	--test order_capture \
-	--test interruptible_speech \
-	--test audio_processing \
-	--test conversation_flow \
-	--test claude_handler_token_logging \
-	--test session_continuity \
-	--test skill_routing \
-	--test cli_direct_order
-
-INTEGRATION_TESTS = \
-	--test speaker \
-	--test transcriber \
-	--test claude_handler \
-	--test google_sheets \
-	--test audio \
-	--test speech \
-	--test telegram_bot
+UNIT_TESTS = --lib $(patsubst tests/unit/%.rs,--test %,$(wildcard tests/unit/*.rs))
+INTEGRATION_TESTS = $(patsubst tests/integration/%.rs,--test %,$(wildcard tests/integration/*.rs))
 
 # Map infrastructure source file → relevant integration test (name matches file stem)
 file_tests = $(if $(FILE),--test $(basename $(notdir $(FILE))),$(INTEGRATION_TESTS))
