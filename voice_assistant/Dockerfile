@@ -31,24 +31,19 @@ RUN mkdir -p src \
 COPY src/ src/
 RUN cargo build --release
 
-# ── Stage 2: node-installer (shared between test-base and runtime) ────────────
-FROM debian:bookworm-slim AS node-installer
+# ── Stage 2: node-installer (official Node image + claude-code) ───────────────
+FROM node:20-slim AS node-installer
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g @anthropic-ai/claude-code \
-    && apt-get purge -y --auto-remove curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN npm install -g @anthropic-ai/claude-code
 
-# ── Stage 3: test-base (builder + Node/claude + merged Cargo manifest) ────────
+# ── Stage 3: test-base (builder + Node/claude copied in + merged Cargo manifest)
 FROM builder AS test-base
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g @anthropic-ai/claude-code \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=node-installer /usr/local/bin/node        /usr/local/bin/
+COPY --from=node-installer /usr/local/bin/npm         /usr/local/bin/
+COPY --from=node-installer /usr/local/bin/npx         /usr/local/bin/
+COPY --from=node-installer /usr/local/bin/claude      /usr/local/bin/
+COPY --from=node-installer /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 COPY Cargo-test.toml ./
 RUN cat Cargo-test.toml >> Cargo.toml
