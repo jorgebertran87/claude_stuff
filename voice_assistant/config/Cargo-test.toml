@@ -6,64 +6,80 @@ tokio = { version = "1", features = ["rt", "macros"] }
 
 [[test]]
 name = "wake_word_detection"
+path = "tests/unit/wake_word_detection.rs"
 harness = false
 
 [[test]]
 name = "order_capture"
+path = "tests/unit/order_capture.rs"
 harness = false
 
 [[test]]
 name = "interruptible_speech"
+path = "tests/unit/interruptible_speech.rs"
 harness = false
 
 [[test]]
 name = "audio_processing"
+path = "tests/unit/audio_processing.rs"
 harness = false
 
 [[test]]
 name = "conversation_flow"
+path = "tests/unit/conversation_flow.rs"
 harness = false
 
 [[test]]
 name = "claude_handler_token_logging"
+path = "tests/unit/claude_handler_token_logging.rs"
 harness = false
 
 [[test]]
 name = "session_continuity"
+path = "tests/unit/session_continuity.rs"
 harness = false
 
 [[test]]
 name = "skill_routing"
+path = "tests/unit/skill_routing.rs"
 harness = false
 
 [[test]]
 name = "cli_direct_order"
+path = "tests/unit/cli_direct_order.rs"
 harness = false
 
 [[test]]
 name = "speaker_integration"
+path = "tests/integration/speaker_integration.rs"
 harness = false
 
 [[test]]
 name = "transcriber_integration"
+path = "tests/integration/transcriber_integration.rs"
 harness = false
 
 [[test]]
 name = "claude_handler_integration"
+path = "tests/integration/claude_handler_integration.rs"
 harness = false
 
 [[test]]
 name = "google_sheets_integration"
+path = "tests/integration/google_sheets_integration.rs"
 harness = false
 
 [[test]]
 name = "audio_integration"
+path = "tests/integration/audio_integration.rs"
 harness = false
 
 [[test]]
 name = "speech_integration"
+path = "tests/integration/speech_integration.rs"
 harness = false
 
 [[test]]
 name = "telegram_bot_integration"
+path = "tests/integration/telegram_bot_integration.rs"
 harness = false

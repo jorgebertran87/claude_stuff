@@ -51,7 +51,8 @@ RUN cat Cargo-test.toml >> Cargo.toml
 # ── Stage 4: test (test-base + test files) ────────────────────────────────────
 FROM test-base AS test
 
-COPY tests/ tests/
+COPY tests/unit/ tests/unit/
+COPY tests/integration/ tests/integration/
 COPY features/ features/
 COPY tests/files/ tests/files/
 
@@ -61,7 +62,8 @@ FROM test-base AS mutants
 RUN cargo install --locked cargo-mutants@26.0.0
 
 COPY config/mutants.toml config/mutants-integration.toml config/
-COPY tests/ tests/
+COPY tests/unit/ tests/unit/
+COPY tests/integration/ tests/integration/
 COPY features/ features/
 COPY tests/files/ tests/files/
 
