@@ -73,6 +73,7 @@ test:
 		cargo test $(UNIT_TESTS)
 
 test-integration:
+	touch .google_refresh_token
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker compose -f docker-compose.test.yml run --rm integration-tests cargo test $(INTEGRATION_TESTS)
 
