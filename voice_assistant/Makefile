@@ -58,7 +58,7 @@ mutants:
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \
 		$(IMAGE)-mutants \
-		cargo mutants -- $(UNIT_TESTS)
+		cargo mutants -j 3 --config config/mutants.toml -- $(UNIT_TESTS)
 
 mutants-integration:
 	touch .google_refresh_token
