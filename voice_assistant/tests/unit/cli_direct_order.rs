@@ -83,14 +83,6 @@ fn then_listen_mode(world: &mut CliWorld) {
     );
 }
 
-#[then("the mode is BothMode")]
-fn then_both_mode(world: &mut CliWorld) {
-    assert!(
-        matches!(world.result.as_ref().unwrap(), Ok(voice_assistant::cli::CliArgs::BothMode)),
-        "expected BothMode"
-    );
-}
-
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() {
