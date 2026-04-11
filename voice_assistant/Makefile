@@ -109,4 +109,4 @@ deploy:
 	scp Makefile run.sh pequenin:~/pequenin	
 	scp -r .claude pequenin:~/pequenin/.claude
 
-.PHONY: build build-local run run-prod run-telegram run-telegram-prod run-both run-both-prod test tests test-integration mutants mutants-integration debug deploy
+.PHONY: build build-local run run-prod run-telegram run-telegram-prod run-both run-both-prod test test-integration mutants mutants-integration debug deploy

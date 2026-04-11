@@ -10,3 +10,4 @@ services:
       - RUST_LOG=debug
     volumes:
       - ${HOME}/.claude:/root/.claude
+      - ${PWD}/.google_refresh_token:/app/.google_refresh_token

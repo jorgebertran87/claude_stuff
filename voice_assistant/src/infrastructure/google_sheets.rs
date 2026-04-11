@@ -14,13 +14,13 @@ impl SheetsClient {
     /// `GOOGLE_REFRESH_TOKEN` env var takes precedence; falls back to `.google_refresh_token` file.
     /// Returns `None` if any required value is missing.
     pub fn from_env() -> Option<Self> {
-        let refresh_token = std::env::var("GOOGLE_REFRESH_TOKEN")
+        let refresh_token = std::fs::read_to_string(TOKEN_FILE)
             .ok()
+            .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .or_else(|| {
-                std::fs::read_to_string(TOKEN_FILE)
+                std::env::var("GOOGLE_REFRESH_TOKEN")
                     .ok()
-                    .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
             })?;
 
@@ -41,7 +41,13 @@ impl SheetsClient {
         let resp = ureq::post("https://oauth2.googleapis.com/token")
             .set("Content-Type", "application/x-www-form-urlencoded")
             .send_string(&body)
-            .map_err(|e| format!("token request: {e}"))?;
+            .map_err(|e| match e {
+                ureq::Error::Status(code, r) => {
+                    let body = r.into_string().unwrap_or_default();
+                    format!("token request failed ({code}): {body}")
+                }
+                other => format!("token request: {other}"),
+            })?;
         let body = resp.into_string().map_err(|e| format!("token read: {e}"))?;
         let json: Value = serde_json::from_str(&body).map_err(|e| format!("token parse: {e}"))?;
         json["access_token"]
@@ -102,9 +108,16 @@ pub fn exchange_and_save_token(code: &str) -> Result<(), String> {
     let resp = ureq::post("https://oauth2.googleapis.com/token")
         .set("Content-Type", "application/x-www-form-urlencoded")
         .send_string(&body)
-        .map_err(|e| format!("token request: {e}"))?;
+        .map_err(|e| match e {
+            ureq::Error::Status(code, r) => {
+                let body = r.into_string().unwrap_or_default();
+                format!("token request failed ({code}): {body}")
+            }
+            other => format!("token request: {other}"),
+        })?;
     let body = resp.into_string().map_err(|e| format!("token read: {e}"))?;
     let json: Value = serde_json::from_str(&body).map_err(|e| format!("token parse: {e}"))?;
+    println!("Google token response: {json:#}");
     let token = json["refresh_token"]
         .as_str()
         .ok_or_else(|| "no refresh_token in Google response".to_string())?;
@@ -129,6 +142,8 @@ pub fn auth_url() -> Option<String> {
          ?client_id={client_id}\
          &redirect_uri=urn:ietf:wg:oauth:2.0:oob\
          &response_type=code\
+         &access_type=offline\
+         &prompt=consent\
          &scope=https://www.googleapis.com/auth/spreadsheets.readonly"
     ))
 }

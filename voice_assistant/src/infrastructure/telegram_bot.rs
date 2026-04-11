@@ -249,10 +249,7 @@ impl TelegramBot {
                         use crate::infrastructure::google_sheets::exchange_and_save_token;
                         match exchange_and_save_token(text) {
                             Ok(()) => "Token de Google guardado. Ya puedes usar /cuentas.".to_string(),
-                            Err(e) => {
-                                eprintln!("[auth_google: exchange error: {e}]");
-                                "Error al intercambiar el código. Comprueba que es correcto e inténtalo de nuevo con /auth_google.".to_string()
-                            }
+                            Err(e) => format!("Error al intercambiar el código: {e}"),
                         }
                     };
                     self.gateway.post_message(update.chat_id, &msg);
