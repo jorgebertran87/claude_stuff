@@ -21,7 +21,11 @@ RUN mkdir -p src \
     && touch src/lib.rs \
     && echo 'fn main() {}' > src/main.rs \
     && cargo build --release \
-    && rm -rf src
+    && rm -rf src \
+              target/release/.fingerprint/voice_assistant-* \
+              target/release/deps/voice_assistant-* \
+              target/release/deps/libvoice_assistant-* \
+              target/release/voice_assistant
 
 # Compile application sources
 COPY src/ src/
