@@ -37,7 +37,7 @@ UNIT_TESTS = --lib $(patsubst tests/unit/%.rs,--test %,$(wildcard tests/unit/*.r
 INTEGRATION_TESTS = $(patsubst tests/integration/%.rs,--test %,$(wildcard tests/integration/*.rs))
 
 # Map infrastructure source file → relevant integration test (name matches file stem)
-file_tests = $(if $(FILE),--test $(basename $(notdir $(FILE))),$(INTEGRATION_TESTS))
+FILE_TESTS = $(if $(FILE),--test $(basename $(notdir $(FILE))),$(INTEGRATION_TESTS))
 
 test:
 	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
@@ -71,7 +71,7 @@ mutants-integration:
 		-e SDL_VIDEODRIVER=dummy \
 		-v $(HOME)/.claude:/root/.claude \
 		$(IMAGE)-mutants \
-		cargo mutants -j 3 --config config/mutants-integration.toml $(if $(FILE),-f $(FILE)) -- $(file_tests)
+		cargo mutants -j 3 --config config/mutants-integration.toml $(if $(FILE),-f $(FILE)) -- $(FILE_TESTS)
 
 debug:
 	docker run -it --rm \
