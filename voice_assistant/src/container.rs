@@ -97,7 +97,8 @@ pub fn build_telegram_bot(token: String) -> TelegramBot {
     )
 }
 
-/// Create a fresh `OrderHandler` (one per Telegram chat session).
+/// Create a fresh `OrderHandler`. Used both for direct-order (CLI) mode and as
+/// a factory passed to the Telegram bot (one handler per chat session).
 pub fn make_order_handler() -> Arc<dyn OrderHandler> {
     Arc::new(ClaudeCodeHandler::new())
 }
@@ -115,7 +116,3 @@ pub fn build_voice_service(wake_word: WakeWord, language: Language) -> VoiceList
     )
 }
 
-/// Build an `OrderHandler` for direct-order (CLI) mode.
-pub fn build_order_handler() -> Arc<dyn OrderHandler> {
-    Arc::new(ClaudeCodeHandler::new())
-}

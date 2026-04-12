@@ -18,7 +18,7 @@ fn main() {
             container::build_telegram_bot(token).run(container::make_order_handler);
         }
         Ok(CliArgs::DirectOrder(order)) => {
-            let handler = container::build_order_handler();
+            let handler = container::make_order_handler();
             println!("Order: {order:?}");
             println!("Claudito: {}", handler.handle(&order));
         }
