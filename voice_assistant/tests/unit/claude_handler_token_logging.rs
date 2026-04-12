@@ -95,7 +95,7 @@ impl Default for TokenLogWorld {
 
 fn make_handler(world: &mut TokenLogWorld, backend: FakeBackend) {
     world.handler = Some(ClaudeCodeHandler::with_injectable(
-        Box::new(backend),
+        Arc::new(backend),
         world.log_path.clone(),
     ));
 }
@@ -144,7 +144,7 @@ fn given_session_tracking(world: &mut TokenLogWorld) {
     let calls = Arc::new(Mutex::new(Vec::<Option<String>>::new()));
     world.session_calls = Some(calls.clone());
     world.handler = Some(ClaudeCodeHandler::with_injectable(
-        Box::new(SessionTrackingBackend { calls }),
+        Arc::new(SessionTrackingBackend { calls }),
         world.log_path.clone(),
     ));
 }

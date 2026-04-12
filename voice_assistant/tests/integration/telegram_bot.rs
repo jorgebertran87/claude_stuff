@@ -104,7 +104,7 @@ fn given_bot(world: &mut TelegramWorld) {
     let gateway = Arc::new(FakeGateway::default());
     world.gateway = Arc::clone(&gateway);
     world.bot = Some(TelegramBot::with_injectable(
-        Box::new(FakeGatewayWrapper(Arc::clone(&gateway))),
+        Arc::clone(&gateway) as Arc<dyn TelegramGateway>,
         Arc::new(GoogleSheetsGatewayImpl),
         Arc::new(GttsTextSynthesizer),
         Arc::new(ClaudeImageAnalyzer),
@@ -117,7 +117,7 @@ fn given_bot_restricted(world: &mut TelegramWorld, chat_id: i64) {
     let gateway = Arc::new(FakeGateway::default());
     world.gateway = Arc::clone(&gateway);
     world.bot = Some(TelegramBot::with_injectable(
-        Box::new(FakeGatewayWrapper(Arc::clone(&gateway))),
+        Arc::clone(&gateway) as Arc<dyn TelegramGateway>,
         Arc::new(GoogleSheetsGatewayImpl),
         Arc::new(GttsTextSynthesizer),
         Arc::new(ClaudeImageAnalyzer),
@@ -258,25 +258,6 @@ fn then_handler_received(world: &mut TelegramWorld, expected: String) {
 #[then(regex = r"^the offset is (\d+)$")]
 fn then_offset(world: &mut TelegramWorld, expected: i64) {
     assert_eq!(world.offset, expected, "offset mismatch");
-}
-
-// ── Gateway wrapper to share Arc ───���───────────────────────────────────────────
-
-struct FakeGatewayWrapper(Arc<FakeGateway>);
-
-impl TelegramGateway for FakeGatewayWrapper {
-    fn fetch_updates(&self, offset: i64) -> Vec<TelegramUpdate> {
-        self.0.fetch_updates(offset)
-    }
-    fn post_message(&self, chat_id: i64, text: &str) {
-        self.0.post_message(chat_id, text);
-    }
-    fn send_voice(&self, chat_id: i64, data: &[u8]) {
-        self.0.send_voice(chat_id, data);
-    }
-    fn download_file(&self, file_id: &str) -> Option<Vec<u8>> {
-        self.0.download_file(file_id)
-    }
 }
 
 fn main() {

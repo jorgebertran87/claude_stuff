@@ -58,7 +58,7 @@ impl Default for ClaudeCliWorld {
 #[given("the claude CLI is available and authenticated")]
 fn given_claude_available(world: &mut ClaudeCliWorld) {
     world.handler = Some(ClaudeCodeHandler::with_injectable(
-        Box::new(ClaudeCliBackend),
+        std::sync::Arc::new(ClaudeCliBackend),
         world.log_path.clone(),
     ));
 }

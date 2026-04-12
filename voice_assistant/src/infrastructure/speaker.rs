@@ -9,6 +9,8 @@ use regex::Regex;
 use whichlang::detect_language;
 
 use crate::domain::model::Language;
+use shaku::Component;
+
 use crate::domain::ports::{AudioSpeaker, EchoRef, TextSynthesizer};
 
 // Supported gTTS language codes (subset; extended as needed).
@@ -310,6 +312,8 @@ fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
 
 // ── GttsTextSynthesizer ───────────────────────────────────────────────────────
 
+#[derive(Component)]
+#[shaku(interface = TextSynthesizer)]
 pub struct GttsTextSynthesizer;
 
 impl TextSynthesizer for GttsTextSynthesizer {
@@ -324,7 +328,10 @@ impl TextSynthesizer for GttsTextSynthesizer {
 
 // ── GTTSSpeaker ───────────────────────────────────────────────────────────────
 
+#[derive(Component)]
+#[shaku(interface = AudioSpeaker)]
 pub struct GTTSSpeaker {
+    #[shaku(default)]
     current_pid: Arc<Mutex<Option<u32>>>,
 }
 

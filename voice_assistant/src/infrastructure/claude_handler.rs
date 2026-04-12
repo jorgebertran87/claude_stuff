@@ -2,7 +2,9 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+
+use shaku::Component;
 
 use crate::domain::ports::{ImageAnalyzer, OrderHandler};
 
@@ -94,22 +96,26 @@ pub trait ClaudeBackend: Send + Sync {
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
+#[derive(Component)]
+#[shaku(interface = OrderHandler)]
 pub struct ClaudeCodeHandler {
-    backend:    Box<dyn ClaudeBackend>,
+    #[shaku(inject)]
+    backend:    Arc<dyn ClaudeBackend>,
     log_file:   PathBuf,
+    #[shaku(default)]
     session_id: Mutex<Option<String>>,
 }
 
 impl ClaudeCodeHandler {
     pub fn new() -> Self {
         Self {
-            backend:    Box::new(ClaudeCliBackend),
+            backend:    Arc::new(ClaudeCliBackend),
             log_file:   PathBuf::from(".orders_tokens"),
             session_id: Mutex::new(None),
         }
     }
 
-    pub fn with_injectable(backend: Box<dyn ClaudeBackend>, log_file: PathBuf) -> Self {
+    pub fn with_injectable(backend: Arc<dyn ClaudeBackend>, log_file: PathBuf) -> Self {
         Self { backend, log_file, session_id: Mutex::new(None) }
     }
 }
@@ -138,6 +144,8 @@ impl OrderHandler for ClaudeCodeHandler {
 
 // ── Real backend: calls the `claude` CLI ─────────────────────────────────────
 
+#[derive(Component)]
+#[shaku(interface = ClaudeBackend)]
 pub struct ClaudeCliBackend;
 
 impl ClaudeBackend for ClaudeCliBackend {
@@ -219,6 +227,8 @@ pub fn parse_result_json(json: &str) -> Result<TokenUsage, String> {
 
 // ── ClaudeImageAnalyzer ───────────────────────────────────────────────────────
 
+#[derive(Component)]
+#[shaku(interface = ImageAnalyzer)]
 pub struct ClaudeImageAnalyzer;
 
 impl ImageAnalyzer for ClaudeImageAnalyzer {

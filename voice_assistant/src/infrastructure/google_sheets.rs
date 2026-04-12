@@ -1,5 +1,7 @@
 use serde_json::Value;
 
+use shaku::Component;
+
 use crate::domain::ports::GoogleSheetsGateway;
 
 const TOKEN_FILE: &str = ".google_refresh_token";
@@ -137,6 +139,8 @@ fn urlencode(s: &str) -> String {
 }
 
 /// Concrete implementation of `GoogleSheetsGateway` that reads credentials from env vars.
+#[derive(Component)]
+#[shaku(interface = GoogleSheetsGateway)]
 pub struct GoogleSheetsGatewayImpl;
 
 impl GoogleSheetsGateway for GoogleSheetsGatewayImpl {

@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
+use shaku::Component;
+
 use crate::domain::ports::{GoogleSheetsGateway, ImageAnalyzer, OrderHandler, TextSynthesizer};
 use crate::infrastructure::claude_handler::ClaudeImageAnalyzer;
 use crate::infrastructure::google_sheets::GoogleSheetsGatewayImpl;
@@ -40,12 +42,14 @@ pub trait TelegramGateway: Send + Sync {
 }
 
 /// Real Telegram gateway using ureq HTTP client.
-struct UreqGateway {
+#[derive(Component)]
+#[shaku(interface = TelegramGateway)]
+pub struct UreqGateway {
     token: String,
 }
 
 impl UreqGateway {
-    fn new(token: String) -> Self {
+    pub fn new(token: String) -> Self {
         Self { token }
     }
 
@@ -184,7 +188,7 @@ fn play_audio_bytes(bytes: &[u8]) {
 
 /// Main Telegram bot orchestrator.
 pub struct TelegramBot {
-    gateway: Box<dyn TelegramGateway>,
+    gateway: Arc<dyn TelegramGateway>,
     sheets: Arc<dyn GoogleSheetsGateway>,
     synthesizer: Arc<dyn TextSynthesizer>,
     image_analyzer: Arc<dyn ImageAnalyzer>,
@@ -208,7 +212,7 @@ impl TelegramBot {
         }
 
         Self {
-            gateway: Box::new(UreqGateway::new(token)),
+            gateway: Arc::new(UreqGateway::new(token)),
             sheets: Arc::new(GoogleSheetsGatewayImpl),
             synthesizer: Arc::new(GttsTextSynthesizer),
             image_analyzer: Arc::new(ClaudeImageAnalyzer),
@@ -218,7 +222,7 @@ impl TelegramBot {
 
     /// Create a new bot with injectable dependencies (for testing).
     pub fn with_injectable(
-        gateway: Box<dyn TelegramGateway>,
+        gateway: Arc<dyn TelegramGateway>,
         sheets: Arc<dyn GoogleSheetsGateway>,
         synthesizer: Arc<dyn TextSynthesizer>,
         image_analyzer: Arc<dyn ImageAnalyzer>,

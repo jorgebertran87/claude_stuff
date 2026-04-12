@@ -2,9 +2,13 @@
 
 use std::process::{Command, Stdio};
 
+use shaku::Component;
+
 use crate::domain::model::{AudioCapture, Language};
 use crate::domain::ports::Transcriber;
 
+#[derive(Component)]
+#[shaku(interface = Transcriber)]
 pub struct GoogleTranscriber;
 
 impl GoogleTranscriber {
