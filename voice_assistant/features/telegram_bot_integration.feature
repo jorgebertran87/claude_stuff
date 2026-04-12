@@ -42,3 +42,15 @@ Feature: Telegram bot infrastructure integration
     And an update with id 42 and text "test" from chat 1
     When run_once processes the updates
     Then the offset is 43
+
+  Scenario: Photo update with failed download posts error message
+    Given a TelegramBot with a fake gateway
+    And a photo update from chat 1 with no downloadable bytes
+    When run_once processes the updates
+    Then the gateway posted a message to chat 1 containing "descargar"
+
+  Scenario: Photo update with downloadable bytes is routed through Claude and a response is posted
+    Given a TelegramBot with a fake gateway
+    And a photo update from chat 1 with downloadable bytes
+    When run_once processes the updates
+    Then the gateway posted a message to chat 1

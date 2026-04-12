@@ -124,28 +124,7 @@ impl OrderHandler for ClaudeCodeHandler {
             }
             Ok(usage) => {
                 *self.session_id.lock().unwrap() = usage.session_id.clone();
-                let total = usage.input_tokens
-                    + usage.output_tokens
-                    + usage.cache_read_input_tokens
-                    + usage.cache_creation_input_tokens;
-                let log_line = format!(
-                    "Claude order: {} | Tokens used — input: {}, output: {}, \
-                     cache_read: {}, cache_creation: {}, total: {} | cost: ${:.6} USD",
-                    order,
-                    usage.input_tokens,
-                    usage.output_tokens,
-                    usage.cache_read_input_tokens,
-                    usage.cache_creation_input_tokens,
-                    total,
-                    usage.total_cost_usd,
-                );
-                if let Ok(mut file) = OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&self.log_file)
-                {
-                    let _ = writeln!(file, "{}", log_line);
-                }
+                log_token_usage(order, &usage, self.log_file.to_str().unwrap_or(".orders_tokens"));
                 usage.result
             }
         }
@@ -200,7 +179,28 @@ impl ClaudeBackend for ClaudeCliBackend {
     }
 }
 
-fn parse_result_json(json: &str) -> Result<TokenUsage, String> {
+pub fn log_token_usage(order: &str, usage: &TokenUsage, log_file: &str) {
+    let total = usage.input_tokens
+        + usage.output_tokens
+        + usage.cache_read_input_tokens
+        + usage.cache_creation_input_tokens;
+    let log_line = format!(
+        "Claude order: {} | Tokens used — input: {}, output: {}, \
+         cache_read: {}, cache_creation: {}, total: {} | cost: ${:.6} USD",
+        order,
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.cache_read_input_tokens,
+        usage.cache_creation_input_tokens,
+        total,
+        usage.total_cost_usd,
+    );
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_file) {
+        let _ = writeln!(file, "{}", log_line);
+    }
+}
+
+pub fn parse_result_json(json: &str) -> Result<TokenUsage, String> {
     let result     = extract_str(json, "\"result\":")         .unwrap_or_default();
     let cost_str   = extract_str(json, "\"total_cost_usd\":") .unwrap_or_default();
     let session_id = extract_str(json, "\"session_id\":");

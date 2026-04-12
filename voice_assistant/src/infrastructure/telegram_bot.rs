@@ -2,6 +2,7 @@
 //! Provides long-polling access to Telegram messages and routes them through OrderHandler.
 
 use std::collections::{HashMap, HashSet};
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,12 +12,18 @@ use serde_json::Value;
 use crate::domain::ports::OrderHandler;
 use crate::infrastructure::speaker::{synthesize_alexa_spotify, synthesize_text};
 
-/// A single Telegram update containing message text.
+const MODEL_SONNET: &str = "claude-sonnet-4-6";
+const MODEL_OPUS:   &str = "claude-opus-4-6";
+
+/// A single Telegram update containing message text and optional photo.
 #[derive(Clone)]
 pub struct TelegramUpdate {
     pub update_id: i64,
     pub chat_id: i64,
+    /// Message text or caption (empty string when only a photo was sent).
     pub text: String,
+    /// file_id of the largest available photo, if the message contains an image.
+    pub photo_file_id: Option<String>,
 }
 
 /// Injectable HTTP gateway for Telegram API calls.
@@ -26,6 +33,8 @@ pub trait TelegramGateway: Send + Sync {
     fn post_message(&self, chat_id: i64, text: &str);
     /// Send an audio file as a voice message (MP3 bytes).
     fn send_voice(&self, chat_id: i64, data: &[u8]);
+    /// Download a file from Telegram by its file_id. Returns raw bytes or None on error.
+    fn download_file(&self, file_id: &str) -> Option<Vec<u8>>;
 }
 
 /// Real Telegram gateway using ureq HTTP client.
@@ -104,6 +113,25 @@ impl TelegramGateway for UreqGateway {
                 eprintln!("[telegram send_message error: {e}]");
             }
         }
+    }
+
+    fn download_file(&self, file_id: &str) -> Option<Vec<u8>> {
+        let url = format!("{}/getFile?file_id={}", self.base_url(), file_id);
+        let resp = ureq::get(&url)
+            .timeout(Duration::from_secs(30))
+            .call()
+            .ok()?;
+        let body = resp.into_string().ok()?;
+        let v: Value = serde_json::from_str(&body).ok()?;
+        let file_path = v["result"]["file_path"].as_str()?;
+        let file_url = format!("https://api.telegram.org/file/bot{}/{}", self.token, file_path);
+        let resp = ureq::get(&file_url)
+            .timeout(Duration::from_secs(60))
+            .call()
+            .ok()?;
+        let mut bytes = Vec::new();
+        resp.into_reader().read_to_end(&mut bytes).ok()?;
+        Some(bytes)
     }
 
     fn send_voice(&self, chat_id: i64, data: &[u8]) {
@@ -221,6 +249,24 @@ impl TelegramBot {
 
             if !self.is_allowed(update.chat_id) {
                 eprintln!("[telegram: ignoring unauthorised chat {}]", update.chat_id);
+                continue;
+            }
+
+            // Handle photo messages — analyze with Claude vision
+            if let Some(ref file_id) = update.photo_file_id {
+                let caption = update.text.trim();
+                let lower = caption.to_lowercase();
+                let model = if lower.contains("use opus") || lower.contains("utiliza opus") {
+                    MODEL_OPUS
+                } else {
+                    MODEL_SONNET
+                };
+                eprintln!("[telegram chat={} photo={} model={}]", update.chat_id, file_id, model);
+                let response = match self.gateway.download_file(file_id) {
+                    Some(bytes) => analyze_image(&bytes, caption, model),
+                    None => "No se pudo descargar la imagen.".to_string(),
+                };
+                self.gateway.post_message(update.chat_id, &response);
                 continue;
             }
 
@@ -435,6 +481,70 @@ fn handle_cuentas(handler: Arc<dyn OrderHandler>) -> String {
     handler.handle(&prompt)
 }
 
+fn analyze_image(bytes: &[u8], caption: &str, model: &str) -> String {
+    use crate::infrastructure::claude_handler::{parse_result_json, log_token_usage};
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp_path = format!("/tmp/telegram_image_{nanos}.jpg");
+
+    if let Err(e) = std::fs::write(&tmp_path, bytes) {
+        eprintln!("[analyze_image: failed to write temp file: {e}]");
+        return "Error al procesar la imagen.".to_string();
+    }
+
+    let prompt = if caption.is_empty() { "Describe esta imagen." } else { caption };
+    let full_prompt = format!("Read the image at {tmp_path} and then answer: {prompt}");
+
+    let mut child = match Command::new("claude")
+        .args(["--print", "--output-format", "json",
+               "--model", model,
+               "--allowedTools", "Read"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[analyze_image: failed to spawn claude: {e}]");
+            return "Error al analizar la imagen.".to_string();
+        }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(full_prompt.as_bytes());
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("[analyze_image: wait_with_output error: {e}]");
+            return "Error al analizar la imagen.".to_string();
+        }
+    };
+
+    let _ = std::fs::remove_file(&tmp_path);
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        eprintln!("[analyze_image: claude exited with error: {err}]");
+        return "Error al analizar la imagen.".to_string();
+    }
+
+    let json = String::from_utf8_lossy(&output.stdout);
+    match parse_result_json(&json) {
+        Ok(usage) => {
+            let order_preview = if caption.len() > 80 { &caption[..80] } else { caption };
+            log_token_usage(&format!("[image] {order_preview}"), &usage, ".orders_tokens");
+            usage.result
+        }
+        Err(_) => "No se pudo analizar la imagen.".to_string(),
+    }
+}
+
 /// Set or query the default PulseAudio sink volume via `pactl`.
 ///
 /// `arg` forms:
@@ -597,15 +707,25 @@ fn parse_updates(body: &str) -> Vec<TelegramUpdate> {
             None => continue,
         };
 
+        // Extract the largest available photo (last element = highest resolution)
+        let photo_file_id = msg["photo"].as_array().and_then(|photos| {
+            photos.last().and_then(|p| p["file_id"].as_str().map(|s| s.to_string()))
+        });
+
         let text = match msg["text"].as_str() {
             Some(t) => t.to_string(),
-            None => continue, // Skip stickers, photos, etc.
+            None if photo_file_id.is_some() => {
+                // Use caption as the prompt, empty string if absent
+                msg["caption"].as_str().unwrap_or("").to_string()
+            }
+            None => continue, // Skip stickers, voice notes, etc.
         };
 
         results.push(TelegramUpdate {
             update_id,
             chat_id,
             text,
+            photo_file_id,
         });
     }
 

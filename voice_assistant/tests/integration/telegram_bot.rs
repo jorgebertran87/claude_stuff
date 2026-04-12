@@ -14,6 +14,8 @@ struct FakeGateway {
     updates: Mutex<Vec<TelegramUpdate>>,
     posted: Mutex<Vec<(i64, String)>>,
     voices: Mutex<Vec<(i64, Vec<u8>)>>,
+    /// Bytes returned by download_file; None means download fails.
+    download_bytes: Mutex<Option<Vec<u8>>>,
 }
 
 impl TelegramGateway for FakeGateway {
@@ -27,6 +29,10 @@ impl TelegramGateway for FakeGateway {
 
     fn send_voice(&self, chat_id: i64, data: &[u8]) {
         self.voices.lock().unwrap().push((chat_id, data.to_vec()));
+    }
+
+    fn download_file(&self, _file_id: &str) -> Option<Vec<u8>> {
+        self.download_bytes.lock().unwrap().clone()
     }
 }
 
@@ -116,6 +122,7 @@ fn given_update(world: &mut TelegramWorld, text: String, chat_id: i64) {
         update_id: world.offset + 1,
         chat_id,
         text,
+        photo_file_id: None,
     });
 }
 
@@ -125,6 +132,7 @@ fn given_update_with_id(world: &mut TelegramWorld, id: i64, text: String, chat_i
         update_id: id,
         chat_id,
         text,
+        photo_file_id: None,
     });
 }
 
@@ -133,6 +141,29 @@ fn given_handler_exists(world: &mut TelegramWorld, chat_id: i64) {
     let handler: Arc<dyn OrderHandler> = Arc::clone(&world.handler) as Arc<dyn OrderHandler>;
     world.handlers.insert(chat_id, handler);
 }
+
+#[given(regex = r"^a photo update from chat (\d+) with no downloadable bytes$")]
+fn given_photo_update_no_bytes(world: &mut TelegramWorld, chat_id: i64) {
+    *world.gateway.download_bytes.lock().unwrap() = None;
+    world.gateway.updates.lock().unwrap().push(TelegramUpdate {
+        update_id: world.offset + 1,
+        chat_id,
+        text: String::new(),
+        photo_file_id: Some("fake_file_id".to_string()),
+    });
+}
+
+#[given(regex = r"^a photo update from chat (\d+) with downloadable bytes$")]
+fn given_photo_update_with_bytes(world: &mut TelegramWorld, chat_id: i64) {
+    *world.gateway.download_bytes.lock().unwrap() = Some(vec![0u8; 8]);
+    world.gateway.updates.lock().unwrap().push(TelegramUpdate {
+        update_id: world.offset + 1,
+        chat_id,
+        text: String::new(),
+        photo_file_id: Some("fake_file_id".to_string()),
+    });
+}
+
 
 // ── When steps ──────────────────────��──────────────────────���───────────────────
 
@@ -160,6 +191,7 @@ fn when_run_once_again(world: &mut TelegramWorld, text: String, chat_id: i64) {
         update_id: world.offset + 1,
         chat_id,
         text,
+        photo_file_id: None,
     });
 
     let handler = Arc::clone(&world.handler);
@@ -232,6 +264,9 @@ impl TelegramGateway for FakeGatewayWrapper {
     }
     fn send_voice(&self, chat_id: i64, data: &[u8]) {
         self.0.send_voice(chat_id, data);
+    }
+    fn download_file(&self, file_id: &str) -> Option<Vec<u8>> {
+        self.0.download_file(file_id)
     }
 }
 
