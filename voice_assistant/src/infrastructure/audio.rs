@@ -1,18 +1,24 @@
 //! Microphone capture with optional acoustic echo cancellation.
 
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
+
+use shaku::Component;
 
 use crate::domain::model::AudioCapture;
 use crate::domain::ports::{AudioCapturer, EchoRef};
 use crate::infrastructure::speech::cancel_echo;
 
+#[derive(Component)]
+#[shaku(interface = AudioCapturer)]
 pub struct MicrophoneCapturer {
-    echo_reference: Option<EchoRef>,
+    #[shaku(default)]
+    echo_reference: Mutex<Option<EchoRef>>,
 }
 
 impl MicrophoneCapturer {
     pub fn new() -> Self {
-        Self { echo_reference: None }
+        Self { echo_reference: Mutex::new(None) }
     }
 
     /// Apply echo cancellation to a raw audio buffer using the stored reference.
@@ -22,7 +28,8 @@ impl MicrophoneCapturer {
         sample_rate: u32,
         _sample_width: u16,
     ) -> Vec<u8> {
-        let Some((ref ref_bytes, ref_rate, _)) = self.echo_reference else {
+        let guard = self.echo_reference.lock().unwrap();
+        let Some((ref ref_bytes, ref_rate, _)) = *guard else {
             return raw.to_vec();
         };
 
@@ -47,7 +54,7 @@ impl Default for MicrophoneCapturer {
 
 impl AudioCapturer for MicrophoneCapturer {
     fn capture(
-        &mut self,
+        &self,
         timeout_ms:           Option<u64>,
         phrase_time_limit_ms: Option<u64>,
         pause_threshold_ms:   Option<u64>,
@@ -85,14 +92,14 @@ impl AudioCapturer for MicrophoneCapturer {
         Some(AudioCapture::new(bytes, 16_000, 2))
     }
 
-    fn calibrate(&mut self, _duration_secs: f64) {
+    fn calibrate(&self, _duration_secs: f64) {
         // sox `rec` adapts automatically; nothing to calibrate.
     }
-    fn mute(&mut self)   {}
-    fn unmute(&mut self) {}
+    fn mute(&self)   {}
+    fn unmute(&self) {}
 
-    fn set_echo_reference(&mut self, reference: Option<EchoRef>) {
-        self.echo_reference = reference;
+    fn set_echo_reference(&self, reference: Option<EchoRef>) {
+        *self.echo_reference.lock().unwrap() = reference;
     }
 }
 

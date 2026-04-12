@@ -19,7 +19,7 @@ impl FakeCapturer {
 }
 
 impl AudioCapturer for FakeCapturer {
-    fn capture(&mut self, _t: Option<u64>, _p: Option<u64>, _pa: Option<u64>) -> Option<AudioCapture> {
+    fn capture(&self, _t: Option<u64>, _p: Option<u64>, _pa: Option<u64>) -> Option<AudioCapture> {
         let mut q = self.queue.lock().unwrap();
         if q.is_empty() { return None; }
         match q.remove(0) {
@@ -27,10 +27,10 @@ impl AudioCapturer for FakeCapturer {
             None => None,
         }
     }
-    fn calibrate(&mut self, _: f64) {}
-    fn mute(&mut self) {}
-    fn unmute(&mut self) {}
-    fn set_echo_reference(&mut self, _: Option<EchoRef>) {}
+    fn calibrate(&self, _: f64) {}
+    fn mute(&self) {}
+    fn unmute(&self) {}
+    fn set_echo_reference(&self, _: Option<EchoRef>) {}
 }
 
 struct FakeTranscriber {
@@ -138,10 +138,10 @@ fn when_wait_for_wake_word(world: &mut WakeWordWorld) {
         }
     }
 
-    let capturer = Box::new(FakeCapturer::new(capture_queue));
+    let capturer = Arc::new(FakeCapturer::new(capture_queue));
     let transcriber: Arc<dyn Transcriber> = Arc::new(FakeTranscriber::new(transcribe_queue));
 
-    let mut service = VoiceListenerService::new(
+    let service = VoiceListenerService::new(
         capturer,
         transcriber,
         Arc::new(FakeHandler),

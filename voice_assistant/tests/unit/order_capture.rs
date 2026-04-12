@@ -19,7 +19,7 @@ impl FakeCapturer {
 }
 
 impl AudioCapturer for FakeCapturer {
-    fn capture(&mut self, _t: Option<u64>, _p: Option<u64>, _pa: Option<u64>) -> Option<AudioCapture> {
+    fn capture(&self, _t: Option<u64>, _p: Option<u64>, _pa: Option<u64>) -> Option<AudioCapture> {
         let mut q = self.queue.lock().unwrap();
         if q.is_empty() { return None; }
         match q.remove(0) {
@@ -27,10 +27,10 @@ impl AudioCapturer for FakeCapturer {
             None => None,
         }
     }
-    fn calibrate(&mut self, _: f64) {}
-    fn mute(&mut self) {}
-    fn unmute(&mut self) {}
-    fn set_echo_reference(&mut self, _: Option<EchoRef>) {}
+    fn calibrate(&self, _: f64) {}
+    fn mute(&self) {}
+    fn unmute(&self) {}
+    fn set_echo_reference(&self, _: Option<EchoRef>) {}
 }
 
 // ── Fake transcriber ─────────────────────────────────────────────────────────
@@ -144,8 +144,8 @@ fn when_listen(world: &mut OrderWorld) {
         FakeTranscriber::new(world.transcription_queue.drain(..).collect()),
     );
 
-    let mut service = VoiceListenerService::new(
-        Box::new(FakeCapturer::new(world.capture_queue.drain(..).collect())),
+    let service = VoiceListenerService::new(
+        Arc::new(FakeCapturer::new(world.capture_queue.drain(..).collect())),
         transcriber,
         Arc::new(FakeHandler),
         speaker.clone(),

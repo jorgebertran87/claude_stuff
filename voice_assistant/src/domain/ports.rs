@@ -3,18 +3,18 @@ use crate::domain::model::{AudioCapture, Language};
 
 pub type EchoRef = (Vec<u8>, u32, u16); // (raw_bytes, sample_rate, sample_width)
 
-pub trait AudioCapturer: Send {
+pub trait AudioCapturer: Send + Sync {
     fn capture(
-        &mut self,
-        timeout_ms:         Option<u64>,
+        &self,
+        timeout_ms:           Option<u64>,
         phrase_time_limit_ms: Option<u64>,
-        pause_threshold_ms: Option<u64>,
+        pause_threshold_ms:   Option<u64>,
     ) -> Option<AudioCapture>;
 
-    fn calibrate(&mut self, duration_secs: f64);
-    fn mute(&mut self);
-    fn unmute(&mut self);
-    fn set_echo_reference(&mut self, reference: Option<EchoRef>);
+    fn calibrate(&self, duration_secs: f64);
+    fn mute(&self);
+    fn unmute(&self);
+    fn set_echo_reference(&self, reference: Option<EchoRef>);
 }
 
 pub trait Transcriber: Send + Sync {

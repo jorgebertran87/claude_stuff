@@ -53,7 +53,7 @@ fn given_capturer_no_ref(world: &mut AudioWorld) {
 
 #[given(regex = r"^a MicrophoneCapturer with an echo reference at (\d+) Hz$")]
 fn given_capturer_with_ref(world: &mut AudioWorld, ref_rate: u32) {
-    let mut capturer = MicrophoneCapturer::new();
+    let capturer = MicrophoneCapturer::new();
     // Generate a reference signal as raw bytes (sine-like pattern)
     let ref_samples: Vec<i16> = (0..200).map(|i| ((i * 100) % 32000) as i16 - 16000).collect();
     let ref_bytes = i16_to_bytes(&ref_samples);
@@ -72,7 +72,7 @@ fn given_raw_samples(world: &mut AudioWorld, num_samples: usize, sample_rate: u3
 // After correct resampling, the spectral subtraction should reduce the output amplitude.
 #[given(regex = r"^a MicrophoneCapturer with an echo reference matching the mic signal at (\d+) Hz$")]
 fn given_capturer_with_matching_ref(world: &mut AudioWorld, ref_rate: u32) {
-    let mut capturer = MicrophoneCapturer::new();
+    let capturer = MicrophoneCapturer::new();
     // Use the same deterministic formula as given_raw_samples (512 samples at 16000 Hz).
     // We store it at ref_rate so resample() will convert it back when applied.
     let ref_samples: Vec<i16> = (0..512).map(|i| ((i * 137) % 32000) as i16 - 16000).collect();
@@ -83,7 +83,7 @@ fn given_capturer_with_matching_ref(world: &mut AudioWorld, ref_rate: u32) {
 
 #[given(regex = r"^a MicrophoneCapturer using the current audio bytes as its own echo reference at (\d+) Hz$")]
 fn given_capturer_with_self_as_ref(world: &mut AudioWorld, ref_rate: u32) {
-    let mut capturer = MicrophoneCapturer::new();
+    let capturer = MicrophoneCapturer::new();
     capturer.set_echo_reference(Some((world.input_bytes.clone(), ref_rate, 2)));
     world.capturer = Some(capturer);
 }
@@ -99,7 +99,7 @@ fn given_capturer_with_halfrate_matching_ref(world: &mut AudioWorld, num_samples
         .map(|i| ((2 * i * 137) % 32000) as i16 - 16000)
         .collect();
     let ref_bytes = i16_to_bytes(&ref_samples);
-    let mut capturer = MicrophoneCapturer::new();
+    let capturer = MicrophoneCapturer::new();
     capturer.set_echo_reference(Some((ref_bytes, 8000, 2)));
     world.input_bytes = i16_to_bytes(&mic);
     world.sample_rate = 16000;
@@ -236,7 +236,7 @@ fn when_capture(world: &mut AudioWorld) {
         std::fs::write("/tmp/voice_capture.wav", &world.capture_file_content)
             .expect("write capture file before capture()");
     }
-    let capturer = world.capturer.as_mut().unwrap();
+    let capturer = world.capturer.as_ref().unwrap();
     let result = capturer.capture(None, None, None);
     world.capture_returned_some = result.is_some();
     if let Some(ac) = result {
@@ -250,7 +250,7 @@ fn when_capture_with_params(world: &mut AudioWorld, timeout_ms: u64, pause_ms: u
         std::fs::write("/tmp/voice_capture.wav", &world.capture_file_content)
             .expect("write capture file before capture()");
     }
-    let capturer = world.capturer.as_mut().unwrap();
+    let capturer = world.capturer.as_ref().unwrap();
     let result = capturer.capture(Some(timeout_ms), None, Some(pause_ms));
     world.capture_returned_some = result.is_some();
 }

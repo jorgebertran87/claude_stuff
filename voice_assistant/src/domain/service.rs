@@ -10,7 +10,7 @@ const ORDER_RETRIES:          usize = 2;
 const ORDER_PAUSE_THRESHOLD:  u64   = 2_000;
 
 pub struct VoiceListenerService {
-    capturer:      Box<dyn AudioCapturer>,
+    capturer:      Arc<dyn AudioCapturer>,
     transcriber:   Arc<dyn Transcriber>,
     order_handler: Arc<dyn OrderHandler>,
     speaker:       Arc<dyn AudioSpeaker>,
@@ -20,7 +20,7 @@ pub struct VoiceListenerService {
 
 impl VoiceListenerService {
     pub fn new(
-        capturer:      Box<dyn AudioCapturer>,
+        capturer:      Arc<dyn AudioCapturer>,
         transcriber:   Arc<dyn Transcriber>,
         order_handler: Arc<dyn OrderHandler>,
         speaker:       Arc<dyn AudioSpeaker>,
@@ -32,7 +32,7 @@ impl VoiceListenerService {
 
     // ── public methods ────────────────────────────────────────────────────────
 
-    pub fn wait_for_wake_word(&mut self) -> Option<String> {
+    pub fn wait_for_wake_word(&self) -> Option<String> {
         eprintln!("[listening for wake word \"{}\"]", self.wake_word.value);
         loop {
             let audio = self.capturer.capture(None, Some(8_000), None);
@@ -47,7 +47,7 @@ impl VoiceListenerService {
         }
     }
 
-    pub fn listen_for_order(&mut self) -> Option<String> {
+    pub fn listen_for_order(&self) -> Option<String> {
         eprintln!("[listening for order]");
         for attempt in 0..ORDER_RETRIES {
             self.speaker.beep();
@@ -73,7 +73,7 @@ impl VoiceListenerService {
     }
 
     pub fn handle_with_melody(
-        &mut self,
+        &self,
         order: &str,
     ) -> (String, Arc<AtomicBool>, thread::JoinHandle<()>) {
         let stop_signal   = Arc::new(AtomicBool::new(false));
@@ -88,7 +88,7 @@ impl VoiceListenerService {
         (response, stop_signal, melody_thread)
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&self) {
         println!("Voice Order Listener");
         println!("====================");
         println!("Press Ctrl+C to quit.\n");
@@ -140,7 +140,7 @@ impl VoiceListenerService {
     }
 
     pub fn speak_interruptible(
-        &mut self,
+        &self,
         response:      &str,
         stop_melody:   Arc<AtomicBool>,
         melody_thread: thread::JoinHandle<()>,
