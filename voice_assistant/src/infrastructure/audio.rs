@@ -28,13 +28,13 @@ impl MicrophoneCapturer {
         sample_rate: u32,
         _sample_width: u16,
     ) -> Vec<u8> {
-        let guard = self.echo_reference.lock().unwrap();
-        let Some((ref ref_bytes, ref_rate, _)) = *guard else {
+        let echo_ref = self.echo_reference.lock().unwrap().clone();
+        let Some((ref_bytes, ref_rate, _)) = echo_ref else {
             return raw.to_vec();
         };
 
         let mic_samples  = bytes_to_i16(raw);
-        let ref_samples  = bytes_to_i16(ref_bytes);
+        let ref_samples  = bytes_to_i16(&ref_bytes);
 
         // Resample reference if needed (linear interpolation)
         let ref_resampled = if ref_rate != sample_rate {

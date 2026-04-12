@@ -115,8 +115,7 @@ pub fn build_voice_service(wake_word: WakeWord, language: Language) -> VoiceList
     )
 }
 
-/// Resolve a singleton `OrderHandler` for direct-order (CLI) mode.
+/// Build an `OrderHandler` for direct-order (CLI) mode.
 pub fn build_order_handler() -> Arc<dyn OrderHandler> {
-    let module = build_module(String::new());
-    HasComponent::<dyn OrderHandler>::resolve(&module)
+    Arc::new(ClaudeCodeHandler::new())
 }
