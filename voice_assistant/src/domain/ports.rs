@@ -37,4 +37,14 @@ pub trait AudioSpeaker: Send + Sync {
     fn beep(&self);
     fn play_melody(&self, stop_signal: Arc<AtomicBool>);
     fn get_echo_reference(&self) -> Option<EchoRef>;
+    /// Disconnect the physical audio output device (e.g. Bluetooth speaker).
+    /// Default implementation is a no-op for non-BT speakers.
+    fn disconnect(&self) {}
+}
+
+/// Port for accessing Google Sheets data and managing OAuth credentials.
+pub trait GoogleSheetsGateway: Send + Sync {
+    fn auth_url(&self) -> Option<String>;
+    fn exchange_code(&self, code: &str) -> Result<(), String>;
+    fn fetch_as_text(&self) -> Result<String, String>;
 }

@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::domain::ports::OrderHandler;
+use crate::domain::ports::{GoogleSheetsGateway, OrderHandler};
+use crate::infrastructure::google_sheets::GoogleSheetsGatewayImpl;
 use crate::infrastructure::speaker::{synthesize_alexa_spotify, synthesize_text};
 
 const MODEL_SONNET: &str = "claude-sonnet-4-6";
@@ -183,6 +184,7 @@ fn play_audio_bytes(bytes: &[u8]) {
 /// Main Telegram bot orchestrator.
 pub struct TelegramBot {
     gateway: Box<dyn TelegramGateway>,
+    sheets: Arc<dyn GoogleSheetsGateway>,
     allowed_chat_ids: Vec<i64>,
 }
 
@@ -204,17 +206,20 @@ impl TelegramBot {
 
         Self {
             gateway: Box::new(UreqGateway::new(token)),
+            sheets: Arc::new(GoogleSheetsGatewayImpl),
             allowed_chat_ids: allowed,
         }
     }
 
-    /// Create a new bot with an injectable gateway (for testing).
+    /// Create a new bot with injectable dependencies (for testing).
     pub fn with_injectable(
         gateway: Box<dyn TelegramGateway>,
+        sheets: Arc<dyn GoogleSheetsGateway>,
         allowed_chat_ids: Vec<i64>,
     ) -> Self {
         Self {
             gateway,
+            sheets,
             allowed_chat_ids,
         }
     }
@@ -292,8 +297,7 @@ impl TelegramBot {
                     let msg = if started.elapsed() > Duration::from_secs(600) {
                         "El código ha expirado. Usa /auth_google para obtener uno nuevo.".to_string()
                     } else {
-                        use crate::infrastructure::google_sheets::exchange_and_save_token;
-                        match exchange_and_save_token(text) {
+                        match self.sheets.exchange_code(text) {
                             Ok(()) => "Token de Google guardado. Ya puedes usar /cuentas.".to_string(),
                             Err(e) => format!("Error al intercambiar el código: {e}"),
                         }
@@ -305,8 +309,7 @@ impl TelegramBot {
 
             // Handle /auth_google — start OAuth2 flow for Google Sheets
             if text == "/auth_google" {
-                use crate::infrastructure::google_sheets::auth_url;
-                let msg = match auth_url() {
+                let msg = match self.sheets.auth_url() {
                     Some(url) => {
                         pending_auth_chats.insert(update.chat_id, Instant::now());
                         format!("Abre este enlace en tu navegador y autoriza el acceso:\n\n{url}\n\nCuando Google te muestre el código, envíamelo aquí.")
@@ -350,7 +353,7 @@ impl TelegramBot {
 
             if text == "/cuentas" {
                 let handler = handlers.entry(update.chat_id).or_insert_with(make_handler);
-                let msg = handle_cuentas(Arc::clone(handler));
+                let msg = handle_cuentas(Arc::clone(handler), self.sheets.as_ref());
                 self.gateway.post_message(update.chat_id, &msg);
                 continue;
             }
@@ -449,23 +452,10 @@ impl TelegramBot {
     }
 }
 
-fn handle_cuentas(handler: Arc<dyn OrderHandler>) -> String {
-    use crate::infrastructure::google_sheets::SheetsClient;
-
-    let client = match SheetsClient::from_env() {
-        Some(c) => c,
-        None => return "Google Sheets no configurado. Añade GOOGLE_SPREADSHEET_ID, \
-                        GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y GOOGLE_REFRESH_TOKEN al .env."
-            .to_string(),
-    };
-
-    let data = match client.fetch_as_text() {
+fn handle_cuentas(handler: Arc<dyn OrderHandler>, sheets: &dyn GoogleSheetsGateway) -> String {
+    let data = match sheets.fetch_as_text() {
         Ok(d) => d,
-        Err(e) => {
-            eprintln!("[cuentas: fetch error: {e}]");
-            return "Error al acceder a Google Sheets. Comprueba las credenciales en .env."
-                .to_string();
-        }
+        Err(e) => return e,
     };
 
     let sheet_name = std::env::var("CUENTAS_SHEET_NAME")

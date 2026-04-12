@@ -396,4 +396,8 @@ impl AudioSpeaker for GTTSSpeaker {
     fn get_echo_reference(&self) -> Option<EchoRef> {
         None
     }
+
+    fn disconnect(&self) {
+        disconnect_bt_speaker();
+    }
 }

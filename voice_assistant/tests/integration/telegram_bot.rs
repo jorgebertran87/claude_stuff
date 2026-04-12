@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use cucumber::{given, when, then, World};
 
-use voice_assistant::domain::ports::OrderHandler;
+use voice_assistant::domain::ports::{GoogleSheetsGateway, OrderHandler};
 use voice_assistant::infrastructure::telegram_bot::{TelegramBot, TelegramGateway, TelegramUpdate};
 
 // ── Fake gateway ──────────��────────────────────────────────────────────────────
@@ -34,6 +34,16 @@ impl TelegramGateway for FakeGateway {
     fn download_file(&self, _file_id: &str) -> Option<Vec<u8>> {
         self.download_bytes.lock().unwrap().clone()
     }
+}
+
+// ── Fake sheets gateway ───────────────────────────────────────────────────────
+
+struct FakeSheetsGateway;
+
+impl GoogleSheetsGateway for FakeSheetsGateway {
+    fn auth_url(&self) -> Option<String> { None }
+    fn exchange_code(&self, _code: &str) -> Result<(), String> { Ok(()) }
+    fn fetch_as_text(&self) -> Result<String, String> { Err("sheets not configured".into()) }
 }
 
 // ── Fake handler ───────────────────────────────────────���───────────────────────
@@ -102,6 +112,7 @@ fn given_bot(world: &mut TelegramWorld) {
     world.gateway = Arc::clone(&gateway);
     world.bot = Some(TelegramBot::with_injectable(
         Box::new(FakeGatewayWrapper(Arc::clone(&gateway))),
+        Arc::new(FakeSheetsGateway),
         vec![],
     ));
 }
@@ -112,6 +123,7 @@ fn given_bot_restricted(world: &mut TelegramWorld, chat_id: i64) {
     world.gateway = Arc::clone(&gateway);
     world.bot = Some(TelegramBot::with_injectable(
         Box::new(FakeGatewayWrapper(Arc::clone(&gateway))),
+        Arc::new(FakeSheetsGateway),
         vec![chat_id],
     ));
 }

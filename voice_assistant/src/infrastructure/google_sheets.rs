@@ -1,5 +1,7 @@
 use serde_json::Value;
 
+use crate::domain::ports::GoogleSheetsGateway;
+
 const TOKEN_FILE: &str = ".google_refresh_token";
 
 pub struct SheetsClient {
@@ -132,6 +134,30 @@ fn urlencode(s: &str) -> String {
         }
         _ => format!("%{b:02X}").chars().collect(),
     }).collect()
+}
+
+/// Concrete implementation of `GoogleSheetsGateway` that reads credentials from env vars.
+pub struct GoogleSheetsGatewayImpl;
+
+impl GoogleSheetsGateway for GoogleSheetsGatewayImpl {
+    fn auth_url(&self) -> Option<String> {
+        auth_url()
+    }
+
+    fn exchange_code(&self, code: &str) -> Result<(), String> {
+        exchange_and_save_token(code)
+    }
+
+    fn fetch_as_text(&self) -> Result<String, String> {
+        let client = SheetsClient::from_env().ok_or_else(|| {
+            "Google Sheets no configurado. Añade GOOGLE_SPREADSHEET_ID, \
+             GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y GOOGLE_REFRESH_TOKEN al .env.".to_string()
+        })?;
+        client.fetch_as_text().map_err(|e| {
+            eprintln!("[google_sheets: fetch error: {e}]");
+            "Error al acceder a Google Sheets. Comprueba las credenciales en .env.".to_string()
+        })
+    }
 }
 
 /// Build the Google OAuth2 authorization URL using GOOGLE_CLIENT_ID from env.
