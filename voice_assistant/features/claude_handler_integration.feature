@@ -78,14 +78,3 @@ Feature: Claude CLI integration
     When load_prompt is called for "hola mundo"
     Then the prompt contains "idioma"
 
-  Scenario: handle writes the correct token total to the log
-    Given a fake token backend with input 10, output 20, cache_read 30, cache_creation 40
-    When ClaudeCodeHandler handles "test order"
-    Then the token log contains "total: 100"
-
-  Scenario: reset_session clears the stored session id
-    Given a session-tracking backend
-    When ClaudeCodeHandler handles "first order"
-    And reset_session is called
-    And ClaudeCodeHandler handles "second order"
-    Then the second call had no session id

@@ -31,3 +31,10 @@ Feature: ClaudeCodeHandler token logging
     Given a ClaudeCodeHandler with a mocked query that returns result "respuesta esperada"
     When the handler handles "una orden"
     Then the return value is "respuesta esperada"
+
+  Scenario: reset_session clears the stored session id
+    Given a session-tracking backend
+    When the handler handles "primera orden"
+    And reset_session is called
+    And the handler handles "segunda orden"
+    Then the second call had no session id

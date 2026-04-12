@@ -1,48 +1,12 @@
 use cucumber::{given, when, then, World};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use voice_assistant::domain::ports::OrderHandler;
 use voice_assistant::infrastructure::claude_handler::{
-    ClaudeCliBackend, ClaudeCodeHandler, ClaudeBackend, TokenUsage,
+    ClaudeCliBackend, ClaudeCodeHandler,
     detect_intent, strip_frontmatter, extract_u64, extract_str,
     load_skill, load_prompt,
 };
-
-// ── Fake backends ─────────────────────────────────────────────────────────────
-
-struct FixedTokenBackend { input: u64, output: u64, cache_read: u64, cache_creation: u64 }
-
-impl ClaudeBackend for FixedTokenBackend {
-    fn query(&self, _order: &str, _session_id: Option<&str>) -> Result<TokenUsage, String> {
-        Ok(TokenUsage {
-            input_tokens:              self.input,
-            output_tokens:             self.output,
-            cache_read_input_tokens:   self.cache_read,
-            cache_creation_input_tokens: self.cache_creation,
-            total_cost_usd: 0.0,
-            session_id: Some("fake-session".to_string()),
-            result: "ok".to_string(),
-        })
-    }
-}
-
-struct SessionTrackingBackend {
-    calls: Arc<Mutex<Vec<Option<String>>>>,
-}
-
-impl ClaudeBackend for SessionTrackingBackend {
-    fn query(&self, _order: &str, session_id: Option<&str>) -> Result<TokenUsage, String> {
-        self.calls.lock().unwrap().push(session_id.map(str::to_string));
-        Ok(TokenUsage {
-            input_tokens: 1, output_tokens: 1,
-            cache_read_input_tokens: 0, cache_creation_input_tokens: 0,
-            total_cost_usd: 0.0,
-            session_id: Some("tracked-session".to_string()),
-            result: "ok".to_string(),
-        })
-    }
-}
 
 // ── World ─────────────────────────────────────────────────────────────────────
 
@@ -58,7 +22,6 @@ pub struct ClaudeCliWorld {
     string_result:    Option<String>,
     skill_content:    String,
     prompt_content:   String,
-    session_calls:    Option<Arc<Mutex<Vec<Option<String>>>>>,
 }
 
 impl std::fmt::Debug for ClaudeCliWorld {
@@ -86,7 +49,6 @@ impl Default for ClaudeCliWorld {
             string_result:   None,
             skill_content:   String::new(),
             prompt_content:  String::new(),
-            session_calls:   None,
         }
     }
 }
@@ -106,24 +68,6 @@ fn given_no_log(world: &mut ClaudeCliWorld) {
     let _ = std::fs::remove_file(&world.log_path);
 }
 
-#[given(regex = r"^a fake token backend with input (\d+), output (\d+), cache_read (\d+), cache_creation (\d+)$")]
-fn given_fake_token_backend(world: &mut ClaudeCliWorld, input: u64, output: u64, cache_read: u64, cache_creation: u64) {
-    world.handler = Some(ClaudeCodeHandler::with_injectable(
-        Box::new(FixedTokenBackend { input, output, cache_read, cache_creation }),
-        world.log_path.clone(),
-    ));
-}
-
-#[given("a session-tracking backend")]
-fn given_session_tracking(world: &mut ClaudeCliWorld) {
-    let calls = Arc::new(Mutex::new(Vec::<Option<String>>::new()));
-    world.session_calls = Some(calls.clone());
-    world.handler = Some(ClaudeCodeHandler::with_injectable(
-        Box::new(SessionTrackingBackend { calls }),
-        world.log_path.clone(),
-    ));
-}
-
 #[given(regex = r#"^a skill file "(.+)" with content "(.+)"$"#)]
 fn given_skill_file(_world: &mut ClaudeCliWorld, name: String, content: String) {
     let dir = std::path::Path::new("/app/.claude/commands");
@@ -137,11 +81,6 @@ fn given_skill_file(_world: &mut ClaudeCliWorld, name: String, content: String) 
 fn when_handle(world: &mut ClaudeCliWorld, order: String) {
     let handler = world.handler.as_ref().unwrap();
     world.result = handler.handle(&order);
-}
-
-#[when("reset_session is called")]
-fn when_reset_session(world: &mut ClaudeCliWorld) {
-    world.handler.as_ref().unwrap().reset_session();
 }
 
 #[when(regex = r#"^detect_intent is called with "(.+)"$"#)]
@@ -240,16 +179,6 @@ fn then_skill_content(world: &mut ClaudeCliWorld, expected: String) {
 fn then_prompt_contains(world: &mut ClaudeCliWorld, needle: String) {
     assert!(world.prompt_content.contains(&needle),
         "prompt should contain '{needle}', but was: {}", world.prompt_content);
-}
-
-#[then("the second call had no session id")]
-fn then_second_call_no_session(world: &mut ClaudeCliWorld) {
-    let calls = world.session_calls.as_ref().unwrap().lock().unwrap();
-    let second = calls.get(1);
-    assert_eq!(
-        second, Some(&None),
-        "second call should have had no session id, but got: {:?}", second,
-    );
 }
 
 fn main() {

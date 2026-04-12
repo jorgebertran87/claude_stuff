@@ -1,5 +1,6 @@
 use cucumber::{given, when, then, World};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use voice_assistant::domain::ports::OrderHandler;
 use voice_assistant::infrastructure::claude_handler::{ClaudeBackend, ClaudeCodeHandler, TokenUsage};
 
@@ -41,6 +42,23 @@ impl ClaudeBackend for FakeBackend {
     }
 }
 
+struct SessionTrackingBackend {
+    calls: Arc<Mutex<Vec<Option<String>>>>,
+}
+
+impl ClaudeBackend for SessionTrackingBackend {
+    fn query(&self, _order: &str, session_id: Option<&str>) -> Result<TokenUsage, String> {
+        self.calls.lock().unwrap().push(session_id.map(str::to_string));
+        Ok(TokenUsage {
+            input_tokens: 1, output_tokens: 1,
+            cache_read_input_tokens: 0, cache_creation_input_tokens: 0,
+            total_cost_usd: 0.0,
+            session_id: Some("tracked-session".to_string()),
+            result: "ok".to_string(),
+        })
+    }
+}
+
 // ── World ────────────────────────────────────────────────────────────────────
 
 #[derive(World)]
@@ -48,6 +66,7 @@ pub struct TokenLogWorld {
     log_path: PathBuf,
     handler: Option<ClaudeCodeHandler>,
     return_value: String,
+    session_calls: Option<Arc<Mutex<Vec<Option<String>>>>>,
 }
 
 impl std::fmt::Debug for TokenLogWorld {
@@ -69,6 +88,7 @@ impl Default for TokenLogWorld {
             log_path,
             handler: None,
             return_value: String::new(),
+            session_calls: None,
         }
     }
 }
@@ -119,10 +139,25 @@ fn given_mock_with_result(world: &mut TokenLogWorld, result: String) {
     });
 }
 
+#[given("a session-tracking backend")]
+fn given_session_tracking(world: &mut TokenLogWorld) {
+    let calls = Arc::new(Mutex::new(Vec::<Option<String>>::new()));
+    world.session_calls = Some(calls.clone());
+    world.handler = Some(ClaudeCodeHandler::with_injectable(
+        Box::new(SessionTrackingBackend { calls }),
+        world.log_path.clone(),
+    ));
+}
+
 #[when(regex = r#"^the handler handles "(.+)"$"#)]
 fn when_handle(world: &mut TokenLogWorld, order: String) {
     let handler = world.handler.as_ref().unwrap();
     world.return_value = handler.handle(&order);
+}
+
+#[when("reset_session is called")]
+fn when_reset_session(world: &mut TokenLogWorld) {
+    world.handler.as_ref().unwrap().reset_session();
 }
 
 #[then("the token log file exists")]
@@ -165,6 +200,16 @@ fn then_specific_line_contains(world: &mut TokenLogWorld, line_num: usize, needl
 #[then(regex = r#"^the return value is "(.+)"$"#)]
 fn then_return_value(world: &mut TokenLogWorld, expected: String) {
     assert_eq!(world.return_value, expected);
+}
+
+#[then("the second call had no session id")]
+fn then_second_call_no_session(world: &mut TokenLogWorld) {
+    let calls = world.session_calls.as_ref().unwrap().lock().unwrap();
+    let second = calls.get(1);
+    assert_eq!(
+        second, Some(&None),
+        "second call should have had no session id, but got: {:?}", second,
+    );
 }
 
 fn main() {

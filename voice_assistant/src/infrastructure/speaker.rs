@@ -9,7 +9,7 @@ use regex::Regex;
 use whichlang::detect_language;
 
 use crate::domain::model::Language;
-use crate::domain::ports::{AudioSpeaker, EchoRef};
+use crate::domain::ports::{AudioSpeaker, EchoRef, TextSynthesizer};
 
 // Supported gTTS language codes (subset; extended as needed).
 const GTTS_SUPPORTED: &[&str] = &[
@@ -305,6 +305,20 @@ fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
         std::fs::read(output_path).unwrap_or(bytes)
     } else {
         bytes
+    }
+}
+
+// ── GttsTextSynthesizer ───────────────────────────────────────────────────────
+
+pub struct GttsTextSynthesizer;
+
+impl TextSynthesizer for GttsTextSynthesizer {
+    fn synthesize_text(&self, text: &str) -> Vec<u8> {
+        synthesize_text(text)
+    }
+
+    fn synthesize_alexa_spotify(&self, text: &str) -> Vec<u8> {
+        synthesize_alexa_spotify(text)
     }
 }
 

@@ -2,16 +2,17 @@
 //! Provides long-polling access to Telegram messages and routes them through OrderHandler.
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::domain::ports::{GoogleSheetsGateway, OrderHandler};
+use crate::domain::ports::{GoogleSheetsGateway, ImageAnalyzer, OrderHandler, TextSynthesizer};
+use crate::infrastructure::claude_handler::ClaudeImageAnalyzer;
 use crate::infrastructure::google_sheets::GoogleSheetsGatewayImpl;
-use crate::infrastructure::speaker::{synthesize_alexa_spotify, synthesize_text};
+use crate::infrastructure::speaker::GttsTextSynthesizer;
 
 const MODEL_SONNET: &str = "claude-sonnet-4-6";
 const MODEL_OPUS:   &str = "claude-opus-4-6";
@@ -185,6 +186,8 @@ fn play_audio_bytes(bytes: &[u8]) {
 pub struct TelegramBot {
     gateway: Box<dyn TelegramGateway>,
     sheets: Arc<dyn GoogleSheetsGateway>,
+    synthesizer: Arc<dyn TextSynthesizer>,
+    image_analyzer: Arc<dyn ImageAnalyzer>,
     allowed_chat_ids: Vec<i64>,
 }
 
@@ -207,6 +210,8 @@ impl TelegramBot {
         Self {
             gateway: Box::new(UreqGateway::new(token)),
             sheets: Arc::new(GoogleSheetsGatewayImpl),
+            synthesizer: Arc::new(GttsTextSynthesizer),
+            image_analyzer: Arc::new(ClaudeImageAnalyzer),
             allowed_chat_ids: allowed,
         }
     }
@@ -215,11 +220,15 @@ impl TelegramBot {
     pub fn with_injectable(
         gateway: Box<dyn TelegramGateway>,
         sheets: Arc<dyn GoogleSheetsGateway>,
+        synthesizer: Arc<dyn TextSynthesizer>,
+        image_analyzer: Arc<dyn ImageAnalyzer>,
         allowed_chat_ids: Vec<i64>,
     ) -> Self {
         Self {
             gateway,
             sheets,
+            synthesizer,
+            image_analyzer,
             allowed_chat_ids,
         }
     }
@@ -268,7 +277,7 @@ impl TelegramBot {
                 };
                 eprintln!("[telegram chat={} photo={} model={}]", update.chat_id, file_id, model);
                 let response = match self.gateway.download_file(file_id) {
-                    Some(bytes) => analyze_image(&bytes, caption, model),
+                    Some(bytes) => self.image_analyzer.analyze(&bytes, caption, model),
                     None => "No se pudo descargar la imagen.".to_string(),
                 };
                 self.gateway.post_message(update.chat_id, &response);
@@ -386,7 +395,7 @@ impl TelegramBot {
             let is_alexa_spotify = lower.contains("alexa") && lower.contains("spotify");
             if is_alexa_spotify {
                 eprintln!("[telegram: alexa+spotify detected, synthesizing voice order]");
-                let bytes = synthesize_alexa_spotify(&response);
+                let bytes = self.synthesizer.synthesize_alexa_spotify(&response);
                 if bytes.is_empty() {
                     eprintln!("[telegram: TTS synthesis failed]");
                 } else {
@@ -431,9 +440,10 @@ impl TelegramBot {
             }
         });
 
-        let speak_text = |text: &str| {
+        let synthesizer = Arc::clone(&self.synthesizer);
+        let speak_text = move |text: &str| {
             eprintln!("[voice_mode: synthesizing {} chars]", text.len());
-            let bytes = synthesize_text(text);
+            let bytes = synthesizer.synthesize_text(text);
             if bytes.is_empty() {
                 eprintln!("[voice_mode: synthesis returned empty bytes, skipping playback]");
             } else {
@@ -471,69 +481,6 @@ fn handle_cuentas(handler: Arc<dyn OrderHandler>, sheets: &dyn GoogleSheetsGatew
     handler.handle(&prompt)
 }
 
-fn analyze_image(bytes: &[u8], caption: &str, model: &str) -> String {
-    use crate::infrastructure::claude_handler::{parse_result_json, log_token_usage};
-
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let tmp_path = format!("/tmp/telegram_image_{nanos}.jpg");
-
-    if let Err(e) = std::fs::write(&tmp_path, bytes) {
-        eprintln!("[analyze_image: failed to write temp file: {e}]");
-        return "Error al procesar la imagen.".to_string();
-    }
-
-    let prompt = if caption.is_empty() { "Describe esta imagen." } else { caption };
-    let full_prompt = format!("Read the image at {tmp_path} and then answer: {prompt}");
-
-    let mut child = match Command::new("claude")
-        .args(["--print", "--output-format", "json",
-               "--model", model,
-               "--allowedTools", "Read"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("[analyze_image: failed to spawn claude: {e}]");
-            return "Error al analizar la imagen.".to_string();
-        }
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(full_prompt.as_bytes());
-    }
-
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("[analyze_image: wait_with_output error: {e}]");
-            return "Error al analizar la imagen.".to_string();
-        }
-    };
-
-    let _ = std::fs::remove_file(&tmp_path);
-
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        eprintln!("[analyze_image: claude exited with error: {err}]");
-        return "Error al analizar la imagen.".to_string();
-    }
-
-    let json = String::from_utf8_lossy(&output.stdout);
-    match parse_result_json(&json) {
-        Ok(usage) => {
-            let order_preview = if caption.len() > 80 { &caption[..80] } else { caption };
-            log_token_usage(&format!("[image] {order_preview}"), &usage, ".orders_tokens");
-            usage.result
-        }
-        Err(_) => "No se pudo analizar la imagen.".to_string(),
-    }
-}
 
 /// Set or query the default PulseAudio sink volume via `pactl`.
 ///
