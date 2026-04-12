@@ -83,3 +83,8 @@ harness = false
 name = "telegram_bot"
 path = "tests/integration/telegram_bot.rs"
 harness = false
+
+[[test]]
+name = "container"
+path = "tests/integration/container.rs"
+harness = false

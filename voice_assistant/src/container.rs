@@ -68,8 +68,8 @@ module! {
 fn build_module(telegram_token: String) -> AppModule {
     AppModule::builder()
         .with_component_parameters::<ClaudeCodeHandler>(ClaudeCodeHandlerParameters {
-            log_file: PathBuf::from(".orders_tokens"),
-            ..Default::default()
+            log_file:   PathBuf::from(".orders_tokens"),
+            session_id: Default::default(),
         })
         .with_component_parameters::<UreqGateway>(UreqGatewayParameters {
             token: telegram_token,
