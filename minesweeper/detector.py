@@ -22,14 +22,16 @@ def _count_pixels(roi: np.ndarray, low: np.ndarray, high: np.ndarray) -> int:
 
 
 def _is_unrevealed(roi: np.ndarray) -> bool:
-    """Unrevealed cells have strong 3-D raised borders: dark bottom/right, bright top/left."""
+    """Unrevealed cells have a bright top-left highlight and dark bottom-right shadow.
+    When surrounded by other unrevealed cells the adjacent shadows darken the corner,
+    so we fall back to a high-std check (bevel pattern vs flat revealed interior)."""
     h, w = roi.shape[:2]
-    border = max(4, h // 10)
-    top_strip    = roi[:border, border:-border]
-    bottom_strip = roi[-border:, border:-border]
-    top_mean    = float(np.mean(top_strip))
-    bottom_mean = float(np.mean(bottom_strip))
-    return (top_mean - bottom_mean) > 20
+    e = max(3, h // 15)
+    tl = float(np.mean(roi[:e, :e]))
+    br = float(np.mean(roi[-e:, -e:]))
+    if tl > br + 25:
+        return True
+    return float(np.std(roi.astype(np.float32))) > 30
 
 
 def _has_flag(inner: np.ndarray) -> bool:
