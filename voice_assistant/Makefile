@@ -22,7 +22,8 @@ run-prod:
 	@RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) ./run.sh $(if $(ORDER),--order "$(ORDER)") &
 
 run-telegram:
-	@./run.sh --telegram &
+	UID=$(UID) docker compose up --build -d
+	docker compose logs -f
 
 run-telegram-prod:
 	@RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) ./run.sh --telegram &

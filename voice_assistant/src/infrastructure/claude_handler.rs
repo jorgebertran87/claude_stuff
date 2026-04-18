@@ -237,12 +237,15 @@ impl ImageAnalyzer for ClaudeImageAnalyzer {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        let tmp_path = format!("/tmp/telegram_image_{nanos}.jpg");
+        let debug_dir = std::env::var("TELEGRAM_IMAGE_DEBUG_DIR").ok();
+        let dir = debug_dir.as_deref().unwrap_or("/tmp");
+        let tmp_path = format!("{dir}/telegram_image_{nanos}.jpg");
 
         if let Err(e) = std::fs::write(&tmp_path, bytes) {
             eprintln!("[analyze_image: failed to write temp file: {e}]");
             return "Error al procesar la imagen.".to_string();
         }
+        eprintln!("[analyze_image: saved image to {tmp_path}]");
 
         let prompt = if caption.is_empty() { "Describe esta imagen." } else { caption };
         let full_prompt = format!("Read the image at {tmp_path} and then answer: {prompt}");
@@ -275,7 +278,9 @@ impl ImageAnalyzer for ClaudeImageAnalyzer {
             }
         };
 
-        let _ = std::fs::remove_file(&tmp_path);
+        if debug_dir.is_none() {
+            let _ = std::fs::remove_file(&tmp_path);
+        }
 
         if !output.status.success() {
             let err = String::from_utf8_lossy(&output.stderr);

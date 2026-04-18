@@ -43,14 +43,33 @@ Feature: Telegram bot infrastructure integration
     When run_once processes the updates
     Then the offset is 43
 
-  Scenario: Photo update with failed download posts error message
-    Given a TelegramBot with a fake gateway
-    And a photo update from chat 1 with no downloadable bytes
-    When run_once processes the updates
-    Then the gateway posted a message to chat 1 containing "descargar"
-
-  Scenario: Photo update with downloadable bytes is routed through Claude and a response is posted
+  Scenario: Image without caption asks for a description
     Given a TelegramBot with a fake gateway
     And a photo update from chat 1 with downloadable bytes
     When run_once processes the updates
+    Then the gateway posted a message to chat 1 containing "imagen"
+
+  Scenario: Image with caption is analyzed immediately
+    Given a TelegramBot with a fake gateway
+    And a photo update from chat 1 with caption "qué ves aquí?" and downloadable bytes
+    When run_once processes the updates
     Then the gateway posted a message to chat 1
+
+  Scenario: Image with caption but failed download posts error message
+    Given a TelegramBot with a fake gateway
+    And a photo update from chat 1 with caption "qué ves aquí?" and no downloadable bytes
+    When run_once processes the updates
+    Then the gateway posted a message to chat 1 containing "descargar"
+
+  Scenario: Image without caption followed by description triggers analysis
+    Given a TelegramBot with a fake gateway
+    And a photo update from chat 1 with downloadable bytes
+    When run_once processes the updates
+    And run_once processes another "describe lo que ves" from chat 1
+    Then the gateway posted a message to chat 1
+
+  Scenario: Image with minesweeper caption is routed to the minesweeper detector
+    Given a TelegramBot with a fake gateway
+    And a photo update from chat 1 with caption "buscaminas ayúdame" and downloadable bytes
+    When run_once processes the updates
+    Then the handler received a prompt containing "buscaminas"

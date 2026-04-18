@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -169,6 +170,123 @@ impl TelegramGateway for UreqGateway {
     }
 }
 
+fn run_minesweeper_parser(bytes: &[u8]) -> Option<String> {
+    let base_url = std::env::var("MINESWEEPER_URL")
+        .unwrap_or_else(|_| "http://minesweeper:5000".to_string());
+    let url = format!("{base_url}/parse");
+
+    let resp = ureq::post(&url)
+        .set("Content-Type", "application/octet-stream")
+        .timeout(Duration::from_secs(30))
+        .send_bytes(bytes)
+        .map_err(|e| { eprintln!("[minesweeper: HTTP error: {e}]"); e })
+        .ok()?;
+
+    let body = resp.into_string()
+        .map_err(|e| eprintln!("[minesweeper: read error: {e}]"))
+        .ok()?;
+
+    if body.trim().is_empty() { None } else { Some(body) }
+}
+
+fn print_minesweeper_board(json: &str) {
+    let v: Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(e) => { eprintln!("[minesweeper board: parse error: {e}]"); return; }
+    };
+
+    let rows = v["rows"].as_u64().unwrap_or(0);
+    let cols = v["cols"].as_u64().unwrap_or(0);
+    let mines = v["header"]["mine_count"].as_u64();
+    let timer = v["header"]["timer"].as_u64();
+
+    eprintln!("┌─ Minesweeper board {}×{}{}{} ─┐",
+        rows, cols,
+        mines.map(|m| format!("  mines: {m}")).unwrap_or_default(),
+        timer.map(|t| format!("  timer: {t}s")).unwrap_or_default(),
+    );
+
+    if let Some(rows_arr) = v["cells"].as_array() {
+        for row in rows_arr {
+            if let Some(cells) = row.as_array() {
+                let line: String = cells.iter().map(|c| {
+                    if let Some(n) = c["state"].as_u64() {
+                        return char::from_digit(n as u32, 10).unwrap_or('?');
+                    }
+                    match c["state"].as_str().unwrap_or("?") {
+                        "unrevealed" => '?',
+                        "empty"      => '.',
+                        "flag"       => 'F',
+                        "mine"       => 'X',
+                        _            => '?',
+                    }
+                }).collect();
+                eprintln!("  {line}");
+            }
+        }
+    }
+    eprintln!("└{:─<40}┘", "");
+}
+
+fn analyze_minesweeper_board(json: &str, caption: &str) -> String {
+    let prompt = format!(
+        "Eres un experto en buscaminas. Analiza este tablero en formato JSON y determina \
+         qué celdas son seguras para revelar y cuáles contienen minas.\n\n\
+         El JSON tiene filas de celdas con campos: row, col, state \
+         (\"unrevealed\", \"empty\", \"flag\", \"mine\", \"1\"..\"8\").\n\n\
+         {json}\n\n\
+         Razona paso a paso usando las restricciones numéricas. \
+         Indica claramente: (1) celdas seguras para revelar (fila, columna), \
+         (2) celdas que son minas con certeza (pon bandera). \
+         Si no puedes determinar una celda con certeza, dilo.\n\n\
+         Pregunta adicional del usuario: {caption}"
+    );
+
+    eprintln!("[minesweeper analyze: spawning claude, prompt {} bytes]", prompt.len());
+    let mut child = match Command::new("claude")
+        .args(["--print", "--output-format", "json", "--model", MODEL_SONNET,
+               "--allowedTools", "Bash,WebSearch"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[minesweeper analyze: failed to spawn claude: {e}]");
+            return String::new();
+        }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = std::io::Write::write_all(&mut stdin, prompt.as_bytes());
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("[minesweeper analyze: wait error: {e}]");
+            return String::new();
+        }
+    };
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        eprintln!("[minesweeper analyze: claude stderr: {}]", &stderr[..stderr.len().min(500)]);
+    }
+
+    if !output.status.success() {
+        eprintln!("[minesweeper analyze: claude exited {:?}]", output.status.code());
+        return String::new();
+    }
+
+    let json_out = String::from_utf8_lossy(&output.stdout);
+    eprintln!("[minesweeper analyze: raw json {}]", &json_out[..json_out.len().min(300)]);
+    crate::infrastructure::claude_handler::parse_result_json(&json_out)
+        .map(|u| u.result)
+        .unwrap_or_default()
+}
+
 fn play_audio_bytes(bytes: &[u8]) {
     let tmp = "/tmp/tts_telegram_play.mp3";
     if let Err(e) = std::fs::write(tmp, bytes) {
@@ -241,6 +359,33 @@ impl TelegramBot {
         self.allowed_chat_ids.is_empty() || self.allowed_chat_ids.contains(&chat_id)
     }
 
+    fn spawn_analysis(
+        gateway: Arc<dyn TelegramGateway>,
+        analyzer: Arc<dyn ImageAnalyzer>,
+        chat_id: i64,
+        file_id: String,
+        caption: String,
+    ) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
+            let lower = caption.to_lowercase();
+            let model = if lower.contains("use opus") || lower.contains("utiliza opus") {
+                MODEL_OPUS
+            } else {
+                MODEL_SONNET
+            };
+            eprintln!("[telegram chat={} image={} model={}]", chat_id, file_id, model);
+            let bytes = match gateway.download_file(&file_id) {
+                Some(b) => b,
+                None => {
+                    gateway.post_message(chat_id, "No se pudo descargar la imagen.");
+                    return;
+                }
+            };
+            let response = analyzer.analyze(&bytes, &caption, model);
+            gateway.post_message(chat_id, &response);
+        })
+    }
+
     /// Process one batch of updates from the API.
     /// Split out for testability.
     ///
@@ -255,10 +400,12 @@ impl TelegramBot {
         handlers: &mut HashMap<i64, Arc<dyn OrderHandler>>,
         voice_mode_chats: &mut HashSet<i64>,
         pending_auth_chats: &mut HashMap<i64, Instant>,
+        pending_image_chats: &mut HashMap<i64, String>,
         offset: &mut i64,
         speak_text: &dyn Fn(&str),
         on_voice: &dyn Fn(),
-    ) {
+    ) -> Vec<thread::JoinHandle<()>> {
+        let mut handles = Vec::new();
         let updates = self.gateway.fetch_updates(*offset);
 
         for update in updates {
@@ -270,25 +417,64 @@ impl TelegramBot {
                 continue;
             }
 
-            // Handle photo messages — analyze with Claude vision
+            // Handle image/document messages
             if let Some(ref file_id) = update.photo_file_id {
                 let caption = update.text.trim();
-                let lower = caption.to_lowercase();
-                let model = if lower.contains("use opus") || lower.contains("utiliza opus") {
-                    MODEL_OPUS
+                if caption.is_empty() {
+                    // No caption: store file_id and ask what to do
+                    pending_image_chats.insert(update.chat_id, file_id.clone());
+                    self.gateway.post_message(update.chat_id, "¿Qué quieres que haga con esta imagen?");
                 } else {
-                    MODEL_SONNET
-                };
-                eprintln!("[telegram chat={} photo={} model={}]", update.chat_id, file_id, model);
-                let response = match self.gateway.download_file(file_id) {
-                    Some(bytes) => self.image_analyzer.analyze(&bytes, caption, model),
-                    None => "No se pudo descargar la imagen.".to_string(),
-                };
-                self.gateway.post_message(update.chat_id, &response);
+                    let lower = caption.to_lowercase();
+                    let handle = if lower.contains("buscaminas") || lower.contains("minesweeper") {
+                        Self::spawn_minesweeper_analysis(
+                            Arc::clone(&self.gateway),
+                            update.chat_id,
+                            file_id.clone(),
+                            caption.to_string(),
+                        )
+                    } else {
+                        Self::spawn_analysis(
+                            Arc::clone(&self.gateway),
+                            Arc::clone(&self.image_analyzer),
+                            update.chat_id,
+                            file_id.clone(),
+                            caption.to_string(),
+                        )
+                    };
+                    handles.push(handle);
+                }
                 continue;
             }
 
             let text = update.text.trim();
+
+            // If a previous image is waiting for a description, use this text as the caption
+            if let Some(file_id) = pending_image_chats.remove(&update.chat_id) {
+                if !text.starts_with('/') {
+                    let lower_text = text.to_lowercase();
+                    let handle = if lower_text.contains("buscaminas") || lower_text.contains("minesweeper") {
+                        Self::spawn_minesweeper_analysis(
+                            Arc::clone(&self.gateway),
+                            update.chat_id,
+                            file_id,
+                            text.to_string(),
+                        )
+                    } else {
+                        Self::spawn_analysis(
+                            Arc::clone(&self.gateway),
+                            Arc::clone(&self.image_analyzer),
+                            update.chat_id,
+                            file_id,
+                            text.to_string(),
+                        )
+                    };
+                    handles.push(handle);
+                    continue;
+                }
+                // Command received while image pending: put it back and fall through
+                pending_image_chats.insert(update.chat_id, file_id);
+            }
 
             // Handle /list — show all available commands
             if text == "/list" {
@@ -414,6 +600,50 @@ impl TelegramBot {
             }
             self.gateway.post_message(update.chat_id, &response);
         }
+        handles
+    }
+
+    fn spawn_minesweeper_analysis(
+        gateway: Arc<dyn TelegramGateway>,
+        chat_id: i64,
+        file_id: String,
+        caption: String,
+    ) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
+            eprintln!("[minesweeper: chat={} image={}]", chat_id, file_id);
+            let bytes = match gateway.download_file(&file_id) {
+                Some(b) => b,
+                None => {
+                    gateway.post_message(chat_id, "No se pudo descargar la imagen.");
+                    return;
+                }
+            };
+
+            gateway.post_message(chat_id, "Analizando tablero de buscaminas...");
+
+            let json = match run_minesweeper_parser(&bytes) {
+                Some(j) => j,
+                None => {
+                    gateway.post_message(
+                        chat_id,
+                        "No pude parsear el tablero. Asegúrate de que el servicio \
+                         minesweeper está corriendo (`docker compose up`).",
+                    );
+                    return;
+                }
+            };
+
+            eprintln!("[minesweeper: board JSON {} bytes]", json.len());
+            print_minesweeper_board(&json);
+
+            let response = analyze_minesweeper_board(&json, &caption);
+            let msg = if response.trim().is_empty() {
+                "No pude obtener una respuesta de Claude.".to_string()
+            } else {
+                response
+            };
+            gateway.post_message(chat_id, &msg);
+        })
     }
 
     /// Main event loop: fetch updates and process them indefinitely.
@@ -426,6 +656,7 @@ impl TelegramBot {
         let mut handlers: HashMap<i64, Arc<dyn OrderHandler>> = HashMap::new();
         let mut voice_mode_chats: HashSet<i64> = HashSet::new();
         let mut pending_auth_chats: HashMap<i64, Instant> = HashMap::new();
+        let mut pending_image_chats: HashMap<i64, String> = HashMap::new();
 
         // None = voice never used this session; Some(t) = time of last audio playback.
         let last_voice: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
@@ -461,7 +692,7 @@ impl TelegramBot {
         };
 
         loop {
-            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut pending_auth_chats, &mut offset, &speak_text, &on_voice);
+            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut pending_auth_chats, &mut pending_image_chats, &mut offset, &speak_text, &on_voice);
         }
     }
 }
@@ -648,9 +879,18 @@ fn parse_updates(body: &str) -> Vec<TelegramUpdate> {
             None => continue,
         };
 
-        // Extract the largest available photo (last element = highest resolution)
-        let photo_file_id = msg["photo"].as_array().and_then(|photos| {
-            photos.last().and_then(|p| p["file_id"].as_str().map(|s| s.to_string()))
+        // Prefer a document image (original resolution) over a compressed photo.
+        // Telegram compresses photo messages to ~1280px; documents preserve the original.
+        let doc = &msg["document"];
+        let doc_image_file_id = doc["mime_type"].as_str()
+            .filter(|mime| mime.starts_with("image/"))
+            .and_then(|_| doc["file_id"].as_str().map(|s| s.to_string()));
+
+        // Fall back to the largest compressed photo if no document image is present.
+        let photo_file_id = doc_image_file_id.or_else(|| {
+            msg["photo"].as_array().and_then(|photos| {
+                photos.last().and_then(|p| p["file_id"].as_str().map(|s| s.to_string()))
+            })
         });
 
         let text = match msg["text"].as_str() {
@@ -737,6 +977,71 @@ mod tests {
     #[test]
     fn parse_updates_returns_empty_on_malformed_json() {
         assert!(parse_updates("not json at all").is_empty());
+    }
+
+    #[test]
+    fn parse_updates_extracts_photo_file_id() {
+        let json = r#"{
+            "ok": true,
+            "result": [{
+                "update_id": 300,
+                "message": {
+                    "chat": {"id": 7},
+                    "caption": "qué hay aquí?",
+                    "photo": [
+                        {"file_id": "small_id", "width": 90,  "height": 90},
+                        {"file_id": "large_id", "width": 800, "height": 600}
+                    ]
+                }
+            }]
+        }"#;
+        let updates = parse_updates(json);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].photo_file_id.as_deref(), Some("large_id"));
+        assert_eq!(updates[0].text, "qué hay aquí?");
+    }
+
+    #[test]
+    fn parse_updates_prefers_document_image_over_compressed_photo() {
+        let json = r#"{
+            "ok": true,
+            "result": [{
+                "update_id": 301,
+                "message": {
+                    "chat": {"id": 8},
+                    "caption": "analiza esto",
+                    "document": {
+                        "file_id": "doc_original_id",
+                        "file_name": "photo.jpg",
+                        "mime_type": "image/jpeg"
+                    }
+                }
+            }]
+        }"#;
+        let updates = parse_updates(json);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].photo_file_id.as_deref(), Some("doc_original_id"));
+        assert_eq!(updates[0].text, "analiza esto");
+    }
+
+    #[test]
+    fn parse_updates_ignores_non_image_documents() {
+        let json = r#"{
+            "ok": true,
+            "result": [{
+                "update_id": 302,
+                "message": {
+                    "chat": {"id": 9},
+                    "document": {
+                        "file_id": "pdf_id",
+                        "file_name": "report.pdf",
+                        "mime_type": "application/pdf"
+                    }
+                }
+            }]
+        }"#;
+        let updates = parse_updates(json);
+        assert!(updates.is_empty(), "non-image document should be skipped");
     }
 
     #[test]

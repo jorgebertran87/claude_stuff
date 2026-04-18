@@ -70,6 +70,7 @@ pub struct TelegramWorld {
     handlers: HashMap<i64, Arc<dyn OrderHandler>>,
     voice_mode_chats: HashSet<i64>,
     pending_auth_chats: HashMap<i64, Instant>,
+    pending_image_chats: HashMap<i64, String>,
     offset: i64,
 }
 
@@ -92,6 +93,7 @@ impl Default for TelegramWorld {
             handlers: HashMap::new(),
             voice_mode_chats: HashSet::new(),
             pending_auth_chats: HashMap::new(),
+            pending_image_chats: HashMap::new(),
             offset: 0,
         }
     }
@@ -173,6 +175,28 @@ fn given_photo_update_with_bytes(world: &mut TelegramWorld, chat_id: i64) {
     });
 }
 
+#[given(regex = r#"^a photo update from chat (\d+) with caption "(.+)" and downloadable bytes$"#)]
+fn given_photo_with_caption_and_bytes(world: &mut TelegramWorld, chat_id: i64, caption: String) {
+    *world.gateway.download_bytes.lock().unwrap() = Some(vec![0u8; 8]);
+    world.gateway.updates.lock().unwrap().push(TelegramUpdate {
+        update_id: world.offset + 1,
+        chat_id,
+        text: caption,
+        photo_file_id: Some("fake_file_id".to_string()),
+    });
+}
+
+#[given(regex = r#"^a photo update from chat (\d+) with caption "(.+)" and no downloadable bytes$"#)]
+fn given_photo_with_caption_no_bytes(world: &mut TelegramWorld, chat_id: i64, caption: String) {
+    *world.gateway.download_bytes.lock().unwrap() = None;
+    world.gateway.updates.lock().unwrap().push(TelegramUpdate {
+        update_id: world.offset + 1,
+        chat_id,
+        text: caption,
+        photo_file_id: Some("fake_file_id".to_string()),
+    });
+}
+
 
 // ── When steps ──────────────────────��──────────────────────���───────────────────
 
@@ -183,15 +207,17 @@ fn when_run_once(world: &mut TelegramWorld) {
     let speak_text: &dyn Fn(&str) = &|_| {};
     let on_voice: &dyn Fn() = &|| {};
 
-    world.bot.as_ref().unwrap().run_once(
+    let handles = world.bot.as_ref().unwrap().run_once(
         make_handler,
         &mut world.handlers,
         &mut world.voice_mode_chats,
         &mut world.pending_auth_chats,
+        &mut world.pending_image_chats,
         &mut world.offset,
         speak_text,
         on_voice,
     );
+    for h in handles { let _ = h.join(); }
 }
 
 #[when(regex = r#"^run_once processes another "(.+)" from chat (\d+)$"#)]
@@ -208,15 +234,17 @@ fn when_run_once_again(world: &mut TelegramWorld, text: String, chat_id: i64) {
     let speak_text: &dyn Fn(&str) = &|_| {};
     let on_voice: &dyn Fn() = &|| {};
 
-    world.bot.as_ref().unwrap().run_once(
+    let handles = world.bot.as_ref().unwrap().run_once(
         make_handler,
         &mut world.handlers,
         &mut world.voice_mode_chats,
         &mut world.pending_auth_chats,
+        &mut world.pending_image_chats,
         &mut world.offset,
         speak_text,
         on_voice,
     );
+    for h in handles { let _ = h.join(); }
 }
 
 // ── Then steps ────────────────���─────────────────────────────────��──────────────

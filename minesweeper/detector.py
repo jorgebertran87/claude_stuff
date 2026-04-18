@@ -12,8 +12,10 @@ _NUMBER_COLORS = {
     CellState.NUMBER_4: {"low": np.array([80, 0, 0]),    "high": np.array([160, 60, 100])},  # dark navy
 }
 
-_FLAG_RED_LOW  = np.array([0, 0, 150])
+_FLAG_RED_LOW  = np.array([0,   0, 150])
 _FLAG_RED_HIGH = np.array([80, 80, 255])
+_FLAG_BLUE_LOW  = np.array([150,  0,  0])   # BGR: high B, low G/R (this app's flag style)
+_FLAG_BLUE_HIGH = np.array([255, 90, 90])
 
 
 def _count_pixels(roi: np.ndarray, low: np.ndarray, high: np.ndarray) -> int:
@@ -22,53 +24,87 @@ def _count_pixels(roi: np.ndarray, low: np.ndarray, high: np.ndarray) -> int:
 
 
 def _is_unrevealed(roi: np.ndarray) -> bool:
-    """Unrevealed cells have a bright top-left highlight and dark bottom-right shadow.
-    When surrounded by other unrevealed cells the adjacent shadows darken the corner,
-    so we fall back to a high-std check (bevel pattern vs flat revealed interior)."""
+    """Three-path bevel check.
+    Path 1 – partial fragment (row-0 crop, h << w): use the original loose check;
+      the top-of-cell bevel is only partially visible so the diff is moderate.
+    Path 2 – classic bevel (top very bright, ≥ 200): genuine raised bevel with
+      a large top-to-bottom gradient.  The ≥ 200 guard prevents rows 4-8 from
+      passing due to lighting bleed from the unrevealed rows above them
+      (those cells have top ≈ 182-192, never reaching 200).
+    Path 3 – washed-out bevel + flag: some flags in compressed photos lose the
+      bevel but their flag image concentrates very dark pixels in the mid strip
+      (mid < 75).  The abs(top-bot) < 55 guard prevents NUMBER_4 cells whose
+      dark-navy digit also darkens mid from using this path spuriously – they
+      are recovered via number detection in _classify_cell.
+    """
     h, w = roi.shape[:2]
     e = max(3, h // 15)
-    tl = float(np.mean(roi[:e, :e]))
-    br = float(np.mean(roi[-e:, -e:]))
-    if tl > br + 25:
+    bw = max(3, w // 4)
+    top = float(np.mean(roi[:e,          bw:w - bw]))
+    mid = float(np.mean(roi[h//3:2*h//3, bw:w - bw]))
+    bot = float(np.mean(roi[-e:,         bw:w - bw]))
+    if h < w * 0.7:                              # partial row-0 fragment
+        return top > bot + 25
+    if top > 200 and top > bot + 40:             # strong visible bevel
         return True
-    return float(np.std(roi.astype(np.float32))) > 30
+    return mid < 75 and abs(top - bot) < 55      # dark-flag interior
 
 
 def _has_flag(inner: np.ndarray) -> bool:
-    """A flag has red in the top half AND a dark stand in the bottom centre."""
+    """Flag has coloured content (blue or red) in the top half of the cell interior."""
     ih, iw = inner.shape[:2]
-    red_top = _count_pixels(inner[:ih // 2, :], _FLAG_RED_LOW, _FLAG_RED_HIGH)
-    if red_top < 30:
+    if ih < 2 or iw < 2:
         return False
-    # Black stand: very dark pixels in the bottom-centre strip
-    stand = inner[ih * 2 // 3:, iw // 3: 2 * iw // 3]
-    dark_mask = cv2.inRange(stand, np.array([0, 0, 0]), np.array([60, 60, 60]))
-    return int(np.count_nonzero(dark_mask)) > 10
+    top = inner[:ih // 2, :]
+    if top.ndim == 3:
+        return (_count_pixels(top, _FLAG_BLUE_LOW, _FLAG_BLUE_HIGH) >= 20 or
+                _count_pixels(top, _FLAG_RED_LOW,  _FLAG_RED_HIGH)  >= 20)
+    return int(np.count_nonzero(top < 100)) >= 20
 
 
 def _classify_cell(roi: np.ndarray) -> CellState:
     h, w = roi.shape[:2]
-    pad = max(5, h // 8)
+    pad = max(1, h // 8)
+    gray = roi if roi.ndim == 2 else cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     inner = roi[pad:-pad, pad:-pad]
+    if inner.size == 0:
+        inner = roi
 
-    if _has_flag(inner):
-        return CellState.FLAG
-
-    # Numbers: look for coloured pixels inside the inner region
-    best_state, best_count = CellState.EMPTY, 0
-    for state, rng in _NUMBER_COLORS.items():
-        count = _count_pixels(inner, rng["low"], rng["high"])
-        if count > best_count:
-            best_count = count
-            best_state = state
-
-    if best_count > 100:
-        return best_state
-
-    # Unrevealed vs empty
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     if _is_unrevealed(gray):
+        if _has_flag(inner):
+            return CellState.FLAG
+        # NUMBER_4 (dark navy) can trigger the washed-out-bevel path; its range
+        # overlaps NUMBER_1 so only test NUMBER_4 explicitly here.
+        if roi.ndim == 3:
+            n4 = _NUMBER_COLORS[CellState.NUMBER_4]
+            if _count_pixels(inner, n4["low"], n4["high"]) > 100:
+                return CellState.NUMBER_4
         return CellState.UNREVEALED
+
+    if roi.ndim == 3:
+        best_state, best_count = CellState.EMPTY, 0
+        for state, rng in _NUMBER_COLORS.items():
+            count = _count_pixels(inner, rng["low"], rng["high"])
+            if count > best_count:
+                best_count = count
+                best_state = state
+        if best_count > 100:
+            # NUMBER_3 and NUMBER_1 share colors with flags.  In photos, some flags
+            # lose bevel contrast entirely but keep the flag image.  Distinguish by
+            # checking if the colored pixels are concentrated in the upper half
+            # (flag shape) vs spread evenly (digit).
+            if best_state in (CellState.NUMBER_3, CellState.NUMBER_1) and roi.ndim == 3:
+                ih, iw = inner.shape[:2]
+                top_half = inner[:ih // 2, :]
+                for low, high in [(_FLAG_RED_LOW, _FLAG_RED_HIGH),
+                                   (_FLAG_BLUE_LOW, _FLAG_BLUE_HIGH)]:
+                    total = _count_pixels(inner, low, high)
+                    if total >= 40:
+                        top_count = _count_pixels(top_half, low, high)
+                        if top_count / total > 0.65:
+                            return CellState.FLAG
+            return best_state
+        return CellState.EMPTY
 
     return CellState.EMPTY
 
@@ -76,49 +112,46 @@ def _classify_cell(roi: np.ndarray) -> CellState:
 def _detect_header(img: np.ndarray) -> tuple[Header, int]:
     """Returns (Header, y_offset) where y_offset is where the grid starts."""
     h, w = img.shape[:2]
-    # The toolbar is the top ~12% of the image
     toolbar_h = int(h * 0.12)
 
-    # Mine counter: left LED display (red digits on black background)
     left_panel = img[:toolbar_h, :w // 5]
     mine_count = _read_led_display(left_panel)
 
-    # Timer: right LED display
     right_panel = img[:toolbar_h, w * 4 // 5:]
     timer = _read_led_display_str(right_panel)
 
-    # Hint lightbulb: yellow region in center-top
     center = img[:toolbar_h, w // 3: 2 * w // 3]
-    yellow_mask = cv2.inRange(center,
-                              np.array([0, 150, 150]),
-                              np.array([100, 255, 255]))
-    has_hint = int(np.count_nonzero(yellow_mask)) > 500
+    if center.ndim == 3:
+        yellow_mask = cv2.inRange(center,
+                                  np.array([0, 150, 150]),
+                                  np.array([100, 255, 255]))
+        has_hint = int(np.count_nonzero(yellow_mask)) > 500
+    else:
+        # Grayscale: yellow (~200) and red (~76) both map to mid-bright intensities
+        bright_mask = cv2.inRange(center, np.array([180]), np.array([230]))
+        has_hint = int(np.count_nonzero(bright_mask)) > 500
 
-    # Grid starts just below the toolbar + a thin separator row
     grid_start = toolbar_h + max(4, int(h * 0.01))
-
     return Header(mine_count=mine_count, timer=timer, has_hint=has_hint), grid_start
 
 
 def _read_led_display(panel: np.ndarray) -> int:
-    """Rough digit count from a red-on-black LED panel."""
-    red_mask = cv2.inRange(panel,
-                           np.array([0, 0, 150]),
-                           np.array([80, 80, 255]))
-    pixels = int(np.count_nonzero(red_mask))
-    # Very rough mapping: each digit ~400 red pixels at typical sizes
+    if panel.ndim == 3:
+        mask = cv2.inRange(panel, np.array([0, 0, 150]), np.array([80, 80, 255]))
+    else:
+        mask = cv2.inRange(panel, np.array([60]), np.array([120]))
+    pixels = int(np.count_nonzero(mask))
     return max(0, round(pixels / 400))
 
 
 def _read_led_display_str(panel: np.ndarray) -> str:
-    """Return a placeholder timer string (full OCR out of scope here)."""
     return "??"
 
 
 def _find_grid_bounds(img: np.ndarray, y_start: int) -> tuple[int, int, int, int]:
     """Return (x0, y0, x1, y1) of the cell grid below the header."""
-    gray = cv2.cvtColor(img[y_start:], cv2.COLOR_BGR2GRAY)
-    # Cells have uniform light-gray background — find the bounding box of that region
+    region = img[y_start:]
+    gray = region if region.ndim == 2 else cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 160, 255, cv2.THRESH_BINARY)
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
@@ -129,51 +162,100 @@ def _find_grid_bounds(img: np.ndarray, y_start: int) -> tuple[int, int, int, int
     return gx, y_start + gy, gx + gw, y_start + gy + gh
 
 
-def _find_cell_period(profile: np.ndarray, length: int, min_cell_px: int = 60) -> int:
-    """Find the dominant cell period via FFT, ignoring frequencies above min_cell_px."""
-    spectrum = np.abs(np.fft.rfft(profile - profile.mean()))
-    freqs = np.fft.rfftfreq(len(profile))
+def _find_cell_y_offset(grid_img: np.ndarray, cell_h: int) -> int:
+    """Detect the y offset where actual cells start within grid_img.
 
-    # Mask out frequencies that would imply cells smaller than min_cell_px
-    max_freq = 1.0 / min_cell_px
-    spectrum[freqs > max_freq] = 0
-    spectrum[0] = 0  # ignore DC
+    The top of grid_img may contain a thin strip from the header area before the
+    first cell's bright top-highlight.  Find the first bright row (>220) that
+    follows a darker region (<150) within the first cell_h rows.
+    """
+    gray = (grid_img if grid_img.ndim == 2 else cv2.cvtColor(grid_img, cv2.COLOR_BGR2GRAY)).astype(float)
+    cx = min(35, grid_img.shape[1] // 5)
+    strip = gray[:cell_h, cx:cx + 15].mean(axis=1)
 
-    dominant_freq = freqs[np.argmax(spectrum)]
-    if dominant_freq < 1e-9:
-        return length  # fallback: single cell
-    period = int(round(1.0 / dominant_freq))
-    return max(min_cell_px, min(period, length))
+    seen_dark = False
+    for y in range(len(strip)):
+        if strip[y] < 150:
+            seen_dark = True
+        elif seen_dark and strip[y] > 220:
+            return y
+    return 0
+
+
+def _best_cell_count(profile: np.ndarray, total: int,
+                      min_cells: int = 5, max_cells: int = 50) -> int:
+    """Score each candidate cell count by gradient energy concentration at boundaries."""
+    total_energy = float(np.sum(profile))
+    if total_energy < 1:
+        return 1
+
+    win = max(2, total // 500)
+    best_n, best_score = 1, -1.0
+
+    for n in range(min_cells, max_cells + 1):
+        period = total / n
+        energy = 0.0
+        covered = 0
+        for k in range(1, n):
+            pos = int(round(k * period))
+            lo = max(0, pos - win)
+            hi = min(len(profile), pos + win + 1)
+            energy += float(np.sum(profile[lo:hi]))
+            covered += hi - lo
+
+        expected = total_energy * (covered / total)
+        score = energy / expected if expected > 0 else 0.0
+
+        if score > best_score:
+            best_score = score
+            best_n = n
+
+    return best_n
 
 
 def _estimate_grid_size(grid_img: np.ndarray) -> tuple[int, int]:
-    """Estimate rows and columns via FFT of edge profiles."""
-    gray = cv2.cvtColor(grid_img, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 30, 100)
+    gray = (grid_img if grid_img.ndim == 2 else cv2.cvtColor(grid_img, cv2.COLOR_BGR2GRAY)).astype(np.float32)
+    gh, gw = grid_img.shape[:2]
 
-    h_profile = np.sum(edges, axis=1).astype(float)  # row sums → vertical period
-    v_profile = np.sum(edges, axis=0).astype(float)  # col sums → horizontal period
+    h_profile = np.abs(cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)).sum(axis=1)
+    v_profile = np.abs(cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)).sum(axis=0)
 
-    row_period = _find_cell_period(h_profile, grid_img.shape[0])
-    col_period = _find_cell_period(v_profile, grid_img.shape[1])
+    rows = _best_cell_count(h_profile, gh)
+    cols = _best_cell_count(v_profile, gw)
 
-    rows = max(1, round(grid_img.shape[0] / row_period))
-    cols = max(1, round(grid_img.shape[1] / col_period))
+    if cols > 1:
+        sq_rows = max(1, round(gh / (gw / cols)))
+        if rows == 1 or abs(rows - sq_rows) > max(2, round(sq_rows * 0.15)):
+            rows = sq_rows
+    if rows > 1:
+        sq_cols = max(1, round(gw / (gh / rows)))
+        if cols == 1 or abs(cols - sq_cols) > max(2, round(sq_cols * 0.15)):
+            cols = sq_cols
+
     return rows, cols
 
 
 def parse_board(image_path: str | Path) -> Board:
-    img = cv2.imread(str(image_path))
-    if img is None:
+    bgr = cv2.imread(str(image_path))
+    if bgr is None:
         raise FileNotFoundError(f"Cannot load image: {image_path}")
+    img = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
 
     header, grid_y = _detect_header(img)
     x0, y0, x1, y1 = _find_grid_bounds(img, grid_y)
     grid_img = img[y0:y1, x0:x1]
+    bgr_grid = bgr[y0:y1, x0:x1]
 
     rows, cols = _estimate_grid_size(grid_img)
     cell_h = grid_img.shape[0] // rows
     cell_w = grid_img.shape[1] // cols
+
+    # Detect sub-pixel phase: the grid_img may start a few pixels before the first
+    # cell's top bevel, so actual cells begin at y_offset rather than y=0.
+    y_offset = _find_cell_y_offset(grid_img, cell_h)
+    gh = grid_img.shape[0]
+    # Actual cell height for full rows (rows 1..rows-1); row 0 is a partial fragment
+    actual_cell_h = (gh - y_offset) // (rows - 1) if (rows > 1 and y_offset > 0) else cell_h
 
     board = Board(rows=rows, cols=cols, header=header)
     board.cells = []
@@ -181,13 +263,22 @@ def parse_board(image_path: str | Path) -> Board:
     for r in range(rows):
         row_cells = []
         for c in range(cols):
-            cx, cy = c * cell_w, r * cell_h
-            roi = grid_img[cy: cy + cell_h, cx: cx + cell_w]
+            cx = c * cell_w
+            if y_offset > 0:
+                if r == 0:
+                    cy, h = 0, y_offset
+                else:
+                    cy = y_offset + (r - 1) * actual_cell_h
+                    h = actual_cell_h
+            else:
+                cy, h = r * cell_h, cell_h
+            cy = min(cy, max(0, gh - max(h, 1)))
+            roi = bgr_grid[cy: cy + h, cx: cx + cell_w]
             state = _classify_cell(roi)
             row_cells.append(Cell(
                 row=r, col=c, state=state,
                 x=x0 + cx, y=y0 + cy,
-                width=cell_w, height=cell_h,
+                width=cell_w, height=h,
             ))
         board.cells.append(row_cells)
 

@@ -12,5 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Default: run tests. Override CMD to use the CLI.
-CMD ["pytest", "tests/", "-v"]
+EXPOSE 5000
+
+# Default: run the HTTP server. Override CMD to run tests or the CLI.
+CMD ["python", "server.py"]
