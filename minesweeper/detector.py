@@ -27,10 +27,12 @@ def _is_unrevealed(roi: np.ndarray) -> bool:
     """Three-path bevel check.
     Path 1 – partial fragment (row-0 crop, h << w): use the original loose check;
       the top-of-cell bevel is only partially visible so the diff is moderate.
-    Path 2 – classic bevel (top very bright, ≥ 200): genuine raised bevel with
-      a large top-to-bottom gradient.  The ≥ 200 guard prevents rows 4-8 from
-      passing due to lighting bleed from the unrevealed rows above them
-      (those cells have top ≈ 182-192, never reaching 200).
+    Path 2 – peak-vs-mid bevel: max row-mean in the top half > mid by ≥40.
+      Integer-division cell heights cause the first few pixels of deeper ROIs to
+      drift into the previous cell's interior (top ≈ mid ≈ 192) rather than the
+      bevel highlight.  Taking the max row-mean across the full top half finds the
+      bevel peak wherever it falls (drift ≤ h//2 ≈ 27 px).  Revealed cells are
+      flat, so their peak ≈ mid.  Lighting-bleed cells have peak-mid ≈ 17.
     Path 3 – washed-out bevel + flag: some flags in compressed photos lose the
       bevel but their flag image concentrates very dark pixels in the mid strip
       (mid < 75).  The abs(top-bot) < 55 guard prevents NUMBER_4 cells whose
@@ -40,26 +42,40 @@ def _is_unrevealed(roi: np.ndarray) -> bool:
     h, w = roi.shape[:2]
     e = max(3, h // 15)
     bw = max(3, w // 4)
-    top = float(np.mean(roi[:e,          bw:w - bw]))
     mid = float(np.mean(roi[h//3:2*h//3, bw:w - bw]))
     bot = float(np.mean(roi[-e:,         bw:w - bw]))
+    top = float(np.mean(roi[:e,          bw:w - bw]))
     if h < w * 0.7:                              # partial row-0 fragment
         return top > bot + 25
-    if top > 200 and top > bot + 40:             # strong visible bevel
+    # Integer-division cell heights cause the ROI's first pixels to drift
+    # progressively further from the bevel highlight as rows go deeper.  Instead
+    # of measuring just the top edge, find the max row-mean in the top half:
+    # the bevel peak is always within the first h//2 rows for any feasible drift.
+    col_strip = roi[:h // 2, bw:w - bw]
+    row_means = col_strip.mean(axis=1) if col_strip.ndim == 2 else col_strip.mean(axis=(1, 2))
+    peak = float(row_means.max())
+    # Unrevealed cells: peak≈254, mid≈192 → diff≈62.  Revealed w/bleed: diff≈17.
+    if peak > mid + 40:
         return True
     return mid < 75 and abs(top - bot) < 55      # dark-flag interior
 
 
 def _has_flag(inner: np.ndarray) -> bool:
-    """Flag has coloured content (blue or red) in the top half of the cell interior."""
+    """Flag has coloured content concentrated in the top half of the cell interior.
+    Number digits (e.g. '1' in blue) span the full height; flags are top-heavy."""
     ih, iw = inner.shape[:2]
     if ih < 2 or iw < 2:
         return False
-    top = inner[:ih // 2, :]
-    if top.ndim == 3:
-        return (_count_pixels(top, _FLAG_BLUE_LOW, _FLAG_BLUE_HIGH) >= 20 or
-                _count_pixels(top, _FLAG_RED_LOW,  _FLAG_RED_HIGH)  >= 20)
-    return int(np.count_nonzero(top < 100)) >= 20
+    top_half = inner[:ih // 2, :]
+    if top_half.ndim == 3:
+        for low, high in [(_FLAG_BLUE_LOW, _FLAG_BLUE_HIGH), (_FLAG_RED_LOW, _FLAG_RED_HIGH)]:
+            top_count = _count_pixels(top_half, low, high)
+            if top_count >= 20:
+                total = _count_pixels(inner, low, high)
+                if total > 0 and top_count / total > 0.58:
+                    return True
+        return False
+    return int(np.count_nonzero(top_half < 100)) >= 20
 
 
 def _classify_cell(roi: np.ndarray) -> CellState:
@@ -73,12 +89,17 @@ def _classify_cell(roi: np.ndarray) -> CellState:
     if _is_unrevealed(gray):
         if _has_flag(inner):
             return CellState.FLAG
-        # NUMBER_4 (dark navy) can trigger the washed-out-bevel path; its range
-        # overlaps NUMBER_1 so only test NUMBER_4 explicitly here.
+        # Some number digits darken the grayscale mid enough to trigger the bevel
+        # check on a revealed cell.  Use best-match (highest pixel count) to
+        # handle overlapping ranges (NUMBER_4 dark navy overlaps NUMBER_1 blue).
         if roi.ndim == 3:
-            n4 = _NUMBER_COLORS[CellState.NUMBER_4]
-            if _count_pixels(inner, n4["low"], n4["high"]) > 100:
-                return CellState.NUMBER_4
+            best_state, best_count = None, 0
+            for state, rng in _NUMBER_COLORS.items():
+                count = _count_pixels(inner, rng["low"], rng["high"])
+                if count > best_count:
+                    best_count, best_state = count, state
+            if best_count > 100:
+                return best_state
         return CellState.UNREVEALED
 
     if roi.ndim == 3:
