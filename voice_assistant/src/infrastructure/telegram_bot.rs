@@ -189,58 +189,54 @@ fn run_minesweeper_parser(bytes: &[u8]) -> Option<String> {
     if body.trim().is_empty() { None } else { Some(body) }
 }
 
-fn print_minesweeper_board(json: &str) {
+fn render_minesweeper_board(json: &str) -> Option<String> {
     let v: Value = match serde_json::from_str(json) {
         Ok(v) => v,
-        Err(e) => { eprintln!("[minesweeper board: parse error: {e}]"); return; }
+        Err(e) => { eprintln!("[minesweeper board: parse error: {e}]"); return None; }
     };
 
-    let rows = v["rows"].as_u64().unwrap_or(0);
-    let cols = v["cols"].as_u64().unwrap_or(0);
-    let mines = v["header"]["mine_count"].as_u64();
-    let timer = v["header"]["timer"].as_u64();
+    let mut out = String::new();
 
-    eprintln!("┌─ Minesweeper board {}×{}{}{} ─┐",
-        rows, cols,
-        mines.map(|m| format!("  mines: {m}")).unwrap_or_default(),
-        timer.map(|t| format!("  timer: {t}s")).unwrap_or_default(),
-    );
+    let header = &v["header"];
+    if !header.is_null() {
+        let mines = header["mine_count"].as_u64().unwrap_or(0);
+        let timer = header["timer"].as_u64().unwrap_or(0);
+        let hint = header["has_hint"].as_bool().unwrap_or(false);
+        out.push_str(&format!("Mines: {}  Timer: {}  Hint: {}\n\n", mines, timer, if hint { "on" } else { "off" }));
+    }
 
     if let Some(rows_arr) = v["cells"].as_array() {
         for row in rows_arr {
             if let Some(cells) = row.as_array() {
-                let line: String = cells.iter().map(|c| {
-                    if let Some(n) = c["state"].as_u64() {
-                        return char::from_digit(n as u32, 10).unwrap_or('?');
-                    }
+                let line: Vec<&str> = cells.iter().map(|c| {
                     match c["state"].as_str().unwrap_or("?") {
-                        "unrevealed" => '?',
-                        "empty"      => '.',
-                        "flag"       => 'F',
-                        "mine"       => 'X',
-                        _            => '?',
+                        "unrevealed" => "■",
+                        "empty"      => "·",
+                        "flag"       => "⚑",
+                        "mine"       => "*",
+                        "1"          => "1",
+                        "2"          => "2",
+                        "3"          => "3",
+                        "4"          => "4",
+                        "5"          => "5",
+                        "6"          => "6",
+                        "7"          => "7",
+                        "8"          => "8",
+                        _            => "?",
                     }
                 }).collect();
-                eprintln!("  {line}");
+                out.push_str(&line.join(" "));
+                out.push('\n');
             }
         }
     }
-    eprintln!("└{:─<40}┘", "");
+
+    eprintln!("[minesweeper board rendered]\n{out}");
+    Some(out)
 }
 
-fn analyze_minesweeper_board(json: &str, caption: &str) -> String {
-    let prompt = format!(
-        "Eres un experto en buscaminas. Analiza este tablero en formato JSON y determina \
-         qué celdas son seguras para revelar y cuáles contienen minas.\n\n\
-         El JSON tiene filas de celdas con campos: row, col, state \
-         (\"unrevealed\", \"empty\", \"flag\", \"mine\", \"1\"..\"8\").\n\n\
-         {json}\n\n\
-         Razona paso a paso usando las restricciones numéricas. \
-         Indica claramente: (1) celdas seguras para revelar (fila, columna), \
-         (2) celdas que son minas con certeza (pon bandera). \
-         Si no puedes determinar una celda con certeza, dilo.\n\n\
-         Pregunta adicional del usuario: {caption}"
-    );
+fn analyze_minesweeper_board(board: &str, caption: &str) -> String {
+    let prompt = format!("/minesweeper {board}\n\nPregunta del usuario: {caption}");
 
     eprintln!("[minesweeper analyze: spawning claude, prompt {} bytes]", prompt.len());
     let mut child = match Command::new("claude")
@@ -634,9 +630,17 @@ impl TelegramBot {
             };
 
             eprintln!("[minesweeper: board JSON {} bytes]", json.len());
-            print_minesweeper_board(&json);
+            let board = match render_minesweeper_board(&json) {
+                Some(b) => b,
+                None => {
+                    gateway.post_message(chat_id, "No pude renderizar el tablero.");
+                    return;
+                }
+            };
 
-            let response = analyze_minesweeper_board(&json, &caption);
+            gateway.post_message(chat_id, &board);
+
+            let response = analyze_minesweeper_board(&board, &caption);
             let msg = if response.trim().is_empty() {
                 "No pude obtener una respuesta de Claude.".to_string()
             } else {
