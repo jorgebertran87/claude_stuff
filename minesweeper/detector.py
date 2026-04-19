@@ -24,7 +24,7 @@ def _count_pixels(roi: np.ndarray, low: np.ndarray, high: np.ndarray) -> int:
 
 
 def _is_unrevealed(roi: np.ndarray) -> bool:
-    """Three-path bevel check.
+    """Four-path bevel check.
     Path 1 – partial fragment (row-0 crop, h << w): use the original loose check;
       the top-of-cell bevel is only partially visible so the diff is moderate.
     Path 2 – peak-vs-mid bevel: max row-mean in the top half > mid by ≥40.
@@ -68,9 +68,10 @@ def _has_flag(inner: np.ndarray) -> bool:
     top_half = inner[:ih // 2, :]
     if top_half.ndim == 3:
         for low, high in [(_FLAG_BLUE_LOW, _FLAG_BLUE_HIGH), (_FLAG_RED_LOW, _FLAG_RED_HIGH)]:
-            top_count = _count_pixels(top_half, low, high)
+            mask = cv2.inRange(inner, low, high)
+            total = int(np.count_nonzero(mask))
+            top_count = int(np.count_nonzero(mask[:ih // 2]))
             if top_count >= 20:
-                total = _count_pixels(inner, low, high)
                 ratio = top_count / total
                 if ratio > 0.56:
                     return True
@@ -160,17 +161,19 @@ def _detect_header(img: np.ndarray) -> tuple[Header, int]:
     # Scan from halfway through the estimated toolbar to skip the status bar.
     grid_start = toolbar_h + max(4, int(h * 0.01))  # fallback
     cx0, cx1 = w // 5, 4 * w // 5
+    y0_scan = max(toolbar_h // 2, 50)
+    y1_scan = min(int(h * 0.25), h)
+    strip = img[y0_scan:y1_scan, cx0:cx1].astype(np.float32)
+    row_means = strip.mean(axis=1)
+    row_stds = strip.std(axis=1)
     bevel_done = shadow_seen = False
-    for y in range(max(toolbar_h // 2, 50), min(int(h * 0.25), h)):
-        row = img[y, cx0:cx1]
-        row_mean = float(row.mean())
-        row_std = float(row.std())
+    for i, (row_mean, row_std) in enumerate(zip(row_means, row_stds)):
         if not bevel_done and row_mean > 220 and row_std < 15:
             bevel_done = True
         elif bevel_done and not shadow_seen and row_mean < 160:
             shadow_seen = True
         elif shadow_seen and row_mean > 160:
-            grid_start = y
+            grid_start = y0_scan + i
             break
 
     return Header(mine_count=mine_count, timer=timer, has_hint=has_hint), grid_start
