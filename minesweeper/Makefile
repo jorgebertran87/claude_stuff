@@ -1,5 +1,5 @@
 IMAGE      := minesweeper-detector
-IMAGES_DIR ?= $(HOME)
+IMAGES_DIR ?= $(CURDIR)/tests/images
 
 TEST_IMAGES := \
 	telegram_image_1776362547800808255.jpg \
