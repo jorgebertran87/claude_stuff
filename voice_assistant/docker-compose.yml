@@ -10,7 +10,7 @@ services:
       retries: 5
 
   voice-assistant:
-    image: voice-assistant-rust
+    image: ${RUN_IMAGE:-voice-assistant-rust}
     network_mode: host
     depends_on:
       minesweeper:

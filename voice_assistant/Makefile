@@ -84,7 +84,7 @@ debug:
 
 deploy:
 	$(MAKE) build-prod
-	scp Makefile run.sh pequenin:~/pequenin	
+	scp Makefile run.sh docker-compose.yml pequenin:~/pequenin	
 	scp -r .claude pequenin:~/pequenin/.claude
 
 .PHONY: build build-local run run-prod run-telegram run-telegram-prod test test-integration mutants mutants-integration debug deploy
