@@ -50,7 +50,13 @@ def _is_unrevealed(roi: np.ndarray) -> bool:
     peak = float(roi[:h // 2, bw:w - bw].mean(axis=1).max())
     if peak > mid + 40:
         return True
-    return mid < 75 and abs(top - bot) < 55      # dark-flag interior
+    if mid < 75 and abs(top - bot) < 55:          # dark-flag interior
+        return True
+    # Path 4 – flat-block bevel: large uniform unrevealed regions have very subtle
+    # peak-vs-mid contrast but retain a few bright (>240) highlight pixels from the
+    # cell border.  Revealed cells (empty or numbers) never exceed ~210 in this game.
+    bright_count = int(np.count_nonzero(roi[:, bw:w - bw] > 240))
+    return bright_count >= 100
 
 
 def _has_flag(inner: np.ndarray) -> bool:
@@ -65,7 +71,12 @@ def _has_flag(inner: np.ndarray) -> bool:
             top_count = _count_pixels(top_half, low, high)
             if top_count >= 20:
                 total = _count_pixels(inner, low, high)
-                if top_count / total > 0.58:
+                ratio = top_count / total
+                if ratio > 0.56:
+                    return True
+                # Flag triangle is compact; number digits have much larger coverage.
+                # Accept a centered flag (ratio ≈ 0.5) if the colored area is small.
+                if total < 350 and ratio >= 0.45:
                     return True
         return False
     return int(np.count_nonzero(top_half < 100)) >= 20
@@ -143,7 +154,25 @@ def _detect_header(img: np.ndarray) -> tuple[Header, int]:
         bright_mask = cv2.inRange(center, np.array([180]), np.array([230]))
         has_hint = int(np.count_nonzero(bright_mask)) > 500
 
-    grid_start = toolbar_h + max(4, int(h * 0.01))
+    # Locate the actual grid start by detecting the outer-border bevel highlight
+    # (bright, uniform row just above the first cell row), followed by its shadow
+    # (dark row), then the start of the first cell's interior.
+    # Scan from halfway through the estimated toolbar to skip the status bar.
+    grid_start = toolbar_h + max(4, int(h * 0.01))  # fallback
+    cx0, cx1 = w // 5, 4 * w // 5
+    bevel_done = shadow_seen = False
+    for y in range(max(toolbar_h // 2, 50), min(int(h * 0.25), h)):
+        row = img[y, cx0:cx1]
+        row_mean = float(row.mean())
+        row_std = float(row.std())
+        if not bevel_done and row_mean > 220 and row_std < 15:
+            bevel_done = True
+        elif bevel_done and not shadow_seen and row_mean < 160:
+            shadow_seen = True
+        elif shadow_seen and row_mean > 160:
+            grid_start = y
+            break
+
     return Header(mine_count=mine_count, timer=timer, has_hint=has_hint), grid_start
 
 
