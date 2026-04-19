@@ -6,9 +6,13 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
+MINESWEEPER_IMAGE := minesweeper-detector
+
 build-prod:
 	docker buildx build --platform $(PROD_PLATFORM) \
 		-t $(DOCKER_USERNAME)/$(IMAGE) --push .
+	docker buildx build --platform $(PROD_PLATFORM) \
+		-t $(DOCKER_USERNAME)/$(MINESWEEPER_IMAGE) --push ../minesweeper
 
 build:
 	docker build --platform $(LOCAL_PLATFORM) -t $(IMAGE) .
@@ -26,7 +30,9 @@ run-telegram:
 	docker compose logs -f
 
 run-telegram-prod:
-	@RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) ./run.sh --telegram &
+	UID=$(UID) RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) MINESWEEPER_IMAGE=$(DOCKER_USERNAME)/$(MINESWEEPER_IMAGE) \
+		docker compose up --no-build -d
+	docker compose logs -f
 
 
 UNIT_TESTS = --lib $(patsubst tests/unit/%.rs,--test %,$(wildcard tests/unit/*.rs))

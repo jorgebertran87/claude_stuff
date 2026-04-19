@@ -189,52 +189,6 @@ fn run_minesweeper_parser(bytes: &[u8]) -> Option<String> {
     if body.trim().is_empty() { None } else { Some(body) }
 }
 
-fn render_minesweeper_board(json: &str) -> Option<String> {
-    let v: Value = match serde_json::from_str(json) {
-        Ok(v) => v,
-        Err(e) => { eprintln!("[minesweeper board: parse error: {e}]"); return None; }
-    };
-
-    let mut out = String::new();
-
-    let header = &v["header"];
-    if !header.is_null() {
-        let mines = header["mine_count"].as_u64().unwrap_or(0);
-        let timer = header["timer"].as_u64().unwrap_or(0);
-        let hint = header["has_hint"].as_bool().unwrap_or(false);
-        out.push_str(&format!("Mines: {}  Timer: {}  Hint: {}\n\n", mines, timer, if hint { "on" } else { "off" }));
-    }
-
-    if let Some(rows_arr) = v["cells"].as_array() {
-        for row in rows_arr {
-            if let Some(cells) = row.as_array() {
-                let line: Vec<&str> = cells.iter().map(|c| {
-                    match c["state"].as_str().unwrap_or("?") {
-                        "unrevealed" => "■",
-                        "empty"      => "·",
-                        "flag"       => "⚑",
-                        "mine"       => "*",
-                        "1"          => "1",
-                        "2"          => "2",
-                        "3"          => "3",
-                        "4"          => "4",
-                        "5"          => "5",
-                        "6"          => "6",
-                        "7"          => "7",
-                        "8"          => "8",
-                        _            => "?",
-                    }
-                }).collect();
-                out.push_str(&line.join(" "));
-                out.push('\n');
-            }
-        }
-    }
-
-    eprintln!("[minesweeper board rendered]\n{out}");
-    Some(out)
-}
-
 fn analyze_minesweeper_board(board: &str, caption: &str) -> String {
     let prompt = format!("/minesweeper {board}\n\nPregunta del usuario: {caption}");
 
@@ -629,18 +583,10 @@ impl TelegramBot {
                 }
             };
 
-            eprintln!("[minesweeper: board JSON {} bytes]", json.len());
-            let board = match render_minesweeper_board(&json) {
-                Some(b) => b,
-                None => {
-                    gateway.post_message(chat_id, "No pude renderizar el tablero.");
-                    return;
-                }
-            };
+            eprintln!("[minesweeper: board]\n{json}");
+            gateway.post_message(chat_id, &json);
 
-            gateway.post_message(chat_id, &board);
-
-            let response = analyze_minesweeper_board(&board, &caption);
+            let response = analyze_minesweeper_board(&json, &caption);
             let msg = if response.trim().is_empty() {
                 "No pude obtener una respuesta de Claude.".to_string()
             } else {

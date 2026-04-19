@@ -1,0 +1,31 @@
+services:
+  minesweeper:
+    image: ${MINESWEEPER_IMAGE:-minesweeper-detector}
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  voice-assistant:
+    image: voice-assistant-rust
+    network_mode: host
+    depends_on:
+      minesweeper:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      PULSE_SERVER: unix:/tmp/pulse.sock
+      SDL_AUDIODRIVER: pulse
+      SDL_VIDEODRIVER: dummy
+      MINESWEEPER_URL: http://localhost:5000
+    volumes:
+      - /run/user/${UID}/pulse/native:/tmp/pulse.sock
+      - ${PWD}/.claude:/app/.claude:ro
+      - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.claude.json:/root/.claude.json
+      - ${PWD}/.orders_tokens:/app/.orders_tokens:rw
+      - ${PWD}/.google_refresh_token:/app/.google_refresh_token:rw
+    command: ["--telegram"]
