@@ -15,4 +15,4 @@ COPY . .
 EXPOSE 5000
 
 # Default: run the HTTP server. Override CMD to run tests or the CLI.
-CMD ["python", "server.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "server:app"]

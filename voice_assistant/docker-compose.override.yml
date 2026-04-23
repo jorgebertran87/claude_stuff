@@ -2,3 +2,4 @@ services:
   minesweeper:
     build:
       context: ../minesweeper
+    command: ["python", "server.py"]
