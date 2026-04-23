@@ -226,6 +226,21 @@ def _find_cell_y_offset(grid_img: np.ndarray, cell_h: int) -> int:
     return 0
 
 
+def _autocorr_period(profile: np.ndarray, total: int) -> int:
+    """Return the lag with peak autocorrelation in the 30–100 px range."""
+    p_lo = max(30, total // 50)
+    p_hi = min(total // 3, 100)
+    if p_hi <= p_lo:
+        return total
+    pn = (profile - profile.mean()).astype(np.float64)
+    best_val, best_lag = -np.inf, p_lo
+    for lag in range(p_lo, p_hi + 1):
+        val = float(np.dot(pn[:total - lag], pn[lag:]))
+        if val > best_val:
+            best_val, best_lag = val, lag
+    return best_lag
+
+
 def _best_cell_count(profile: np.ndarray, total: int,
                       min_cells: int = 5, max_cells: int = 50) -> int:
     """Score each candidate cell count by gradient energy concentration at boundaries."""
@@ -268,6 +283,9 @@ def _estimate_grid_size(grid_img: np.ndarray) -> tuple[int, int]:
     cols = _best_cell_count(v_profile, gw)
 
     if cols > 1:
+        auto_rows = max(1, round(gh / _autocorr_period(h_profile, gh)))
+        if rows == 1 or abs(rows - auto_rows) > 1:
+            rows = auto_rows
         sq_rows = max(1, round(gh / (gw / cols)))
         if rows == 1 or abs(rows - sq_rows) > max(2, round(sq_rows * 0.15)):
             rows = sq_rows
