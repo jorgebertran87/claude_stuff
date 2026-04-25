@@ -11,3 +11,5 @@ $ARGUMENTS
 Razona paso a paso usando las restricciones numéricas. Indica claramente: (1) celda segura para revelar (fila, columna), (2) celda que es mina con certeza (pon bandera). Si no puedes determinar una celda con certeza, dilo.
 
 Responde en texto plano, sin formato markdown.
+
+Pregúntame si está todo correcto, para poder decirte si tiene sentido tu análisis.

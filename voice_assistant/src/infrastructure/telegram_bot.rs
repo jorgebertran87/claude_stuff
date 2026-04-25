@@ -17,6 +17,7 @@ use crate::infrastructure::claude_handler::ClaudeImageAnalyzer;
 use crate::infrastructure::google_sheets::GoogleSheetsGatewayImpl;
 use crate::infrastructure::speaker::GttsTextSynthesizer;
 
+const MODEL_HAIKU:  &str = "claude-haiku-4-5-20251001";
 const MODEL_SONNET: &str = "claude-sonnet-4-6";
 const MODEL_OPUS:   &str = "claude-opus-4-6";
 
@@ -170,6 +171,15 @@ impl TelegramGateway for UreqGateway {
     }
 }
 
+fn resolve_model(name: &str) -> Option<&'static str> {
+    match name.trim().to_lowercase().as_str() {
+        "haiku"  => Some(MODEL_HAIKU),
+        "sonnet" => Some(MODEL_SONNET),
+        "opus"   => Some(MODEL_OPUS),
+        _ => None,
+    }
+}
+
 fn run_minesweeper_parser(bytes: &[u8]) -> Option<String> {
     let base_url = std::env::var("MINESWEEPER_URL")
         .unwrap_or_else(|_| "http://minesweeper:5000".to_string());
@@ -189,12 +199,12 @@ fn run_minesweeper_parser(bytes: &[u8]) -> Option<String> {
     if body.trim().is_empty() { None } else { Some(body) }
 }
 
-fn analyze_minesweeper_board(board: &str, caption: &str) -> String {
+fn analyze_minesweeper_board(board: &str, caption: &str, model: &str) -> String {
     let prompt = format!("/minesweeper {board}\n\nPregunta del usuario: {caption}");
 
-    eprintln!("[minesweeper analyze: spawning claude, prompt {} bytes]", prompt.len());
+    eprintln!("[minesweeper analyze: spawning claude model={model}, prompt {} bytes]", prompt.len());
     let mut child = match Command::new("claude")
-        .args(["--print", "--output-format", "json", "--model", MODEL_SONNET,
+        .args(["--print", "--output-format", "json", "--model", model,
                "--allowedTools", "Bash,WebSearch"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -315,14 +325,9 @@ impl TelegramBot {
         chat_id: i64,
         file_id: String,
         caption: String,
+        model: String,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
-            let lower = caption.to_lowercase();
-            let model = if lower.contains("use opus") || lower.contains("utiliza opus") {
-                MODEL_OPUS
-            } else {
-                MODEL_SONNET
-            };
             eprintln!("[telegram chat={} image={} model={}]", chat_id, file_id, model);
             let bytes = match gateway.download_file(&file_id) {
                 Some(b) => b,
@@ -331,7 +336,7 @@ impl TelegramBot {
                     return;
                 }
             };
-            let response = analyzer.analyze(&bytes, &caption, model);
+            let response = analyzer.analyze(&bytes, &caption, &model);
             gateway.post_message(chat_id, &response);
         })
     }
@@ -351,6 +356,7 @@ impl TelegramBot {
         voice_mode_chats: &mut HashSet<i64>,
         pending_auth_chats: &mut HashMap<i64, Instant>,
         pending_image_chats: &mut HashMap<i64, String>,
+        current_model: &mut String,
         offset: &mut i64,
         speak_text: &dyn Fn(&str),
         on_voice: &dyn Fn(),
@@ -382,6 +388,7 @@ impl TelegramBot {
                             update.chat_id,
                             file_id.clone(),
                             caption.to_string(),
+                            current_model.clone(),
                         )
                     } else {
                         Self::spawn_analysis(
@@ -390,6 +397,7 @@ impl TelegramBot {
                             update.chat_id,
                             file_id.clone(),
                             caption.to_string(),
+                            current_model.clone(),
                         )
                     };
                     handles.push(handle);
@@ -409,6 +417,7 @@ impl TelegramBot {
                             update.chat_id,
                             file_id,
                             text.to_string(),
+                            current_model.clone(),
                         )
                     } else {
                         Self::spawn_analysis(
@@ -417,6 +426,7 @@ impl TelegramBot {
                             update.chat_id,
                             file_id,
                             text.to_string(),
+                            current_model.clone(),
                         )
                     };
                     handles.push(handle);
@@ -428,14 +438,15 @@ impl TelegramBot {
 
             // Handle /list — show all available commands
             if text == "/list" {
-                self.gateway.post_message(update.chat_id, "\
+                self.gateway.post_message(update.chat_id, &format!("\
 /list         — muestra este mensaje\n\
 /reset        — reinicia la sesión de Claude\n\
 /usage        — resumen de tokens y coste acumulado\n\
 /voice_mode   — activa/desactiva respuestas por voz\n\
 /volume [+N|-N|N] — consulta o ajusta el volumen del altavoz\n\
+/model [haiku|sonnet|opus] — cambia el modelo (actual: {current_model})\n\
 /cuentas      — analiza tu hoja de cálculo de Google Sheets\n\
-/auth_google  — inicia el flujo OAuth2 para Google Sheets");
+/auth_google  — inicia el flujo OAuth2 para Google Sheets"));
                 continue;
             }
 
@@ -500,9 +511,25 @@ impl TelegramBot {
                 continue;
             }
 
+            if text.starts_with("/model") {
+                let arg = text["/model".len()..].trim();
+                let msg = if arg.is_empty() {
+                    format!("Modelo actual: {current_model}")
+                } else {
+                    match resolve_model(arg) {
+                        Some(m) => {
+                            *current_model = m.to_string();
+                            format!("Modelo cambiado a: {m}")
+                        }
+                        None => format!("Modelo desconocido: '{arg}'. Usa haiku, sonnet u opus."),
+                    }
+                };
+                self.gateway.post_message(update.chat_id, &msg);
+                continue;
+            }
+
             if text == "/cuentas" {
-                let handler = handlers.entry(update.chat_id).or_insert_with(make_handler);
-                let msg = handle_cuentas(Arc::clone(handler), self.sheets.as_ref());
+                let msg = handle_cuentas(self.sheets.as_ref(), current_model);
                 self.gateway.post_message(update.chat_id, &msg);
                 continue;
             }
@@ -558,9 +585,10 @@ impl TelegramBot {
         chat_id: i64,
         file_id: String,
         caption: String,
+        model: String,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
-            eprintln!("[minesweeper: chat={} image={}]", chat_id, file_id);
+            eprintln!("[minesweeper: chat={} image={} model={}]", chat_id, file_id, model);
             let bytes = match gateway.download_file(&file_id) {
                 Some(b) => b,
                 None => {
@@ -586,7 +614,7 @@ impl TelegramBot {
             eprintln!("[minesweeper: board]\n{json}");
             gateway.post_message(chat_id, &json);
 
-            let response = analyze_minesweeper_board(&json, &caption);
+            let response = analyze_minesweeper_board(&json, &caption, &model);
             let msg = if response.trim().is_empty() {
                 "No pude obtener una respuesta de Claude.".to_string()
             } else {
@@ -607,6 +635,7 @@ impl TelegramBot {
         let mut voice_mode_chats: HashSet<i64> = HashSet::new();
         let mut pending_auth_chats: HashMap<i64, Instant> = HashMap::new();
         let mut pending_image_chats: HashMap<i64, String> = HashMap::new();
+        let mut current_model: String = MODEL_HAIKU.to_string();
 
         // None = voice never used this session; Some(t) = time of last audio playback.
         let last_voice: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
@@ -642,12 +671,12 @@ impl TelegramBot {
         };
 
         loop {
-            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut pending_auth_chats, &mut pending_image_chats, &mut offset, &speak_text, &on_voice);
+            self.run_once(&make_handler, &mut handlers, &mut voice_mode_chats, &mut pending_auth_chats, &mut pending_image_chats, &mut current_model, &mut offset, &speak_text, &on_voice);
         }
     }
 }
 
-fn handle_cuentas(handler: Arc<dyn OrderHandler>, sheets: &dyn GoogleSheetsGateway) -> String {
+fn handle_cuentas(sheets: &dyn GoogleSheetsGateway, model: &str) -> String {
     let data = match sheets.fetch_as_text() {
         Ok(d) => d,
         Err(e) => return e,
@@ -656,14 +685,49 @@ fn handle_cuentas(handler: Arc<dyn OrderHandler>, sheets: &dyn GoogleSheetsGatew
     let sheet_name = std::env::var("CUENTAS_SHEET_NAME")
         .unwrap_or_else(|_| "Cuentas Personales".to_string());
 
-    let prompt = format!(
-        "Analiza estos datos de mi hoja de cálculo '{sheet_name}' y dame un resumen claro y detallado:\n\n\
-         {data}\n\n\
-         Incluye: saldo total por cuenta, ingresos y gastos del período, categorías de gasto principales, \
-         y cualquier observación relevante sobre el estado financiero."
-    );
+    let prompt = format!("/cuentas {sheet_name}\n\n{data}");
 
-    handler.handle(&prompt)
+    eprintln!("[cuentas: spawning claude, prompt {} bytes]", prompt.len());
+    let mut child = match Command::new("claude")
+        .args(["--print", "--output-format", "json", "--model", model])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[cuentas: failed to spawn claude: {e}]");
+            return "Error al lanzar el análisis.".to_string();
+        }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = std::io::Write::write_all(&mut stdin, prompt.as_bytes());
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("[cuentas: wait error: {e}]");
+            return "Error al obtener la respuesta.".to_string();
+        }
+    };
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        eprintln!("[cuentas: claude stderr: {}]", &stderr[..stderr.len().min(500)]);
+    }
+
+    if !output.status.success() {
+        eprintln!("[cuentas: claude exited {:?}]", output.status.code());
+        return "Error en el análisis de cuentas.".to_string();
+    }
+
+    let json_out = String::from_utf8_lossy(&output.stdout);
+    crate::infrastructure::claude_handler::parse_result_json(&json_out)
+        .map(|u| u.result)
+        .unwrap_or_else(|_| "No pude obtener una respuesta de Claude.".to_string())
 }
 
 

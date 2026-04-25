@@ -71,6 +71,7 @@ pub struct TelegramWorld {
     voice_mode_chats: HashSet<i64>,
     pending_auth_chats: HashMap<i64, Instant>,
     pending_image_chats: HashMap<i64, String>,
+    current_model: String,
     offset: i64,
 }
 
@@ -94,6 +95,7 @@ impl Default for TelegramWorld {
             voice_mode_chats: HashSet::new(),
             pending_auth_chats: HashMap::new(),
             pending_image_chats: HashMap::new(),
+            current_model: "claude-haiku-4-5-20251001".to_string(),
             offset: 0,
         }
     }
@@ -213,6 +215,7 @@ fn when_run_once(world: &mut TelegramWorld) {
         &mut world.voice_mode_chats,
         &mut world.pending_auth_chats,
         &mut world.pending_image_chats,
+        &mut world.current_model,
         &mut world.offset,
         speak_text,
         on_voice,
@@ -240,6 +243,7 @@ fn when_run_once_again(world: &mut TelegramWorld, text: String, chat_id: i64) {
         &mut world.voice_mode_chats,
         &mut world.pending_auth_chats,
         &mut world.pending_image_chats,
+        &mut world.current_model,
         &mut world.offset,
         speak_text,
         on_voice,
