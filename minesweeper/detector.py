@@ -9,6 +9,8 @@ _NUMBER_COLORS = {
     CellState.NUMBER_2: (np.array([0, 80, 0]),   np.array([80, 200, 80])),   # green
     CellState.NUMBER_3: (np.array([0, 0, 150]),  np.array([80, 80, 255])),   # red
     CellState.NUMBER_4: (np.array([80, 0, 0]),   np.array([160, 60, 100])),  # dark navy
+    CellState.NUMBER_5: (np.array([0, 0, 80]),   np.array([100, 100, 160])), # maroon
+    CellState.NUMBER_6: (np.array([81, 61, 205]), np.array([170, 150, 255])), # bright coral/pink (B/G max < 192 to exclude gray bg)
 }
 
 _FLAG_RED_LOW  = np.array([0,   0, 150])
@@ -57,9 +59,10 @@ def _is_unrevealed(roi: np.ndarray) -> bool:
         return True
     # Path 4 – flat-block bevel: large uniform unrevealed regions have very subtle
     # peak-vs-mid contrast but retain a few bright (>240) highlight pixels from the
-    # cell border.  Revealed cells (empty or numbers) never exceed ~210 in this game.
+    # cell border.  Scale threshold by cell area so revealed cells in large-cell
+    # images (bright_count~100-156) don't alias as unrevealed (bright_count~572-780).
     bright_count = int(np.count_nonzero(roi[:, bw:w - bw] > 240))
-    return bright_count >= 100
+    return bright_count >= max(100, h * (w - 2 * bw) // 30)
 
 
 def _has_flag(inner: np.ndarray) -> bool:
@@ -102,6 +105,10 @@ def _classify_cell(roi: np.ndarray) -> CellState:
         inner = roi
 
     if _is_unrevealed(gray):
+        if roi.ndim == 3:
+            # NUMBER_4's dark navy aliases as FLAG_BLUE; digit coverage >10% wins.
+            if _count_pixels(inner, *_NUMBER_COLORS[CellState.NUMBER_4]) > max(200, inner.shape[0] * inner.shape[1] // 10):
+                return CellState.NUMBER_4
         if _has_flag(inner):
             return CellState.FLAG
         if roi.ndim == 3:
