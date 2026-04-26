@@ -21,6 +21,6 @@ test: build
 parse: build
 	docker run --rm \
 		-v $(SCREENSHOT):/images/screenshot.jpg:ro \
-		$(IMAGE) python main.py /images/screenshot.jpg
+		$(IMAGE) python src/main.py /images/screenshot.jpg
 
 .PHONY: build test parse
