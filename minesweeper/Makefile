@@ -23,9 +23,4 @@ parse: build
 		-v $(SCREENSHOT):/images/screenshot.jpg:ro \
 		$(IMAGE) python main.py /images/screenshot.jpg
 
-parse-json: build
-	docker run --rm \
-		-v $(SCREENSHOT):/images/screenshot.jpg:ro \
-		$(IMAGE) python main.py /images/screenshot.jpg --json
-
-.PHONY: build test parse parse-json
+.PHONY: build test parse
