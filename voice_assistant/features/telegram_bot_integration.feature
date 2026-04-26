@@ -68,6 +68,24 @@ Feature: Telegram bot infrastructure integration
     And run_once processes another "describe lo que ves" from chat 1
     Then the gateway posted a message to chat 1
 
+  Scenario: /list command includes /bus
+    Given a TelegramBot with a fake gateway
+    And an update with text "/list" from chat 1
+    When run_once processes the updates
+    Then the gateway posted a message to chat 1 containing "/bus"
+
+  Scenario: /bus command posts a response
+    Given a TelegramBot with a fake gateway
+    And an update with text "/bus" from chat 1
+    When run_once processes the updates
+    Then the gateway posted a message to chat 1
+
+  Scenario: /bus with stop code posts a response
+    Given a TelegramBot with a fake gateway
+    And an update with text "/bus 1071" from chat 1
+    When run_once processes the updates
+    Then the gateway posted a message to chat 1
+
   Scenario: Image with minesweeper caption is routed to the minesweeper detector
     Given a TelegramBot with a fake gateway
     And a photo update from chat 1 with caption "buscaminas ayúdame" and downloadable bytes

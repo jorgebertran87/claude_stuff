@@ -13,6 +13,11 @@ Feature: Skill routing by order content
     When the system detects the intent
     Then the selected skill is "bus"
 
+  Scenario: Natural language bus time question selects the bus skill
+    Given an order containing "a qué hora sale el bus?"
+    When the system detects the intent
+    Then the selected skill is "bus"
+
   Scenario: Order about music selects the music skill
     Given an order containing "pon música"
     When the system detects the intent
