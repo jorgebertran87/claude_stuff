@@ -38,8 +38,6 @@ class Cell:
 @dataclass
 class Header:
     mine_count: int
-    timer: str
-    has_hint: bool
 
 
 @dataclass

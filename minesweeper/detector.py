@@ -142,20 +142,6 @@ def _detect_header(img: np.ndarray, bgr: np.ndarray | None = None) -> tuple[Head
     left_panel = led_src[:toolbar_h, :w // 5]
     mine_count = _read_led_display(left_panel)
 
-    right_panel = img[:toolbar_h, w * 4 // 5:]
-    timer = _read_led_display_str(right_panel)
-
-    center = img[:toolbar_h, w // 3: 2 * w // 3]
-    if center.ndim == 3:
-        yellow_mask = cv2.inRange(center,
-                                  np.array([0, 150, 150]),
-                                  np.array([100, 255, 255]))
-        has_hint = int(np.count_nonzero(yellow_mask)) > 500
-    else:
-        # Grayscale: yellow (~200) and red (~76) both map to mid-bright intensities
-        bright_mask = cv2.inRange(center, np.array([180]), np.array([230]))
-        has_hint = int(np.count_nonzero(bright_mask)) > 500
-
     # Locate the actual grid start by detecting the outer-border bevel highlight
     # (bright, uniform row just above the first cell row), followed by its shadow
     # (dark row), then the start of the first cell's interior.
@@ -177,7 +163,7 @@ def _detect_header(img: np.ndarray, bgr: np.ndarray | None = None) -> tuple[Head
             grid_start = y0_scan + i
             break
 
-    return Header(mine_count=mine_count, timer=timer, has_hint=has_hint), grid_start
+    return Header(mine_count=mine_count), grid_start
 
 
 def _read_led_display(panel: np.ndarray) -> int:
@@ -268,10 +254,6 @@ def _read_led_display(panel: np.ndarray) -> int:
         result = result * 10 + _SEGS.get(segs, 0)
 
     return result
-
-
-def _read_led_display_str(panel: np.ndarray) -> str:
-    return "??"
 
 
 def _find_grid_bounds(img: np.ndarray, y_start: int) -> tuple[int, int, int, int]:
@@ -446,8 +428,7 @@ def render_board(board: Board) -> str:
     }
     lines = []
     if board.header:
-        h = board.header
-        lines.append(f"Mines: {h.mine_count}  Timer: {h.timer}  Hint: {'on' if h.has_hint else 'off'}")
+        lines.append(f"Mines: {board.header.mine_count}")
         lines.append("")
     for row in board.cells:
         lines.append(" ".join(symbols.get(c.state, "?") for c in row))
