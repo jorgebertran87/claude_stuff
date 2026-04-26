@@ -309,9 +309,9 @@ def _find_cell_y_offset(grid_img: np.ndarray, cell_h: int) -> int:
 
 
 def _autocorr_period(profile: np.ndarray, total: int) -> int:
-    """Return the lag with peak autocorrelation in the 30–100 px range."""
+    """Return the lag with peak autocorrelation in the search range."""
     p_lo = max(30, total // 50)
-    p_hi = min(total // 3, 100)
+    p_hi = min(total // 3, max(100, total // 15))
     if p_hi <= p_lo:
         return total
     pn = (profile - profile.mean()).astype(np.float64)

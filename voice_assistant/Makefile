@@ -83,6 +83,8 @@ debug:
 		$(DOCKER_USERNAME)/$(IMAGE) bash
 
 deploy:
+	$(MAKE) test
+	$(MAKE) test-integration
 	$(MAKE) build-prod
 	scp Makefile run.sh docker-compose.yml pequenin:~/pequenin	
 	scp -r .claude pequenin:~/pequenin/

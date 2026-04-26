@@ -6,7 +6,8 @@ TEST_IMAGES := \
 	photo_5985514867101731739_y.jpg \
 	photo_5983263067288046793_y.jpg \
 	photo_5987560487010372572_y.jpg \
-	photo_5999345726946741438_y.jpg
+	photo_5999345726946741438_y.jpg \
+	photo_6012830459672333346_w.jpg
 
 VOLS := $(foreach f,$(TEST_IMAGES),-v $(IMAGES_DIR)/$(f):/images/$(f):ro)
 
