@@ -1,7 +1,8 @@
 //! TTS pipeline: markdown stripping, language detection, audio generation, playback.
 
+use std::io::Read;
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, LazyLock, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::Duration;
 
@@ -46,14 +47,21 @@ impl AudioSegment {
 
 // ── public helpers ────────────────────────────────────────────────────────────
 
+static RE_LINK:    LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\([^\)]+\)").unwrap());
+static RE_URL:     LazyLock<Regex> = LazyLock::new(|| Regex::new(r"https?://\S+").unwrap());
+static RE_BOLD:    LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\*+([^*]*)\*+").unwrap());
+static RE_HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#+\s+").unwrap());
+static RE_BULLET:  LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^[-*]\s+").unwrap());
+static RE_CODE:    LazyLock<Regex> = LazyLock::new(|| Regex::new(r"`[^`]*`").unwrap());
+
 /// Strip common Markdown constructs so TTS reads clean prose.
 pub fn strip_markdown(text: &str) -> String {
-    let s = Regex::new(r"\[([^\]]+)\]\([^\)]+\)").unwrap().replace_all(text, "$1");
-    let s = Regex::new(r"https?://\S+").unwrap().replace_all(&s, "");
-    let s = Regex::new(r"\*+([^*]*)\*+").unwrap().replace_all(&s, "$1");
-    let s = Regex::new(r"(?m)^#+\s+").unwrap().replace_all(&s, "");
-    let s = Regex::new(r"(?m)^[-*]\s+").unwrap().replace_all(&s, "");
-    let s = Regex::new(r"`[^`]*`").unwrap().replace_all(&s, "");
+    let s = RE_LINK.replace_all(text, "$1");
+    let s = RE_URL.replace_all(&s, "");
+    let s = RE_BOLD.replace_all(&s, "$1");
+    let s = RE_HEADING.replace_all(&s, "");
+    let s = RE_BULLET.replace_all(&s, "");
+    let s = RE_CODE.replace_all(&s, "");
     s.trim().to_string()
 }
 
@@ -163,9 +171,6 @@ fn urlencode(s: &str) -> String {
         })
         .collect()
 }
-
-// Need std::io::Read for read_to_end
-use std::io::Read;
 
 // ── TTS chunk splitter ────────────────────────────────────────────────────────
 
@@ -285,17 +290,21 @@ pub fn disconnect_bt_speaker() {
 /// Apply an ffmpeg `atempo` filter to MP3 bytes, returning the processed bytes.
 /// Falls back to the original bytes if ffmpeg fails.
 fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
-    let input_path  = "/tmp/tts_atempo_in.mp3";
-    let output_path = "/tmp/tts_atempo_out.mp3";
-    if std::fs::write(input_path, &bytes).is_err() {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let input_path  = format!("/tmp/tts_atempo_in_{nanos}.mp3");
+    let output_path = format!("/tmp/tts_atempo_out_{nanos}.mp3");
+    if std::fs::write(&input_path, &bytes).is_err() {
         return bytes;
     }
     let ok = Command::new("ffmpeg")
         .args([
             "-y", "-loglevel", "quiet",
-            "-i", input_path,
+            "-i", &input_path,
             "-af", &format!("atempo={speed}"),
-            "-f", "mp3", output_path,
+            "-f", "mp3", &output_path,
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -303,8 +312,9 @@ fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
         .map(|s| s.success())
         .unwrap_or(false);
 
+    let _ = std::fs::remove_file(&input_path);
     if ok {
-        std::fs::read(output_path).unwrap_or(bytes)
+        std::fs::read(&output_path).map(|b| { let _ = std::fs::remove_file(&output_path); b }).unwrap_or(bytes)
     } else {
         bytes
     }

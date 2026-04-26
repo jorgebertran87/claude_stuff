@@ -4,18 +4,21 @@ from pathlib import Path
 from models import Board, Cell, CellState, Header
 
 
-# Color thresholds in BGR
 _NUMBER_COLORS = {
-    CellState.NUMBER_1: {"low": np.array([100, 0, 0]),   "high": np.array([255, 80, 80])},   # blue
-    CellState.NUMBER_2: {"low": np.array([0, 80, 0]),    "high": np.array([80, 200, 80])},   # green
-    CellState.NUMBER_3: {"low": np.array([0, 0, 150]),   "high": np.array([80, 80, 255])},   # red
-    CellState.NUMBER_4: {"low": np.array([80, 0, 0]),    "high": np.array([160, 60, 100])},  # dark navy
+    CellState.NUMBER_1: (np.array([100, 0, 0]),  np.array([255, 80, 80])),   # blue
+    CellState.NUMBER_2: (np.array([0, 80, 0]),   np.array([80, 200, 80])),   # green
+    CellState.NUMBER_3: (np.array([0, 0, 150]),  np.array([80, 80, 255])),   # red
+    CellState.NUMBER_4: (np.array([80, 0, 0]),   np.array([160, 60, 100])),  # dark navy
 }
 
 _FLAG_RED_LOW  = np.array([0,   0, 150])
 _FLAG_RED_HIGH = np.array([80, 80, 255])
 _FLAG_BLUE_LOW  = np.array([150,  0,  0])   # BGR: high B, low G/R (this app's flag style)
 _FLAG_BLUE_HIGH = np.array([255, 90, 90])
+
+
+def _to_gray(img: np.ndarray) -> np.ndarray:
+    return img if img.ndim == 2 else cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
 
 def _count_pixels(roi: np.ndarray, low: np.ndarray, high: np.ndarray) -> int:
@@ -73,11 +76,8 @@ def _has_flag(inner: np.ndarray) -> bool:
             top_count = int(np.count_nonzero(mask[:ih // 2]))
             if top_count >= 20:
                 ratio = top_count / total
-                if ratio > 0.56:
-                    return True
-                # Flag triangle is compact; number digits have much larger coverage.
-                # Accept a centered flag (ratio ≈ 0.5) if the colored area is small.
-                if total < 350 and ratio >= 0.45:
+                # Flag triangle is compact; accept a centered flag (ratio ≈ 0.5) if area is small.
+                if ratio > 0.56 or (total < 350 and ratio >= 0.45):
                     return True
         return False
     return int(np.count_nonzero(top_half < 100)) >= 20
@@ -86,8 +86,8 @@ def _has_flag(inner: np.ndarray) -> bool:
 def _best_number_match(inner: np.ndarray) -> CellState | None:
     """Return the number CellState whose color range has the most pixels, or None if < 100."""
     best_state, best_count = None, 0
-    for state, rng in _NUMBER_COLORS.items():
-        count = _count_pixels(inner, rng["low"], rng["high"])
+    for state, (low, high) in _NUMBER_COLORS.items():
+        count = _count_pixels(inner, low, high)
         if count > best_count:
             best_count, best_state = count, state
     return best_state if best_count > 100 else None
@@ -166,6 +166,15 @@ def _detect_header(img: np.ndarray, bgr: np.ndarray | None = None) -> tuple[Head
     return Header(mine_count=mine_count), grid_start
 
 
+_SEGS: dict[tuple[int, ...], int] = {
+    (1, 1, 1, 0, 1, 1, 1): 0, (0, 0, 1, 0, 0, 1, 0): 1,
+    (1, 0, 1, 1, 1, 0, 1): 2, (1, 0, 1, 1, 0, 1, 1): 3,
+    (0, 1, 1, 1, 0, 1, 0): 4, (1, 1, 0, 1, 0, 1, 1): 5,
+    (1, 1, 0, 1, 1, 1, 1): 6, (1, 0, 1, 0, 0, 1, 0): 7,
+    (1, 1, 1, 1, 1, 1, 1): 8, (1, 1, 1, 1, 0, 1, 1): 9,
+}
+
+
 def _read_led_display(panel: np.ndarray) -> int:
     """Decode a 3-digit 7-segment LED mine counter from a BGR or grayscale panel."""
     if panel.ndim == 3:
@@ -177,47 +186,31 @@ def _read_led_display(panel: np.ndarray) -> int:
         # Red segments appear ~60–80 in grayscale after BGR→GRAY conversion
         red = (panel > 50) & (panel < 95)
 
-    # Trim to rows containing lit segments, considering only this panel's columns
-    # so that content in other parts of the header (timer, hint button) is ignored.
+    # Trim to rows containing lit segments (ignores content outside this panel's columns).
     row_any = red.any(axis=1)
     if not row_any.any():
         return 0
-    y0 = int(np.argmax(row_any))
-    y1 = len(row_any) - int(np.argmax(row_any[::-1]))
+    ys = np.where(row_any)[0]
+    y0, y1 = int(ys[0]), int(ys[-1]) + 1
     red = red[y0:y1, :]
     ph = red.shape[0]
 
-    # Find contiguous column groups (one per digit)
     col_prof = red.sum(axis=0)
-    groups: list[tuple[int, int]] = []
-    in_g = False
-    gx = 0
-    for i, v in enumerate(col_prof):
-        if v > 0 and not in_g:
-            gx = i; in_g = True
-        elif v == 0 and in_g:
-            groups.append((gx, i - 1)); in_g = False
-    if in_g:
-        groups.append((gx, len(col_prof) - 1))
+    active = (col_prof > 0).astype(np.int8)
+    changes = np.diff(active, prepend=0, append=0)
+    starts = np.where(changes == 1)[0]
+    ends = np.where(changes == -1)[0] - 1
+    groups = list(zip(starts.tolist(), ends.tolist()))
     if not groups:
         return 0
 
-    # Use the widest group as the canonical digit-cell width.
-    # Place exactly 3 cells left-aligned to the first group's start so that
-    # narrow groups (e.g. digit "1") are still placed at the right position.
+    # Use the widest group as canonical digit-cell width so that narrow digits (e.g. "1")
+    # are still placed at the correct position.
     digit_w = max(x1 - x0 + 1 for x0, x1 in groups)
     gap = max(2, digit_w // 8)
     x_start = groups[0][0]
     step = digit_w + gap
     cells = [(x_start + k * step, x_start + k * step + digit_w - 1) for k in range(3)]
-
-    _SEGS: dict[tuple[int, ...], int] = {
-        (1, 1, 1, 0, 1, 1, 1): 0, (0, 0, 1, 0, 0, 1, 0): 1,
-        (1, 0, 1, 1, 1, 0, 1): 2, (1, 0, 1, 1, 0, 1, 1): 3,
-        (0, 1, 1, 1, 0, 1, 0): 4, (1, 1, 0, 1, 0, 1, 1): 5,
-        (1, 1, 0, 1, 1, 1, 1): 6, (1, 0, 1, 0, 0, 1, 0): 7,
-        (1, 1, 1, 1, 1, 1, 1): 8, (1, 1, 1, 1, 0, 1, 1): 9,
-    }
 
     result = 0
     for x0, x1 in cells:
@@ -259,7 +252,7 @@ def _read_led_display(panel: np.ndarray) -> int:
 def _find_grid_bounds(img: np.ndarray, y_start: int) -> tuple[int, int, int, int]:
     """Return (x0, y0, x1, y1) of the cell grid below the header."""
     region = img[y_start:]
-    gray = region if region.ndim == 2 else cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+    gray = _to_gray(region)
     _, thresh = cv2.threshold(gray, 160, 255, cv2.THRESH_BINARY)
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
@@ -277,7 +270,7 @@ def _find_cell_y_offset(grid_img: np.ndarray, cell_h: int) -> int:
     first cell's bright top-highlight.  Find the first bright row (>220) that
     follows a darker region (<150) within the first cell_h rows.
     """
-    gray = (grid_img if grid_img.ndim == 2 else cv2.cvtColor(grid_img, cv2.COLOR_BGR2GRAY)).astype(float)
+    gray = _to_gray(grid_img).astype(float)
     cx = min(35, grid_img.shape[1] // 5)
     strip = gray[:cell_h, cx:cx + 15].mean(axis=1)
 
@@ -337,7 +330,7 @@ def _best_cell_count(profile: np.ndarray, total: int,
 
 
 def _estimate_grid_size(grid_img: np.ndarray) -> tuple[int, int]:
-    gray = (grid_img if grid_img.ndim == 2 else cv2.cvtColor(grid_img, cv2.COLOR_BGR2GRAY)).astype(np.float32)
+    gray = _to_gray(grid_img).astype(np.float32)
     gh, gw = grid_img.shape[:2]
 
     h_profile = np.abs(cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)).sum(axis=1)
@@ -361,10 +354,7 @@ def _estimate_grid_size(grid_img: np.ndarray) -> tuple[int, int]:
     return rows, cols
 
 
-def parse_board(image_path: str | Path) -> Board:
-    bgr = cv2.imread(str(image_path))
-    if bgr is None:
-        raise FileNotFoundError(f"Cannot load image: {image_path}")
+def _parse_board_bgr(bgr: np.ndarray) -> Board:
     img = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
 
     header, grid_y = _detect_header(img, bgr=bgr)
@@ -376,15 +366,12 @@ def parse_board(image_path: str | Path) -> Board:
     cell_h = grid_img.shape[0] // rows
     cell_w = grid_img.shape[1] // cols
 
-    # Detect sub-pixel phase: the grid_img may start a few pixels before the first
-    # cell's top bevel, so actual cells begin at y_offset rather than y=0.
     y_offset = _find_cell_y_offset(grid_img, cell_h)
     gh = grid_img.shape[0]
     # Actual cell height for full rows (rows 1..rows-1); row 0 is a partial fragment
     actual_cell_h = (gh - y_offset) // (rows - 1) if (rows > 1 and y_offset > 0) else cell_h
 
     board = Board(rows=rows, cols=cols, header=header)
-    board.cells = []
 
     for r in range(rows):
         row_cells = []
@@ -411,25 +398,42 @@ def parse_board(image_path: str | Path) -> Board:
     return board
 
 
+def parse_board(image_path: str | Path) -> Board:
+    bgr = cv2.imread(str(image_path))
+    if bgr is None:
+        raise FileNotFoundError(f"Cannot load image: {image_path}")
+    return _parse_board_bgr(bgr)
+
+
+def parse_board_bytes(data: bytes) -> Board:
+    buf = np.frombuffer(data, np.uint8)
+    bgr = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+    if bgr is None:
+        raise ValueError("Cannot decode image data")
+    return _parse_board_bgr(bgr)
+
+
+_SYMBOLS: dict[CellState, str] = {
+    CellState.UNREVEALED: "■",
+    CellState.EMPTY:      "·",
+    CellState.FLAG:       "⚑",
+    CellState.MINE:       "*",
+    CellState.NUMBER_1:   "1",
+    CellState.NUMBER_2:   "2",
+    CellState.NUMBER_3:   "3",
+    CellState.NUMBER_4:   "4",
+    CellState.NUMBER_5:   "5",
+    CellState.NUMBER_6:   "6",
+    CellState.NUMBER_7:   "7",
+    CellState.NUMBER_8:   "8",
+}
+
+
 def render_board(board: Board) -> str:
-    symbols = {
-        CellState.UNREVEALED: "■",
-        CellState.EMPTY:      "·",
-        CellState.FLAG:       "⚑",
-        CellState.MINE:       "*",
-        CellState.NUMBER_1:   "1",
-        CellState.NUMBER_2:   "2",
-        CellState.NUMBER_3:   "3",
-        CellState.NUMBER_4:   "4",
-        CellState.NUMBER_5:   "5",
-        CellState.NUMBER_6:   "6",
-        CellState.NUMBER_7:   "7",
-        CellState.NUMBER_8:   "8",
-    }
     lines = []
     if board.header:
         lines.append(f"Mines: {board.header.mine_count}")
         lines.append("")
     for row in board.cells:
-        lines.append(" ".join(symbols.get(c.state, "?") for c in row))
+        lines.append(" ".join(_SYMBOLS.get(c.state, "?") for c in row))
     return "\n".join(lines)

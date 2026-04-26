@@ -1,10 +1,7 @@
 """HTTP server: accepts a raw image POST and returns the parsed board as JSON."""
-import os
-import tempfile
-
 from flask import Flask, request
 
-from detector import parse_board, render_board
+from detector import parse_board_bytes, render_board
 
 app = Flask(__name__)
 
@@ -16,16 +13,11 @@ def health():
 
 @app.route("/parse", methods=["POST"])
 def parse():
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-        f.write(request.data)
-        tmp = f.name
     try:
-        board = parse_board(tmp)
+        board = parse_board_bytes(request.data)
         return render_board(board), 200, {"Content-Type": "text/plain; charset=utf-8"}
     except Exception as e:
         return str(e), 500, {"Content-Type": "text/plain; charset=utf-8"}
-    finally:
-        os.unlink(tmp)
 
 
 if __name__ == "__main__":

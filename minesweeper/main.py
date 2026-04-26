@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """CLI entry point: parse a minesweeper screenshot and print the board."""
 import argparse
-import sys
 from pathlib import Path
 
 from detector import parse_board, render_board
@@ -22,8 +21,6 @@ def main():
             "cols": board.cols,
             "header": {
                 "mine_count": board.header.mine_count if board.header else None,
-                "timer": board.header.timer if board.header else None,
-                "has_hint": board.header.has_hint if board.header else None,
             },
             "cells": [
                 [{"row": c.row, "col": c.col, "state": c.state.value,

@@ -76,8 +76,6 @@ pub fn load_prompt(order: &str) -> String {
         .join("\n\n")
 }
 
-// ── Public data types ─────────────────────────────────────────────────────────
-
 pub struct TokenUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -88,13 +86,9 @@ pub struct TokenUsage {
     pub result: String,
 }
 
-// ── Backend trait (injectable for tests) ──────────────────────────────────────
-
 pub trait ClaudeBackend: Send + Sync {
     fn query(&self, order: &str, session_id: Option<&str>) -> Result<TokenUsage, String>;
 }
-
-// ── Handler ───────────────────────────────────────────────────────────────────
 
 #[derive(Component)]
 #[shaku(interface = OrderHandler)]
@@ -141,8 +135,6 @@ impl OrderHandler for ClaudeCodeHandler {
         eprintln!("[session reset]");
     }
 }
-
-// ── Real backend: calls the `claude` CLI ─────────────────────────────────────
 
 #[derive(Component)]
 #[shaku(interface = ClaudeBackend)]
@@ -224,8 +216,6 @@ pub fn parse_result_json(json: &str) -> Result<TokenUsage, String> {
         result,
     })
 }
-
-// ── ClaudeImageAnalyzer ───────────────────────────────────────────────────────
 
 #[derive(Component)]
 #[shaku(interface = ImageAnalyzer)]

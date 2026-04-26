@@ -201,60 +201,21 @@ fn run_minesweeper_parser(bytes: &[u8]) -> Option<String> {
 
 fn analyze_minesweeper_board(board: &str, caption: &str, model: &str) -> String {
     let prompt = format!("/minesweeper {board}\n\nPregunta del usuario: {caption}");
-
-    eprintln!("[minesweeper analyze: spawning claude model={model}, prompt {} bytes]", prompt.len());
-    let mut child = match Command::new("claude")
-        .args(["--print", "--output-format", "json", "--model", model,
-               "--allowedTools", "Bash,WebSearch"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("[minesweeper analyze: failed to spawn claude: {e}]");
-            return String::new();
-        }
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = std::io::Write::write_all(&mut stdin, prompt.as_bytes());
-    }
-
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("[minesweeper analyze: wait error: {e}]");
-            return String::new();
-        }
-    };
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !stderr.is_empty() {
-        eprintln!("[minesweeper analyze: claude stderr: {}]", &stderr[..stderr.len().min(500)]);
-    }
-
-    if !output.status.success() {
-        eprintln!("[minesweeper analyze: claude exited {:?}]", output.status.code());
-        return String::new();
-    }
-
-    let json_out = String::from_utf8_lossy(&output.stdout);
-    eprintln!("[minesweeper analyze: raw json {}]", &json_out[..json_out.len().min(300)]);
-    crate::infrastructure::claude_handler::parse_result_json(&json_out)
-        .map(|u| u.result)
-        .unwrap_or_default()
+    run_claude_skill(&prompt, model, Some("Bash,WebSearch"), "minesweeper")
 }
 
 fn play_audio_bytes(bytes: &[u8]) {
-    let tmp = "/tmp/tts_telegram_play.mp3";
-    if let Err(e) = std::fs::write(tmp, bytes) {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp = format!("/tmp/tts_telegram_play_{nanos}.mp3");
+    if let Err(e) = std::fs::write(&tmp, bytes) {
         eprintln!("[play_audio_bytes: failed to write tmp file: {e}]");
         return;
     }
     match Command::new("ffplay")
-        .args(["-nodisp", "-autoexit", "-loglevel", "warning", tmp])
+        .args(["-nodisp", "-autoexit", "-loglevel", "warning", &tmp])
         .stdout(Stdio::null())
         .status()
     {
@@ -262,6 +223,7 @@ fn play_audio_bytes(bytes: &[u8]) {
         Ok(status) => eprintln!("[play_audio_bytes: ffplay exited with {status}]"),
         Err(e) => eprintln!("[play_audio_bytes: failed to spawn ffplay: {e}]"),
     }
+    let _ = std::fs::remove_file(&tmp);
 }
 
 /// Main Telegram bot orchestrator.
@@ -530,15 +492,26 @@ impl TelegramBot {
             }
 
             if text == "/cuentas" {
-                let msg = handle_cuentas(self.sheets.as_ref(), current_model);
-                self.gateway.post_message(update.chat_id, &msg);
+                let gateway = Arc::clone(&self.gateway);
+                let sheets  = Arc::clone(&self.sheets);
+                let model   = current_model.clone();
+                let chat_id = update.chat_id;
+                handles.push(thread::spawn(move || {
+                    let msg = handle_cuentas(sheets.as_ref(), &model);
+                    gateway.post_message(chat_id, &msg);
+                }));
                 continue;
             }
 
             if text.starts_with("/bus") {
-                let stop_code = text["/bus".len()..].trim();
-                let msg = handle_bus(current_model, stop_code);
-                self.gateway.post_message(update.chat_id, &msg);
+                let stop_code = text["/bus".len()..].trim().to_string();
+                let gateway   = Arc::clone(&self.gateway);
+                let model     = current_model.clone();
+                let chat_id   = update.chat_id;
+                handles.push(thread::spawn(move || {
+                    let msg = handle_bus(&model, &stop_code);
+                    gateway.post_message(chat_id, &msg);
+                }));
                 continue;
             }
 
@@ -684,6 +657,54 @@ impl TelegramBot {
     }
 }
 
+fn run_claude_skill(prompt: &str, model: &str, allowed_tools: Option<&str>, context: &str) -> String {
+    eprintln!("[{context}: spawning claude, model={model}]");
+    let mut cmd = Command::new("claude");
+    cmd.args(["--print", "--output-format", "json", "--model", model]);
+    if let Some(tools) = allowed_tools {
+        cmd.args(["--allowedTools", tools]);
+    }
+    let mut child = match cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[{context}: failed to spawn claude: {e}]");
+            return "Error al obtener la respuesta.".to_string();
+        }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = std::io::Write::write_all(&mut stdin, prompt.as_bytes());
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("[{context}: wait error: {e}]");
+            return "Error al obtener la respuesta.".to_string();
+        }
+    };
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        eprintln!("[{context}: claude stderr: {}]", &stderr[..stderr.len().min(500)]);
+    }
+
+    if !output.status.success() {
+        eprintln!("[{context}: claude exited {:?}]", output.status.code());
+        return "Error al obtener la respuesta.".to_string();
+    }
+
+    let json_out = String::from_utf8_lossy(&output.stdout);
+    crate::infrastructure::claude_handler::parse_result_json(&json_out)
+        .map(|u| u.result)
+        .unwrap_or_else(|_| "No pude obtener una respuesta de Claude.".to_string())
+}
+
 fn handle_cuentas(sheets: &dyn GoogleSheetsGateway, model: &str) -> String {
     let data = match sheets.fetch_as_text() {
         Ok(d) => d,
@@ -694,50 +715,9 @@ fn handle_cuentas(sheets: &dyn GoogleSheetsGateway, model: &str) -> String {
         .unwrap_or_else(|_| "Cuentas Personales".to_string());
 
     let prompt = format!("/cuentas {sheet_name}\n\n{data}");
-
-    eprintln!("[cuentas: spawning claude, prompt {} bytes]", prompt.len());
-    let mut child = match Command::new("claude")
-        .args(["--print", "--output-format", "json", "--model", model])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("[cuentas: failed to spawn claude: {e}]");
-            return "Error al lanzar el análisis.".to_string();
-        }
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = std::io::Write::write_all(&mut stdin, prompt.as_bytes());
-    }
-
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("[cuentas: wait error: {e}]");
-            return "Error al obtener la respuesta.".to_string();
-        }
-    };
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !stderr.is_empty() {
-        eprintln!("[cuentas: claude stderr: {}]", &stderr[..stderr.len().min(500)]);
-    }
-
-    if !output.status.success() {
-        eprintln!("[cuentas: claude exited {:?}]", output.status.code());
-        return "Error en el análisis de cuentas.".to_string();
-    }
-
-    let json_out = String::from_utf8_lossy(&output.stdout);
-    crate::infrastructure::claude_handler::parse_result_json(&json_out)
-        .map(|u| u.result)
-        .unwrap_or_else(|_| "No pude obtener una respuesta de Claude.".to_string())
+    eprintln!("[cuentas: prompt {} bytes]", prompt.len());
+    run_claude_skill(&prompt, model, None, "cuentas")
 }
-
 
 fn handle_bus(model: &str, stop_code: &str) -> String {
     let prompt = if stop_code.is_empty() {
@@ -745,48 +725,7 @@ fn handle_bus(model: &str, stop_code: &str) -> String {
     } else {
         format!("/bus {stop_code}")
     };
-    eprintln!("[bus: spawning claude, model={model}, stop={stop_code:?}]");
-    let mut child = match Command::new("claude")
-        .args(["--print", "--output-format", "json", "--model", model,
-               "--allowedTools", "Bash"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("[bus: failed to spawn claude: {e}]");
-            return "Error al consultar el autobús.".to_string();
-        }
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = std::io::Write::write_all(&mut stdin, prompt.as_bytes());
-    }
-
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("[bus: wait error: {e}]");
-            return "Error al obtener la respuesta.".to_string();
-        }
-    };
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !stderr.is_empty() {
-        eprintln!("[bus: claude stderr: {}]", &stderr[..stderr.len().min(500)]);
-    }
-
-    if !output.status.success() {
-        eprintln!("[bus: claude exited {:?}]", output.status.code());
-        return "Error al consultar el autobús.".to_string();
-    }
-
-    let json_out = String::from_utf8_lossy(&output.stdout);
-    crate::infrastructure::claude_handler::parse_result_json(&json_out)
-        .map(|u| u.result)
-        .unwrap_or_else(|_| "No pude consultar el autobús.".to_string())
+    run_claude_skill(&prompt, model, Some("Bash"), "bus")
 }
 
 /// Set or query the default PulseAudio sink volume via `pactl`.
