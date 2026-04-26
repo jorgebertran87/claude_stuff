@@ -1,4 +1,5 @@
 """HTTP server: accepts a raw image POST and returns the parsed board as JSON."""
+import os
 from flask import Flask, request
 
 from detector import parse_board_bytes, render_board
