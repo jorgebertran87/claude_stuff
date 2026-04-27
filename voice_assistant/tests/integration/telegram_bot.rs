@@ -277,7 +277,7 @@ fn then_no_messages(world: &mut TelegramWorld) {
     assert!(posted.is_empty(), "expected no messages, got: {:?}", *posted);
 }
 
-#[then(regex = r#"^the handler received "(.+)"$"#)]
+#[then(regex = r#"^the handler received(?: a prompt containing)? "(.+)"$"#)]
 fn then_handler_received(world: &mut TelegramWorld, expected: String) {
     let received = world.handler.received.lock().unwrap();
     assert!(

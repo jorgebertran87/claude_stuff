@@ -90,4 +90,4 @@ Feature: Telegram bot infrastructure integration
     Given a TelegramBot with a fake gateway
     And a photo update from chat 1 with caption "buscaminas ayúdame" and downloadable bytes
     When run_once processes the updates
-    Then the handler received a prompt containing "buscaminas"
+    Then the gateway posted a message to chat 1 containing "buscaminas"

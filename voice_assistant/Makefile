@@ -19,12 +19,6 @@ build:
 
 UID := $(shell id -u)
 
-run:
-	@./run.sh $(if $(ORDER),--order "$(ORDER)") &
-
-run-prod:
-	@RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) ./run.sh $(if $(ORDER),--order "$(ORDER)") &
-
 run-telegram:
 	UID=$(UID) docker compose up --build -d
 	docker compose logs -f
@@ -86,7 +80,7 @@ deploy:
 	$(MAKE) test
 	$(MAKE) test-integration
 	$(MAKE) build-prod
-	scp Makefile run.sh docker-compose.yml pequenin:~/pequenin	
+	scp Makefile docker-compose.yml pequenin:~/pequenin
 	scp -r .claude pequenin:~/pequenin/
 
-.PHONY: build build-local run run-prod run-telegram run-telegram-prod test test-integration mutants mutants-integration debug deploy
+.PHONY: build build-local run-telegram run-telegram-prod test test-integration mutants mutants-integration debug deploy

@@ -1,18 +1,15 @@
-//! TTS pipeline: markdown stripping, language detection, audio generation, playback.
+//! TTS pipeline: markdown stripping, language detection, audio generation.
 
 use std::io::Read;
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex, LazyLock, atomic::{AtomicBool, Ordering}};
-use std::thread;
-use std::time::Duration;
+use std::sync::LazyLock;
 
 use regex::Regex;
 use whichlang::detect_language;
 
-use crate::domain::model::Language;
 use shaku::Component;
 
-use crate::domain::ports::{AudioSpeaker, EchoRef, TextSynthesizer};
+use crate::domain::ports::TextSynthesizer;
 
 // Supported gTTS language codes (subset; extended as needed).
 const GTTS_SUPPORTED: &[&str] = &[
@@ -53,6 +50,7 @@ static RE_BOLD:    LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\*+([^*]*)\*+
 static RE_HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#+\s+").unwrap());
 static RE_BULLET:  LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^[-*]\s+").unwrap());
 static RE_CODE:    LazyLock<Regex> = LazyLock::new(|| Regex::new(r"`[^`]*`").unwrap());
+static RE_QUOTE:   LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""([^"]+)"|'([^']+)'"#).unwrap());
 
 /// Strip common Markdown constructs so TTS reads clean prose.
 pub fn strip_markdown(text: &str) -> String {
@@ -111,8 +109,7 @@ pub fn alexa_spotify_title(text: &str) -> Option<(String, String)> {
     if !lower.contains("alexa") || !lower.contains("spotify") {
         return None;
     }
-    let re = Regex::new(r#""([^"]+)"|'([^']+)'"#).unwrap();
-    let m = re.captures(text)?;
+    let m = RE_QUOTE.captures(text)?;
     let title = m.get(1).or_else(|| m.get(2))?.as_str().to_string();
     let lang = if detect_lang(&title) == "es" { "es".into() } else { "en".into() };
     Some((title, lang))
@@ -180,7 +177,6 @@ const MAX_TTS_CHARS: usize = 180;
 /// then at word boundaries. Mirrors how gTTS splits long strings internally.
 fn tts_chunks(text: &str) -> Vec<String> {
     let mut chunks: Vec<String> = Vec::new();
-    // Split at sentence-ending punctuation, keeping the delimiter
     let sentences = split_sentences(text);
     let mut current = String::new();
     for sentence in sentences {
@@ -190,7 +186,6 @@ fn tts_chunks(text: &str) -> Vec<String> {
             if !current.trim().is_empty() {
                 chunks.push(current.trim().to_string());
             }
-            // If the sentence itself exceeds the limit, split at word boundaries
             if sentence.len() > MAX_TTS_CHARS {
                 let mut word_buf = String::new();
                 for word in sentence.split_whitespace() {
@@ -269,6 +264,7 @@ pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
         .unwrap_or_else(|| strip_markdown(text));
     synthesize_text(&unified)
 }
+
 /// Disconnect the Bluetooth speaker whose MAC address is in `BT_SPEAKER_MAC`.
 /// No-op (with a log) if the env var is not set.
 pub fn disconnect_bt_speaker() {
@@ -314,7 +310,9 @@ fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
 
     let _ = std::fs::remove_file(&input_path);
     if ok {
-        std::fs::read(&output_path).map(|b| { let _ = std::fs::remove_file(&output_path); b }).unwrap_or(bytes)
+        let result = std::fs::read(&output_path).unwrap_or(bytes);
+        let _ = std::fs::remove_file(&output_path);
+        result
     } else {
         bytes
     }
@@ -333,102 +331,5 @@ impl TextSynthesizer for GttsTextSynthesizer {
 
     fn synthesize_alexa_spotify(&self, text: &str) -> Vec<u8> {
         synthesize_alexa_spotify(text)
-    }
-}
-
-// ── GTTSSpeaker ───────────────────────────────────────────────────────────────
-
-#[derive(Component)]
-#[shaku(interface = AudioSpeaker)]
-pub struct GTTSSpeaker {
-    #[shaku(default)]
-    current_pid: Arc<Mutex<Option<u32>>>,
-}
-
-impl GTTSSpeaker {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self { current_pid: Arc::new(Mutex::new(None)) })
-    }
-
-    fn play_bytes(&self, bytes: &[u8], on_start: Option<Box<dyn FnOnce() + Send>>) {
-        let tmp = "/tmp/voice_response.mp3";
-        let _ = std::fs::write(tmp, bytes);
-
-        if let Some(cb) = on_start {
-            cb();
-        }
-
-        if let Ok(mut child) = Command::new("ffplay")
-            .args(["-nodisp", "-autoexit", "-loglevel", "quiet",
-                   "-af", "atempo=1.2",
-                   tmp])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            *self.current_pid.lock().unwrap() = Some(child.id());
-            let _ = child.wait();
-            *self.current_pid.lock().unwrap() = None;
-        }
-    }
-}
-
-impl AudioSpeaker for GTTSSpeaker {
-    fn speak(&self, text: &str, language: &Language, on_playback_start: Option<Box<dyn FnOnce() + Send>>) {
-        let (unified, lang) = match alexa_spotify_title(text) {
-            Some((title, ref tl)) => (build_alexa_command(&title, tl), tl.clone()),
-            None => (strip_markdown(text), language.lang_prefix().to_string()),
-        };
-
-        let mut all_bytes: Vec<u8> = Vec::new();
-        for piece in tts_chunks(&unified) {
-            match tts_segment(&piece, &lang) {
-                Ok(seg) => all_bytes.extend_from_slice(seg.raw_data()),
-                Err(e)  => eprintln!("TTS error: {e}"),
-            }
-        }
-
-        if !all_bytes.is_empty() {
-            self.play_bytes(&all_bytes, on_playback_start);
-        }
-    }
-
-    fn stop(&self) {
-        if let Some(pid) = *self.current_pid.lock().unwrap() {
-            let _ = Command::new("kill")
-                .arg(pid.to_string())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        }
-    }
-
-    fn beep(&self) {
-        let _ = Command::new("ffplay")
-            .args(["-nodisp", "-autoexit", "-loglevel", "quiet",
-                   "-f", "lavfi", "-i", "sine=frequency=440:duration=0.2"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-
-    fn play_melody(&self, stop_signal: Arc<AtomicBool>) {
-        while !stop_signal.load(Ordering::SeqCst) {
-            let _ = Command::new("ffplay")
-                .args(["-nodisp", "-autoexit", "-loglevel", "quiet",
-                       "-f", "lavfi", "-i", "sine=frequency=520:duration=0.4"])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            thread::sleep(Duration::from_millis(200));
-        }
-    }
-
-    fn get_echo_reference(&self) -> Option<EchoRef> {
-        None
-    }
-
-    fn disconnect(&self) {
-        disconnect_bt_speaker();
     }
 }
