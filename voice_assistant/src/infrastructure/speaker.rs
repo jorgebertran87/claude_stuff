@@ -1,6 +1,3 @@
-//! TTS pipeline: markdown stripping, language detection, audio generation.
-
-use std::io::Read;
 use std::process::{Command, Stdio};
 use std::sync::LazyLock;
 
@@ -10,39 +7,7 @@ use whichlang::detect_language;
 use shaku::Component;
 
 use crate::domain::ports::TextSynthesizer;
-
-// Supported gTTS language codes (subset; extended as needed).
-const GTTS_SUPPORTED: &[&str] = &[
-    "af", "ar", "bg", "bn", "bs", "ca", "cs", "cy", "da", "de", "el", "en",
-    "eo", "es", "et", "fi", "fr", "gu", "hi", "hr", "hu", "hy", "id", "is",
-    "it", "ja", "jw", "km", "kn", "ko", "la", "lv", "mk", "ml", "mr", "my",
-    "ne", "nl", "no", "pl", "pt", "ro", "ru", "si", "sk", "sq", "sr", "su",
-    "sv", "sw", "ta", "te", "th", "tl", "tr", "uk", "ur", "vi", "zh-CN", "zh-TW",
-];
-
-// ── AudioSegment ─────────────────────────────────────────────────────────────
-
-/// Lightweight audio container — stores raw bytes (MP3 from Google TTS).
-/// `len()` returns byte count, used as a proxy for duration in tests.
-#[derive(Debug, Clone)]
-pub struct AudioSegment {
-    bytes: Vec<u8>,
-}
-
-impl AudioSegment {
-    pub fn from_bytes(bytes: Vec<u8>) -> Self { Self { bytes } }
-    pub fn len(&self) -> usize              { self.bytes.len() }
-    pub fn is_empty(&self) -> bool          { self.bytes.is_empty() }
-    pub fn raw_data(&self) -> &[u8]         { &self.bytes }
-
-    pub fn concat(&self, other: &Self) -> Self {
-        let mut bytes = self.bytes.clone();
-        bytes.extend_from_slice(&other.bytes);
-        Self { bytes }
-    }
-}
-
-// ── public helpers ────────────────────────────────────────────────────────────
+use crate::infrastructure::tts::{tts_segment, tts_chunks};
 
 static RE_LINK:    LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\([^\)]+\)").unwrap());
 static RE_URL:     LazyLock<Regex> = LazyLock::new(|| Regex::new(r"https?://\S+").unwrap());
@@ -52,7 +17,6 @@ static RE_BULLET:  LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^[-*]\s+"
 static RE_CODE:    LazyLock<Regex> = LazyLock::new(|| Regex::new(r"`[^`]*`").unwrap());
 static RE_QUOTE:   LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""([^"]+)"|'([^']+)'"#).unwrap());
 
-/// Strip common Markdown constructs so TTS reads clean prose.
 pub fn strip_markdown(text: &str) -> String {
     let s = RE_LINK.replace_all(text, "$1");
     let s = RE_URL.replace_all(&s, "");
@@ -63,22 +27,6 @@ pub fn strip_markdown(text: &str) -> String {
     s.trim().to_string()
 }
 
-/// Generate a TTS `AudioSegment` for `text` in `lang`.
-/// Falls back to English if the language code is not supported by gTTS.
-pub fn tts_segment(text: &str, lang: &str) -> Result<AudioSegment, String> {
-    match fetch_tts(text, lang) {
-        Ok(bytes) => Ok(AudioSegment::from_bytes(bytes)),
-        Err(_) => {
-            // Fall back to English for unsupported / rejected language codes
-            fetch_tts(text, "en")
-                .map(AudioSegment::from_bytes)
-                .map_err(|e| format!("TTS fallback failed: {e}"))
-        }
-    }
-}
-
-/// Detect language of `text` and return a BCP-47-ish code (e.g. `"en"`, `"es"`).
-/// Returns `"en"` when detection is uncertain.
 pub fn detect_lang(text: &str) -> String {
     use whichlang::Lang;
     match detect_language(text) {
@@ -102,8 +50,6 @@ pub fn detect_lang(text: &str) -> String {
     .to_string()
 }
 
-/// If `text` contains "alexa", "spotify", and a quoted title, return
-/// `(title, lang_code)` where lang is "es" for Spanish titles, "en" otherwise.
 pub fn alexa_spotify_title(text: &str) -> Option<(String, String)> {
     let lower = text.to_lowercase();
     if !lower.contains("alexa") || !lower.contains("spotify") {
@@ -115,8 +61,6 @@ pub fn alexa_spotify_title(text: &str) -> Option<(String, String)> {
     Some((title, lang))
 }
 
-/// Build the Alexa+Spotify voice command in the title's language.
-/// Spanish titles keep the original Spanish phrasing; everything else uses English.
 pub fn build_alexa_command(title: &str, lang: &str) -> String {
     match lang {
         "es" => format!("Alexa, pon {} en Spotify", title),
@@ -124,117 +68,6 @@ pub fn build_alexa_command(title: &str, lang: &str) -> String {
     }
 }
 
-// ── private ───────────────────────────────────────────────────────────────────
-
-fn fetch_tts(text: &str, lang: &str) -> Result<Vec<u8>, String> {
-    let lang_key = lang.split('-').next().unwrap_or(lang).to_lowercase();
-    let lang_check = if lang.contains('-') { lang } else { lang_key.as_str() };
-    if !GTTS_SUPPORTED.iter().any(|&s| s.eq_ignore_ascii_case(lang_check)) {
-        return Err(format!("Language not supported: {lang}"));
-    }
-    let url = format!(
-        "https://translate.google.com/translate_tts?ie=UTF-8&q={}&tl={}&client=tw-ob",
-        urlencode(text),
-        lang,
-    );
-    let response = ureq::get(&url)
-        .set("User-Agent", "Mozilla/5.0")
-        .call()
-        .map_err(|e| format!("HTTP error: {e}"))?;
-    let mut bytes = Vec::new();
-    response
-        .into_reader()
-        .read_to_end(&mut bytes)
-        .map_err(|e| format!("Read error: {e}"))?;
-    if bytes.is_empty() {
-        return Err("Empty TTS response".into());
-    }
-    Ok(bytes)
-}
-
-fn urlencode(s: &str) -> String {
-    s.chars()
-        .flat_map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~' {
-                vec![c]
-            } else if c == ' ' {
-                vec!['+']
-            } else {
-                c.to_string()
-                    .bytes()
-                    .flat_map(|b| format!("%{:02X}", b).chars().collect::<Vec<_>>())
-                    .collect()
-            }
-        })
-        .collect()
-}
-
-// ── TTS chunk splitter ────────────────────────────────────────────────────────
-
-const MAX_TTS_CHARS: usize = 180;
-
-/// Split text into chunks ≤ MAX_TTS_CHARS, breaking at sentence boundaries first,
-/// then at word boundaries. Mirrors how gTTS splits long strings internally.
-fn tts_chunks(text: &str) -> Vec<String> {
-    let mut chunks: Vec<String> = Vec::new();
-    let sentences = split_sentences(text);
-    let mut current = String::new();
-    for sentence in sentences {
-        if current.len() + sentence.len() <= MAX_TTS_CHARS {
-            current.push_str(&sentence);
-        } else {
-            if !current.trim().is_empty() {
-                chunks.push(current.trim().to_string());
-            }
-            if sentence.len() > MAX_TTS_CHARS {
-                let mut word_buf = String::new();
-                for word in sentence.split_whitespace() {
-                    if word_buf.len() + word.len() + 1 > MAX_TTS_CHARS {
-                        if !word_buf.trim().is_empty() {
-                            chunks.push(word_buf.trim().to_string());
-                        }
-                        word_buf = word.to_string();
-                    } else {
-                        if !word_buf.is_empty() { word_buf.push(' '); }
-                        word_buf.push_str(word);
-                    }
-                }
-                current = word_buf;
-            } else {
-                current = sentence;
-            }
-        }
-    }
-    if !current.trim().is_empty() {
-        chunks.push(current.trim().to_string());
-    }
-    if chunks.is_empty() { chunks.push(text.to_string()); }
-    chunks
-}
-
-fn split_sentences(text: &str) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut current = String::new();
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        current.push(c);
-        if matches!(c, '.' | '!' | '?') {
-            if chars.peek().map(|&n| n == ' ' || n == '\n').unwrap_or(true) {
-                result.push(current.clone());
-                current.clear();
-            }
-        } else if c == '\n' {
-            result.push(current.clone());
-            current.clear();
-        }
-    }
-    if !current.is_empty() { result.push(current); }
-    result
-}
-
-/// Synthesize arbitrary text to MP3 bytes at 1.2× speed.
-/// Strips markdown, detects language, chunks, and concatenates segments.
-/// Returns an empty `Vec` if synthesis fails entirely.
 pub fn synthesize_text(text: &str) -> Vec<u8> {
     let clean = strip_markdown(text);
     if clean.trim().is_empty() {
@@ -254,10 +87,6 @@ pub fn synthesize_text(text: &str) -> Vec<u8> {
     apply_atempo(all_bytes, 1.2)
 }
 
-/// Generate TTS audio bytes for an Alexa+Spotify order.
-/// Translates the whole command into the title's language and synthesizes it
-/// as a single TTS call — no multilingual splitting.
-/// Returns an empty `Vec` if synthesis fails entirely.
 pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
     let unified = alexa_spotify_title(text)
         .map(|(title, lang)| build_alexa_command(&title, &lang))
@@ -265,8 +94,6 @@ pub fn synthesize_alexa_spotify(text: &str) -> Vec<u8> {
     synthesize_text(&unified)
 }
 
-/// Disconnect the Bluetooth speaker whose MAC address is in `BT_SPEAKER_MAC`.
-/// No-op (with a log) if the env var is not set.
 pub fn disconnect_bt_speaker() {
     let mac = match std::env::var("BT_SPEAKER_MAC") {
         Ok(m) if !m.is_empty() => m,
@@ -283,8 +110,6 @@ pub fn disconnect_bt_speaker() {
         .status();
 }
 
-/// Apply an ffmpeg `atempo` filter to MP3 bytes, returning the processed bytes.
-/// Falls back to the original bytes if ffmpeg fails.
 fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -307,7 +132,6 @@ fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-
     let _ = std::fs::remove_file(&input_path);
     if ok {
         let result = std::fs::read(&output_path).unwrap_or(bytes);
@@ -317,8 +141,6 @@ fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
         bytes
     }
 }
-
-// ── GttsTextSynthesizer ───────────────────────────────────────────────────────
 
 #[derive(Component)]
 #[shaku(interface = TextSynthesizer)]

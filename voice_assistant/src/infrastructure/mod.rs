@@ -1,4 +1,10 @@
 pub mod claude_handler;
 pub mod google_sheets;
+pub mod minesweeper;
+pub mod skill_loader;
 pub mod speaker;
 pub mod telegram_bot;
+pub mod telegram_gateway;
+pub mod telegram_skills;
+pub mod token_usage;
+pub mod tts;
