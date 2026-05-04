@@ -199,8 +199,48 @@ fn run_minesweeper_parser(bytes: &[u8]) -> Option<String> {
     if body.trim().is_empty() { None } else { Some(body) }
 }
 
+fn board_to_json(board: &str) -> String {
+    let mut mines_remaining: Option<u32> = None;
+    let mut flags: Vec<serde_json::Value> = vec![];
+    let mut unrevealed: Vec<serde_json::Value> = vec![];
+    let mut revealed: Vec<serde_json::Value> = vec![];
+    let mut row = 0usize;
+
+    for line in board.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("Mines:") {
+            mines_remaining = rest.trim().parse().ok();
+            continue;
+        }
+        row += 1;
+        for (col, symbol) in trimmed.split_whitespace().enumerate() {
+            let col = col + 1;
+            let pos = serde_json::json!({ "row": row, "col": col });
+            match symbol {
+                "⚑" => flags.push(pos),
+                "■" => unrevealed.push(pos),
+                "·" => revealed.push(serde_json::json!({ "row": row, "col": col, "value": "empty" })),
+                n => revealed.push(serde_json::json!({ "row": row, "col": col, "value": n })),
+            }
+        }
+    }
+
+    let obj = serde_json::json!({
+        "mines_remaining": mines_remaining,
+        "flags": flags,
+        "unrevealed": unrevealed,
+        "revealed": revealed,
+    });
+    serde_json::to_string(&obj).unwrap_or_default()
+}
+
 fn analyze_minesweeper_board(board: &str, caption: &str, model: &str) -> String {
-    let prompt = format!("/minesweeper {board}\n\nPregunta del usuario: {caption}");
+    let board_json = board_to_json(board);
+    let prompt = format!("/minesweeper {board_json}\n\nPregunta del usuario: {caption}");
+    eprintln!("[minesweeper: prompt]\n{prompt}");
     run_claude_skill(&prompt, model, Some("Bash,WebSearch"), "minesweeper")
 }
 
