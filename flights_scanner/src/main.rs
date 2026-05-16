@@ -3,23 +3,28 @@ use std::sync::Arc;
 use flights_scanner::{
     domain::ports::FlightSearchPort,
     infrastructure::{
-        adapters::{InMemoryFlightSearchAdapter, SkyscannerAdapter},
+        adapters::{InMemoryFlightSearchAdapter, SkyScrapperAdapter, SkyscannerAdapter},
         http::{router::create_router, AppState},
     },
 };
 
 #[tokio::main]
 async fn main() {
-    let port: Arc<dyn FlightSearchPort> = match std::env::var("SKYSCANNER_API_KEY") {
-        Ok(key) => {
-            println!("Using Skyscanner provider");
-            Arc::new(SkyscannerAdapter::new(key))
-        }
-        Err(_) => {
-            println!("SKYSCANNER_API_KEY not set — using in-memory provider");
-            Arc::new(InMemoryFlightSearchAdapter::new())
-        }
-    };
+    let port: Arc<dyn FlightSearchPort> =
+        match (std::env::var("SKY_SCRAPPER_API_KEY"), std::env::var("SKYSCANNER_API_KEY")) {
+            (Ok(key), _) => {
+                println!("Using Sky Scrapper provider");
+                Arc::new(SkyScrapperAdapter::new(key))
+            }
+            (_, Ok(key)) => {
+                println!("Using Skyscanner provider");
+                Arc::new(SkyscannerAdapter::new(key))
+            }
+            _ => {
+                println!("No API key set — using in-memory provider");
+                Arc::new(InMemoryFlightSearchAdapter::new())
+            }
+        };
 
     let state = AppState { flight_search_port: port };
     let app = create_router(state);
