@@ -10,21 +10,25 @@ use flights_scanner::{
 
 #[tokio::main]
 async fn main() {
-    let port: Arc<dyn FlightSearchPort> =
-        match (std::env::var("SKY_SCRAPPER_API_KEY"), std::env::var("SKYSCANNER_API_KEY")) {
-            (Ok(key), _) => {
-                println!("Using Sky Scrapper provider");
-                Arc::new(SkyScrapperAdapter::new(key))
-            }
-            (_, Ok(key)) => {
-                println!("Using Skyscanner provider");
-                Arc::new(SkyscannerAdapter::new(key))
-            }
-            _ => {
-                println!("No API key set — using in-memory provider");
-                Arc::new(InMemoryFlightSearchAdapter::new())
-            }
-        };
+    let nonempty = |k: String| if k.is_empty() { None } else { Some(k) };
+
+    let sky_scrapper_key = std::env::var("SKY_SCRAPPER_API_KEY").ok().and_then(nonempty);
+    let skyscanner_key = std::env::var("SKYSCANNER_API_KEY").ok().and_then(nonempty);
+
+    let port: Arc<dyn FlightSearchPort> = match (sky_scrapper_key, skyscanner_key) {
+        (Some(key), _) => {
+            println!("Using Sky Scrapper provider");
+            Arc::new(SkyScrapperAdapter::new(key))
+        }
+        (_, Some(key)) => {
+            println!("Using Skyscanner provider");
+            Arc::new(SkyscannerAdapter::new(key))
+        }
+        _ => {
+            println!("No API key set — using in-memory provider");
+            Arc::new(InMemoryFlightSearchAdapter::new())
+        }
+    };
 
     let state = AppState { flight_search_port: port };
     let app = create_router(state);
