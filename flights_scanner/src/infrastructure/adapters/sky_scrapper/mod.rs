@@ -110,7 +110,7 @@ impl FlightSearchPort for SkyScrapperAdapter {
 
         let bytes = self
             .client
-            .get(format!("{}/api/v1/flights/searchFlightEverywhereDetails", self.base_url))
+            .get(format!("{}/api/v2/flights/searchFlightEverywhereDetails", self.base_url))
             .header("X-RapidAPI-Key", &self.api_key)
             .header("X-RapidAPI-Host", RAPIDAPI_HOST)
             .query(&params)
@@ -199,7 +199,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_origin_airport(&server).await;
         Mock::given(method("GET"))
-            .and(path("/api/v1/flights/searchFlightEverywhereDetails"))
+            .and(path("/api/v2/flights/searchFlightEverywhereDetails"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "status": true,
                 "data": []
@@ -217,7 +217,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_origin_airport(&server).await;
         Mock::given(method("GET"))
-            .and(path("/api/v1/flights/searchFlightEverywhereDetails"))
+            .and(path("/api/v2/flights/searchFlightEverywhereDetails"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "status": true,
                 "data": []
@@ -263,7 +263,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_origin_airport(&server).await;
         Mock::given(method("GET"))
-            .and(path("/api/v1/flights/searchFlightEverywhereDetails"))
+            .and(path("/api/v2/flights/searchFlightEverywhereDetails"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "status": false,
                 "message": "Something went wrong."
