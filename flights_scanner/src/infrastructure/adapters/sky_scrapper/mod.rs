@@ -102,12 +102,8 @@ impl FlightSearchPort for SkyScrapperAdapter {
             ("destinationEntityId", &dest_entity_id),
             ("date", &date),
             ("adults", &adults),
-            ("cabinClass", cabin_class_str(criteria.cabin)),
             ("sortBy", "best"),
-            ("currency", "USD"),
-            ("market", "en-US"),
-            ("locale", "en-US"),
-            ("countryCode", "US"),
+            ("cabinClass", cabin_class_str(criteria.cabin)),
         ];
 
         if criteria.passengers.children > 0 {
