@@ -67,8 +67,9 @@ impl SkyScrapperAdapter {
 
         resp.data
             .into_iter()
-            .find(|r| r.sky_id.eq_ignore_ascii_case(iata))
-            .map(|r| (r.sky_id, r.entity_id))
+            .map(|r| r.navigation.relevant_flight_params)
+            .find(|p| p.sky_id.eq_ignore_ascii_case(iata))
+            .map(|p| (p.sky_id, p.entity_id))
             .ok_or_else(|| {
                 eprintln!("[sky_scrapper] airport {iata} not found in results");
                 DomainError::ProviderError
@@ -187,8 +188,16 @@ mod tests {
         json!({
             "status": true,
             "data": [
-                { "skyId": "MAD", "entityId": "entity_mad" },
-                { "skyId": "LHR", "entityId": "entity_lhr" }
+                {
+                    "navigation": {
+                        "relevantFlightParams": { "skyId": "MAD", "entityId": "entity_mad" }
+                    }
+                },
+                {
+                    "navigation": {
+                        "relevantFlightParams": { "skyId": "LHR", "entityId": "entity_lhr" }
+                    }
+                }
             ]
         })
     }

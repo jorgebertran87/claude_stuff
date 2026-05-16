@@ -9,8 +9,19 @@ pub struct AirportSearchResponse {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AirportResult {
+    pub navigation: AirportNavigation,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AirportNavigation {
+    pub relevant_flight_params: RelevantFlightParams,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelevantFlightParams {
     pub sky_id: String,
     pub entity_id: String,
 }
