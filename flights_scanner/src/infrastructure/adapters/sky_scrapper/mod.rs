@@ -36,7 +36,7 @@ impl SkyScrapperAdapter {
     }
 
     async fn resolve_airport(&self, iata: &str) -> Result<(String, String), DomainError> {
-        let resp: AirportSearchResponse = self
+        let bytes = self
             .client
             .get(format!("{}/api/v1/flights/searchAirport", self.base_url))
             .header("X-RapidAPI-Key", &self.api_key)
@@ -44,16 +44,28 @@ impl SkyScrapperAdapter {
             .query(&[("query", iata), ("locale", "en-US")])
             .send()
             .await
-            .map_err(|_| DomainError::ProviderError)?
-            .json()
+            .map_err(|e| {
+                eprintln!("[sky_scrapper] airport request failed for {iata}: {e}");
+                DomainError::ProviderError
+            })?
+            .bytes()
             .await
             .map_err(|_| DomainError::ProviderError)?;
+
+        let resp: AirportSearchResponse = serde_json::from_slice(&bytes).map_err(|e| {
+            eprintln!("[sky_scrapper] airport parse error for {iata}: {e}");
+            eprintln!("[sky_scrapper] raw: {}", String::from_utf8_lossy(&bytes));
+            DomainError::ProviderError
+        })?;
 
         resp.data
             .into_iter()
             .find(|r| r.sky_id.eq_ignore_ascii_case(iata))
             .map(|r| (r.sky_id, r.entity_id))
-            .ok_or(DomainError::ProviderError)
+            .ok_or_else(|| {
+                eprintln!("[sky_scrapper] airport {iata} not found in results");
+                DomainError::ProviderError
+            })
     }
 }
 
@@ -98,7 +110,7 @@ impl FlightSearchPort for SkyScrapperAdapter {
             params.push(("returnDate", rd.as_str()));
         }
 
-        let resp: FlightSearchResponse = self
+        let bytes = self
             .client
             .get(format!("{}/api/v2/flights/searchFlightsWebComplete", self.base_url))
             .header("X-RapidAPI-Key", &self.api_key)
@@ -106,12 +118,22 @@ impl FlightSearchPort for SkyScrapperAdapter {
             .query(&params)
             .send()
             .await
-            .map_err(|_| DomainError::ProviderError)?
-            .json()
+            .map_err(|e| {
+                eprintln!("[sky_scrapper] flight search request failed: {e}");
+                DomainError::ProviderError
+            })?
+            .bytes()
             .await
             .map_err(|_| DomainError::ProviderError)?;
 
+        let resp: FlightSearchResponse = serde_json::from_slice(&bytes).map_err(|e| {
+            eprintln!("[sky_scrapper] flight search parse error: {e}");
+            eprintln!("[sky_scrapper] raw: {}", String::from_utf8_lossy(&bytes));
+            DomainError::ProviderError
+        })?;
+
         if !resp.status {
+            eprintln!("[sky_scrapper] flight search returned status=false");
             return Err(DomainError::ProviderError);
         }
 
