@@ -102,14 +102,20 @@ impl FlightSearchPort for SkyScrapperAdapter {
             ("destinationEntityId", &dest_entity_id),
             ("date", &date),
             ("adults", &adults),
-            ("children", &children),
-            ("infants", &infants),
             ("cabinClass", cabin_class_str(criteria.cabin)),
-            ("currency", "EUR"),
-            ("countryCode", "UK"),
-            ("market", "en-GB"),
-            ("locale", "en-GB"),
+            ("sortBy", "best"),
+            ("currency", "USD"),
+            ("market", "en-US"),
+            ("locale", "en-US"),
+            ("countryCode", "US"),
         ];
+
+        if criteria.passengers.children > 0 {
+            params.push(("children", &children));
+        }
+        if criteria.passengers.infants > 0 {
+            params.push(("infants", &infants));
+        }
 
         let return_date = criteria
             .return_date
@@ -118,9 +124,11 @@ impl FlightSearchPort for SkyScrapperAdapter {
             params.push(("returnDate", rd.as_str()));
         }
 
+        eprintln!("[sky_scrapper] calling searchFlights with params: {params:?}");
+
         let bytes = self
             .client
-            .get(format!("{}/api/v2/flights/searchFlightsWebComplete", self.base_url))
+            .get(format!("{}/api/v1/flights/searchFlights", self.base_url))
             .header("X-RapidAPI-Key", &self.api_key)
             .header("X-RapidAPI-Host", RAPIDAPI_HOST)
             .query(&params)
@@ -142,6 +150,7 @@ impl FlightSearchPort for SkyScrapperAdapter {
 
         if !resp.status {
             eprintln!("[sky_scrapper] flight search returned status=false");
+            eprintln!("[sky_scrapper] raw: {}", String::from_utf8_lossy(&bytes));
             return Err(DomainError::ProviderError);
         }
 
@@ -239,7 +248,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_airports(&server).await;
         Mock::given(method("GET"))
-            .and(path("/api/v2/flights/searchFlightsWebComplete"))
+            .and(path("/api/v1/flights/searchFlights"))
             .respond_with(ResponseTemplate::new(200).set_body_json(flights_body()))
             .mount(&server)
             .await;
@@ -258,7 +267,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_airports(&server).await;
         Mock::given(method("GET"))
-            .and(path("/api/v2/flights/searchFlightsWebComplete"))
+            .and(path("/api/v1/flights/searchFlights"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "status": true,
                 "data": { "itineraries": [] }
@@ -307,7 +316,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_airports(&server).await;
         Mock::given(method("GET"))
-            .and(path("/api/v2/flights/searchFlightsWebComplete"))
+            .and(path("/api/v1/flights/searchFlights"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "status": false,
                 "data": null
