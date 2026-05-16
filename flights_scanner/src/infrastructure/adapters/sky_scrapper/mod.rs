@@ -52,6 +52,13 @@ impl SkyScrapperAdapter {
             .await
             .map_err(|_| DomainError::ProviderError)?;
 
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            if let Some(msg) = v.get("message").and_then(|m| m.as_str()) {
+                eprintln!("[sky_scrapper] API error: {msg}");
+                return Err(DomainError::ProviderError);
+            }
+        }
+
         let resp: AirportSearchResponse = serde_json::from_slice(&bytes).map_err(|e| {
             eprintln!("[sky_scrapper] airport parse error for {iata}: {e}");
             eprintln!("[sky_scrapper] raw: {}", String::from_utf8_lossy(&bytes));
