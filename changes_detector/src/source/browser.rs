@@ -95,8 +95,13 @@ impl BrowserSource {
                     .map_err(|e| anyhow::anyhow!("Failed to read page body text: {e}"))
             }
 
-            // Selector present — wait for the JS-rendered element and extract its text.
+            // Selector present — wait for the JS-rendered element, then extract
+            // its innerHTML so that icon class changes (e.g. fa-user-lock →
+            // fa-lock) are captured in addition to visible text changes.
+            // Whitespace is normalised via JS so minor formatting differences
+            // don't trigger false positives.
             Some(selector) => {
+                // Wait until the element is present in the DOM.
                 client
                     .wait()
                     .at_most(ELEMENT_TIMEOUT)
@@ -105,10 +110,23 @@ impl BrowserSource {
                     .map_err(|e| anyhow::anyhow!(
                         "Timed out waiting for '{selector}' to appear \
                          (JS may still be loading — consider raising CHECK_INTERVAL_SECS): {e}"
-                    ))?
-                    .text()
+                    ))?;
+
+                // Extract innerHTML with collapsed whitespace via JS.
+                // innerHTML is used instead of innerText so that element
+                // attributes (e.g. icon classes on <i> tags) are included.
+                let raw = client
+                    .execute(
+                        "var el = document.querySelector(arguments[0]); \
+                         return el ? el.innerHTML.replace(/\\s+/g, ' ').trim() : null;",
+                        vec![serde_json::json!(selector)],
+                    )
                     .await
-                    .map_err(|e| anyhow::anyhow!("Failed to read text of '{selector}': {e}"))
+                    .map_err(|e| anyhow::anyhow!("JS execution failed for '{selector}': {e}"))?;
+
+                raw.as_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| anyhow::anyhow!("Element '{selector}' disappeared after wait"))
             }
         }
     }
