@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use config::Config;
 use detector::{ChangeDetector, CheckResult};
-use source::{browser::BrowserSource, file::FileSource, http::HttpSource, Source};
+use source::{browser::BrowserSource, file::FileSource, http::HttpSource, rcdeportivo::RcDeportivoSource, Source};
 use telegram::{CommandHandler, TelegramNotifier};
 use tracing::{error, info, warn};
 
@@ -39,6 +39,13 @@ async fn main() -> anyhow::Result<()> {
         || cfg.monitor_target.starts_with("https://");
 
     let source: Arc<dyn Source> = match cfg.source_type.as_deref() {
+        Some("rcdeportivo") => Arc::new(RcDeportivoSource::new(
+            cfg.monitor_target,
+            cfg.html_selector.ok_or_else(|| anyhow::anyhow!(
+                "SOURCE_TYPE=rcdeportivo requires HTML_SELECTOR (the match card selector, e.g. [id=\"237\"])"
+            ))?,
+            cfg.webdriver_url,
+        )),
         Some("browser") => Arc::new(BrowserSource::new(
             cfg.monitor_target,
             cfg.html_selector,

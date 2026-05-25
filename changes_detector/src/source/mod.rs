@@ -1,6 +1,7 @@
 pub mod browser;
 pub mod file;
 pub mod http;
+pub mod rcdeportivo;
 
 use async_trait::async_trait;
 
