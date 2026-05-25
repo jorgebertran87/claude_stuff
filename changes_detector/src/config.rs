@@ -2,7 +2,12 @@ use std::{path::PathBuf, time::Duration};
 
 pub struct Config {
     /// Passed to the concrete `Source` implementation chosen at startup.
+    /// A value that starts with `http://` or `https://` selects `HttpSource`;
+    /// anything else selects `FileSource`.
     pub monitor_target: String,
+    /// Optional CSS selector applied when using `HttpSource`.
+    /// Example: `a[id="237"]`
+    pub html_selector: Option<String>,
     /// Telegram Bot token (from BotFather).
     pub telegram_bot_token: String,
     /// Telegram chat/channel ID.
@@ -17,6 +22,8 @@ impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         let monitor_target = std::env::var("MONITOR_TARGET")
             .map_err(|_| anyhow::anyhow!("MONITOR_TARGET env var is required"))?;
+
+        let html_selector = std::env::var("HTML_SELECTOR").ok();
 
         let telegram_bot_token = std::env::var("TELEGRAM_BOT_TOKEN")
             .map_err(|_| anyhow::anyhow!("TELEGRAM_BOT_TOKEN env var is required"))?;
@@ -42,6 +49,7 @@ impl Config {
 
         Ok(Self {
             monitor_target,
+            html_selector,
             telegram_bot_token,
             telegram_chat_id,
             check_interval: Duration::from_secs(check_interval_secs),

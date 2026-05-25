@@ -23,7 +23,8 @@ The source and the detection logic are fully decoupled — adding a new kind of 
 src/
 ├── source/
 │   ├── mod.rs        # Source trait  — location() + async fetch() → String
-│   └── file.rs       # FileSource   — reads a local file
+│   ├── file.rs       # FileSource   — reads a local file
+│   └── http.rs       # HttpSource  — fetches a URL, optional CSS selector
 ├── detector.rs       # ChangeDetector — hashing, diffing, state persistence
 ├── telegram.rs       # TelegramNotifier — Telegram Bot API (HTML mode)
 ├── config.rs         # Configuration loaded from environment variables
@@ -32,33 +33,42 @@ src/
 
 ## Configuration
 
-Copy `.env.example` to `.env` and fill in the required values:
+Copy `.env.example` to `.env` and fill in the required values.
+
+The source type is inferred automatically from `MONITOR_TARGET`:
+
+| `MONITOR_TARGET` value | Source used |
+|---|---|
+| Starts with `http://` or `https://` | `HttpSource` |
+| Any other value | `FileSource` (path inside the container) |
+
+### All variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `MONITOR_TARGET` | ✅ | — | Path to the file to monitor (inside the container) |
+| `MONITOR_TARGET` | ✅ | — | URL **or** file path to monitor |
 | `TELEGRAM_BOT_TOKEN` | ✅ | — | Bot token from [@BotFather](https://t.me/BotFather) |
-| `TELEGRAM_CHAT_ID` | ✅ | — | Chat, group or channel ID to send notifications to |
+| `TELEGRAM_CHAT_ID` | ✅ | — | Chat, group or channel ID for notifications |
+| `HTML_SELECTOR` | | _(full body)_ | CSS selector to narrow monitoring to a specific element (HTTP only) |
 | `CHECK_INTERVAL_SECS` | | `60` | Polling interval in seconds |
 | `STATE_FILE` | | `/data/<slug>.state` | Path where the snapshot is persisted |
 | `RUST_LOG` | | `changes_detector=info` | Log level |
 
-> **Finding your chat ID:** forward any message to [@userinfobot](https://t.me/userinfobot) or [@RawDataBot](https://t.me/RawDataBot).
+> **Note on CSS IDs that start with a digit:** the selector `#237` is invalid CSS. Use the attribute form instead: `a[id="237"]`.
+
+> **Finding your Telegram chat ID:** forward any message to [@userinfobot](https://t.me/userinfobot) or [@RawDataBot](https://t.me/RawDataBot).
 
 ## Running with Docker Compose
 
 ```bash
 # 1. Configure
 cp .env.example .env
-$EDITOR .env
+$EDITOR .env   # set MONITOR_TARGET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
-# 2. Point to the file you want to watch (default: ./watched/example.txt)
-export MONITOR_FILE_HOST=/absolute/path/to/your/file
-
-# 3. Start
+# 2. Start
 docker compose up --build -d
 
-# 4. Follow logs
+# 3. Follow logs
 docker compose logs -f
 ```
 
@@ -68,6 +78,15 @@ State is persisted in the `changes_state` Docker volume so the service resumes c
 
 ```bash
 cargo build --release
+
+# Monitor an HTTP element
+MONITOR_TARGET=https://ticketing.rcdeportivo.es/ \
+HTML_SELECTOR='a[id="237"]' \
+TELEGRAM_BOT_TOKEN=<token> \
+TELEGRAM_CHAT_ID=<chat_id> \
+./target/release/changes_detector
+
+# Monitor a local file
 MONITOR_TARGET=./watched/example.txt \
 TELEGRAM_BOT_TOKEN=<token> \
 TELEGRAM_CHAT_ID=<chat_id> \
@@ -79,11 +98,11 @@ TELEGRAM_CHAT_ID=<chat_id> \
 ```
 🔔 File change detected
 
-📄 File: /watched/target.txt
+📄 File: https://ticketing.rcdeportivo.es/  [a[id="237"]]
 
 Diff:
-- old line
-+ new line
+- Buy tickets
++ Sold out
 ```
 
 ## Adding a new Source
@@ -92,16 +111,17 @@ Diff:
 
 ```rust
 use async_trait::async_trait;
-use crate::source::Source;
+use super::Source;
 
-pub struct HttpSource { url: String }
+pub struct MySource { location: String }
 
 #[async_trait]
-impl Source for HttpSource {
-    fn location(&self) -> &str { &self.url }
+impl Source for MySource {
+    fn location(&self) -> &str { &self.location }
 
     async fn fetch(&self) -> anyhow::Result<String> {
-        Ok(reqwest::get(&self.url).await?.text().await?)
+        // return the current string to monitor
+        todo!()
     }
 }
 ```
@@ -109,13 +129,13 @@ impl Source for HttpSource {
 2. Expose it in `src/source/mod.rs`:
 
 ```rust
-pub mod http;
+pub mod my_source;
 ```
 
-3. Wire it in `main.rs` (the only place that knows about infrastructure):
+3. Add a branch in `main.rs` (the only place that knows about infrastructure):
 
 ```rust
-let source: Box<dyn Source> = Box::new(HttpSource::new(cfg.monitor_target));
+let source: Box<dyn Source> = Box::new(MySource::new(cfg.monitor_target));
 ```
 
 Nothing else changes — the detector, notifier, and polling loop are all source-agnostic.

@@ -7,13 +7,12 @@ services:
       - .env           # copy .env.example → .env and fill in your values
 
     volumes:
-      # Mount the file you want to monitor (adjust the host path).
-      - ${MONITOR_FILE_HOST:-./watched/example.txt}:/watched/target.txt:ro
       # Persist detector state across container restarts.
       - changes_state:/data
+      # Uncomment if using FileSource (MONITOR_TARGET is a local path):
+      # - ${MONITOR_FILE_HOST:-./watched/example.txt}:/watched/target.txt:ro
 
     environment:
-      MONITOR_TARGET: /watched/target.txt
       RUST_LOG: changes_detector=info
 
 volumes:
