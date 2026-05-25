@@ -6,8 +6,8 @@ use tracing::{error, info, warn};
 
 use crate::{
     detector::{ChangeDetector, CheckResult},
-    monitor::MonitorConfig,
-    source::{browser::BrowserSource, Source},
+    monitor::{MonitorConfig, MonitorMode},
+    source::{browser::{BrowserMode, BrowserSource}, Source},
 };
 
 // ---------------------------------------------------------------------------
@@ -49,10 +49,15 @@ impl MonitorSpawner {
         let s = self.clone();
         let alias = config.alias.clone();
         let handle = tokio::spawn(async move {
-            let source: Arc<dyn Source> = Arc::new(BrowserSource::new(
+            let browser_mode = match config.mode {
+                MonitorMode::Content   => BrowserMode::Content,
+                MonitorMode::Existence => BrowserMode::Existence,
+            };
+            let source: Arc<dyn Source> = Arc::new(BrowserSource::with_mode(
                 s.base_url.clone(),
                 Some(config.selector.clone()),
                 s.webdriver_url.clone(),
+                browser_mode,
             ));
             let state_file = s.data_dir.join(format!("{}.state", config.alias));
             let detector = ChangeDetector::load(&state_file);

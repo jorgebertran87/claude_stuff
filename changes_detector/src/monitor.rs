@@ -2,12 +2,27 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+/// What the monitor tracks for a given CSS selector.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorMode {
+    /// Notify when the element's HTML content changes (default).
+    #[default]
+    Content,
+    /// Notify when the element appears on or disappears from the page.
+    Existence,
+}
+
 /// Configuration for a single dynamically-added CSS selector monitor.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MonitorConfig {
     pub alias: String,
     pub selector: String,
     pub interval_secs: u64,
+    /// Defaults to `Content` when deserialised from an older JSON that
+    /// pre-dates this field (backward-compatible with existing state files).
+    #[serde(default)]
+    pub mode: MonitorMode,
 }
 
 /// Persists the list of dynamic monitors to `/data/monitors.json`.

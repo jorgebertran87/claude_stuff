@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 use crate::{
-    monitor::{MonitorConfig, MonitorStore},
+    monitor::{MonitorConfig, MonitorMode, MonitorStore},
     runner::{MonitorSpawner, Notifier},
     source::Source,
 };
@@ -65,7 +65,8 @@ enum ConversationStep {
     // /add steps
     WaitingForAlias,
     WaitingForSelector { alias: String },
-    WaitingForInterval { alias: String, selector: String },
+    WaitingForMode     { alias: String, selector: String },
+    WaitingForInterval { alias: String, selector: String, mode: MonitorMode },
     // /remove step
     WaitingForRemoveTarget,
 }
@@ -190,7 +191,7 @@ impl CommandHandler {
         let _ = send_message(
             &self.client, &self.bot_token, &self.chat_id.to_string(),
             "➕ <b>New monitor</b>\n\n\
-             Step 1/3 — Send the <b>alias</b> for this monitor:\n\
+             Step 1/4 — Send the <b>alias</b> for this monitor:\n\
              <i>A short name to identify it, e.g. </i><code>match-456</code>",
         ).await;
     }
@@ -286,7 +287,7 @@ impl CommandHandler {
                     &self.client, &self.bot_token, &chat,
                     &format!(
                         "✅ Alias: <code>{}</code>\n\n\
-                         Step 2/3 — Send the <b>CSS selector</b> to monitor:\n\
+                         Step 2/4 — Send the <b>CSS selector</b> to monitor:\n\
                          <i>e.g. </i><code>[id=\"456\"] .some-class</code>",
                         html_escape(&alias),
                     ),
@@ -298,7 +299,7 @@ impl CommandHandler {
                 let selector = text.to_string();
                 {
                     let mut guard = self.conversation.lock().await;
-                    *guard = Some(ConversationStep::WaitingForInterval {
+                    *guard = Some(ConversationStep::WaitingForMode {
                         alias: alias.clone(),
                         selector: selector.clone(),
                     });
@@ -307,15 +308,56 @@ impl CommandHandler {
                     &self.client, &self.bot_token, &chat,
                     &format!(
                         "✅ Selector: <code>{}</code>\n\n\
-                         Step 3/3 — Send the <b>check interval</b> in seconds:\n\
-                         <i>e.g. </i><code>60</code>",
+                         Step 3/4 — What should I monitor?\n\n\
+                         • <code>content</code> — notify when the element's HTML changes\n\
+                         • <code>exists</code>  — notify when the element appears or disappears",
                         html_escape(&selector),
                     ),
                 ).await;
             }
 
-            // ── Step 3: interval received ──────────────────────────────────
-            ConversationStep::WaitingForInterval { alias, selector } => {
+            // ── Step 3: mode received ──────────────────────────────────────
+            ConversationStep::WaitingForMode { alias, selector } => {
+                let mode = match text.trim().to_lowercase().as_str() {
+                    "content" | "c"           => MonitorMode::Content,
+                    "exists"  | "existence" | "e" => MonitorMode::Existence,
+                    _ => {
+                        // Invalid — keep the same step and ask again.
+                        {
+                            let mut guard = self.conversation.lock().await;
+                            *guard = Some(ConversationStep::WaitingForMode { alias, selector });
+                        }
+                        let _ = send_message(
+                            &self.client, &self.bot_token, &chat,
+                            "❌ Please reply with <code>content</code> or <code>exists</code>:",
+                        ).await;
+                        return;
+                    }
+                };
+                let mode_label = match mode {
+                    MonitorMode::Content   => "content (HTML changes)",
+                    MonitorMode::Existence => "exists (appears / disappears)",
+                };
+                {
+                    let mut guard = self.conversation.lock().await;
+                    *guard = Some(ConversationStep::WaitingForInterval {
+                        alias: alias.clone(),
+                        selector: selector.clone(),
+                        mode,
+                    });
+                }
+                let _ = send_message(
+                    &self.client, &self.bot_token, &chat,
+                    &format!(
+                        "✅ Mode: <b>{mode_label}</b>\n\n\
+                         Step 4/4 — Send the <b>check interval</b> in seconds:\n\
+                         <i>e.g. </i><code>60</code>",
+                    ),
+                ).await;
+            }
+
+            // ── Step 4: interval received ──────────────────────────────────
+            ConversationStep::WaitingForInterval { alias, selector, mode } => {
                 let interval_secs = match text.trim().parse::<u64>() {
                     Ok(n) if n > 0 => n,
                     _ => {
@@ -325,6 +367,7 @@ impl CommandHandler {
                             *guard = Some(ConversationStep::WaitingForInterval {
                                 alias,
                                 selector,
+                                mode,
                             });
                         }
                         let _ = send_message(
@@ -341,7 +384,16 @@ impl CommandHandler {
                     *guard = None;
                 }
 
-                let config = MonitorConfig { alias: alias.clone(), selector: selector.clone(), interval_secs };
+                let mode_label = match mode {
+                    MonitorMode::Content   => "content",
+                    MonitorMode::Existence => "exists",
+                };
+                let config = MonitorConfig {
+                    alias: alias.clone(),
+                    selector: selector.clone(),
+                    interval_secs,
+                    mode,
+                };
 
                 // Persist and spawn.
                 let save_result = {
@@ -356,12 +408,14 @@ impl CommandHandler {
                             &self.client, &self.bot_token, &chat,
                             &format!(
                                 "✅ <b>Monitor added and running!</b>\n\n\
-                                 🏷 <b>Alias:</b> <code>{}</code>\n\
+                                 🏷 <b>Alias:</b>    <code>{}</code>\n\
                                  🔍 <b>Selector:</b> <code>{}</code>\n\
+                                 👁 <b>Mode:</b>     {}\n\
                                  ⏱ <b>Interval:</b> {} s\n\n\
                                  <i>Send /cancel at any time to abort a new /add.</i>",
                                 html_escape(&alias),
                                 html_escape(&selector),
+                                mode_label,
                                 interval_secs,
                             ),
                         ).await;
@@ -417,12 +471,19 @@ impl CommandHandler {
             } else {
                 let list = all
                     .iter()
-                    .map(|m| format!(
-                        "  • <code>{}</code> — <code>{}</code> every {} s",
-                        html_escape(&m.alias),
-                        html_escape(&m.selector),
-                        m.interval_secs,
-                    ))
+                    .map(|m| {
+                        let mode_icon = match m.mode {
+                            MonitorMode::Content   => "📝",
+                            MonitorMode::Existence => "👁",
+                        };
+                        format!(
+                            "  • <code>{}</code> — <code>{}</code> {} every {} s",
+                            html_escape(&m.alias),
+                            html_escape(&m.selector),
+                            mode_icon,
+                            m.interval_secs,
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join("\n");
                 format!("\n\n📋 <b>Extra monitors:</b>\n{list}")
