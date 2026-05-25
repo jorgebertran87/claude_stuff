@@ -22,6 +22,8 @@ pub struct Config {
     pub check_interval: Duration,
     /// Where the detector persists its last-known snapshot.
     pub state_file: PathBuf,
+    /// Directory used for all state files and the monitor store.
+    pub data_dir: PathBuf,
 }
 
 impl Config {
@@ -45,12 +47,16 @@ impl Config {
             .parse()
             .map_err(|_| anyhow::anyhow!("CHECK_INTERVAL_SECS must be a positive integer"))?;
 
+        let data_dir = std::env::var("DATA_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/data"));
+
         let state_file = std::env::var("STATE_FILE").map(PathBuf::from).unwrap_or_else(|_| {
             let slug: String = monitor_target
                 .chars()
                 .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
                 .collect();
-            PathBuf::from(format!("/data/{slug}.state"))
+            data_dir.join(format!("{slug}.state"))
         });
 
         Ok(Self {
@@ -62,6 +68,7 @@ impl Config {
             telegram_chat_id,
             check_interval: Duration::from_secs(check_interval_secs),
             state_file,
+            data_dir,
         })
     }
 }

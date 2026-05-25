@@ -1,25 +1,32 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
-use reqwest::Client;
+use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
+use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
-use crate::source::Source;
+use crate::{
+    monitor::{MonitorConfig, MonitorStore},
+    runner::{MonitorSpawner, Notifier},
+    source::Source,
+};
 
 // ---------------------------------------------------------------------------
-// Notifier — sends change-detection alerts to a Telegram chat
+// TelegramNotifier — sends change-detection alerts
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct TelegramNotifier {
-    client: Client,
+    client: reqwest::Client,
     bot_token: String,
     chat_id: String,
 }
 
 impl TelegramNotifier {
     pub fn new(bot_token: String, chat_id: String) -> Self {
-        Self { client: Client::new(), bot_token, chat_id }
+        Self { client: reqwest::Client::new(), bot_token, chat_id }
     }
 
     pub async fn send_change_notification(
@@ -39,56 +46,67 @@ impl TelegramNotifier {
     }
 }
 
+/// Implement the runner `Notifier` trait so `TelegramNotifier` can be passed
+/// to `run_loop` without creating a circular dependency.
+#[async_trait]
+impl Notifier for TelegramNotifier {
+    async fn notify(&self, location: &str, diff: &str) -> anyhow::Result<()> {
+        self.send_change_notification(location, diff).await
+    }
+}
+
 // ---------------------------------------------------------------------------
-// CommandHandler — long-polls for bot commands and replies to them
+// CommandHandler — long-polls for bot commands and handles conversations
 // ---------------------------------------------------------------------------
 
-/// Listens for Telegram commands and responds to them.
-///
-/// Runs forever in its own tokio task (`tokio::spawn(handler.run())`).
-/// Only reacts to messages from the configured chat so strangers cannot
-/// query the bot.
-///
-/// Supported commands:
-///   /status   — confirms the bot is alive and shows what is being monitored
-///   /check    — alias for /status
+/// Multi-step conversation state for the `/add` command.
+#[derive(Clone, Debug)]
+enum ConversationStep {
+    WaitingForAlias,
+    WaitingForSelector { alias: String },
+    WaitingForInterval { alias: String, selector: String },
+}
+
 pub struct CommandHandler {
-    client: Client,
+    client: reqwest::Client,
     bot_token: String,
-    /// The authorised chat id (as configured in TELEGRAM_CHAT_ID).
     chat_id: i64,
-    /// The source is fetched live when /status is requested.
     source: Arc<dyn Source>,
     interval_secs: u64,
+    spawner: MonitorSpawner,
+    store: Arc<Mutex<MonitorStore>>,
+    /// Tracks an in-progress `/add` conversation (one at a time per chat).
+    conversation: Arc<Mutex<Option<ConversationStep>>>,
 }
 
 impl CommandHandler {
-    /// `chat_id_str` is the raw TELEGRAM_CHAT_ID string (e.g. `"-1001234567890"`).
     pub fn new(
         bot_token: String,
         chat_id_str: &str,
         source: Arc<dyn Source>,
         interval_secs: u64,
+        spawner: MonitorSpawner,
+        store: Arc<Mutex<MonitorStore>>,
     ) -> anyhow::Result<Self> {
         let chat_id: i64 = chat_id_str
             .trim()
             .parse()
-            .map_err(|_| anyhow::anyhow!("TELEGRAM_CHAT_ID must be a valid integer, got '{chat_id_str}'"))?;
-
+            .map_err(|_| anyhow::anyhow!("TELEGRAM_CHAT_ID must be an integer, got '{chat_id_str}'"))?;
         Ok(Self {
-            client: Client::new(),
+            client: reqwest::Client::new(),
             bot_token,
             chat_id,
             source,
             interval_secs,
+            spawner,
+            store,
+            conversation: Arc::new(Mutex::new(None)),
         })
     }
 
-    /// Entry point — call with `tokio::spawn(handler.run())`.
     pub async fn run(self) {
         info!("Telegram command handler started (chat_id={})", self.chat_id);
         let mut offset: i64 = 0;
-
         loop {
             match self.poll_updates(offset).await {
                 Ok(updates) => {
@@ -108,14 +126,249 @@ impl CommandHandler {
     }
 
     // -----------------------------------------------------------------------
-    // Private
+    // Message dispatch
     // -----------------------------------------------------------------------
 
-    /// Long-poll the Telegram Bot API for new updates.
-    /// Blocks for up to 30 s if there is nothing to process.
+    async fn handle_message(&self, msg: IncomingMessage) {
+        if msg.chat.id != self.chat_id {
+            return;
+        }
+
+        let text = msg.text.as_deref().unwrap_or("").trim();
+        let is_command = text.starts_with('/');
+
+        // Snapshot and clear conversation state without holding the lock over awaits.
+        let step = {
+            let mut guard = self.conversation.lock().await;
+            if is_command {
+                // Any command cancels an in-progress conversation.
+                guard.take()
+            } else {
+                guard.clone()
+            }
+        };
+
+        // If there is a pending conversation step and this is not a command,
+        // route to the conversation handler.
+        if !is_command {
+            if let Some(step) = step {
+                self.handle_conversation_reply(text, step).await;
+                return;
+            }
+            // Plain message with no active conversation — ignore.
+            return;
+        }
+
+        // Strip optional "@botname" suffix added in groups.
+        let command = text.split('@').next().unwrap_or("").trim();
+        match command {
+            "/add"            => self.cmd_add().await,
+            "/status" | "/check" => self.cmd_status().await,
+            "/cancel"         => {
+                let _ = send_message(
+                    &self.client, &self.bot_token, &self.chat_id.to_string(),
+                    "❌ Cancelled.",
+                ).await;
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // /add — multi-step conversation
+    // -----------------------------------------------------------------------
+
+    async fn cmd_add(&self) {
+        {
+            let mut guard = self.conversation.lock().await;
+            *guard = Some(ConversationStep::WaitingForAlias);
+        }
+        let _ = send_message(
+            &self.client, &self.bot_token, &self.chat_id.to_string(),
+            "➕ <b>New monitor</b>\n\n\
+             Step 1/3 — Send the <b>alias</b> for this monitor:\n\
+             <i>A short name to identify it, e.g. </i><code>match-456</code>",
+        ).await;
+    }
+
+    async fn handle_conversation_reply(&self, text: &str, step: ConversationStep) {
+        let chat = self.chat_id.to_string();
+        match step {
+            // ── Step 1: alias received ─────────────────────────────────────
+            ConversationStep::WaitingForAlias => {
+                let alias = text.to_string();
+                {
+                    let mut guard = self.conversation.lock().await;
+                    *guard = Some(ConversationStep::WaitingForSelector { alias: alias.clone() });
+                }
+                let _ = send_message(
+                    &self.client, &self.bot_token, &chat,
+                    &format!(
+                        "✅ Alias: <code>{}</code>\n\n\
+                         Step 2/3 — Send the <b>CSS selector</b> to monitor:\n\
+                         <i>e.g. </i><code>[id=\"456\"] .some-class</code>",
+                        html_escape(&alias),
+                    ),
+                ).await;
+            }
+
+            // ── Step 2: selector received ──────────────────────────────────
+            ConversationStep::WaitingForSelector { alias } => {
+                let selector = text.to_string();
+                {
+                    let mut guard = self.conversation.lock().await;
+                    *guard = Some(ConversationStep::WaitingForInterval {
+                        alias: alias.clone(),
+                        selector: selector.clone(),
+                    });
+                }
+                let _ = send_message(
+                    &self.client, &self.bot_token, &chat,
+                    &format!(
+                        "✅ Selector: <code>{}</code>\n\n\
+                         Step 3/3 — Send the <b>check interval</b> in seconds:\n\
+                         <i>e.g. </i><code>60</code>",
+                        html_escape(&selector),
+                    ),
+                ).await;
+            }
+
+            // ── Step 3: interval received ──────────────────────────────────
+            ConversationStep::WaitingForInterval { alias, selector } => {
+                let interval_secs = match text.trim().parse::<u64>() {
+                    Ok(n) if n > 0 => n,
+                    _ => {
+                        // Invalid — keep the same step and ask again.
+                        {
+                            let mut guard = self.conversation.lock().await;
+                            *guard = Some(ConversationStep::WaitingForInterval {
+                                alias,
+                                selector,
+                            });
+                        }
+                        let _ = send_message(
+                            &self.client, &self.bot_token, &chat,
+                            "❌ Please send a positive integer (number of seconds):",
+                        ).await;
+                        return;
+                    }
+                };
+
+                // Conversation complete — clear state before any await.
+                {
+                    let mut guard = self.conversation.lock().await;
+                    *guard = None;
+                }
+
+                let config = MonitorConfig { alias: alias.clone(), selector: selector.clone(), interval_secs };
+
+                // Persist and spawn.
+                let save_result = {
+                    let mut guard = self.store.lock().await;
+                    guard.add(config.clone())
+                };
+
+                match save_result {
+                    Ok(()) => {
+                        self.spawner.spawn(config);
+                        let _ = send_message(
+                            &self.client, &self.bot_token, &chat,
+                            &format!(
+                                "✅ <b>Monitor added and running!</b>\n\n\
+                                 🏷 <b>Alias:</b> <code>{}</code>\n\
+                                 🔍 <b>Selector:</b> <code>{}</code>\n\
+                                 ⏱ <b>Interval:</b> {} s\n\n\
+                                 <i>Send /cancel at any time to abort a new /add.</i>",
+                                html_escape(&alias),
+                                html_escape(&selector),
+                                interval_secs,
+                            ),
+                        ).await;
+                    }
+                    Err(e) => {
+                        error!("Failed to persist monitor '{alias}': {e}");
+                        let _ = send_message(
+                            &self.client, &self.bot_token, &chat,
+                            &format!("❌ Failed to save monitor: {}", html_escape(&e.to_string())),
+                        ).await;
+                    }
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // /status — show bot state + live content
+    // -----------------------------------------------------------------------
+
+    async fn cmd_status(&self) {
+        info!("Received /status from chat {}", self.chat_id);
+        let chat = self.chat_id.to_string();
+
+        let placeholder_id = match send_message(
+            &self.client, &self.bot_token, &chat,
+            "🔄 Fetching current content…",
+        ).await {
+            Ok(id) => id,
+            Err(e) => { error!("Failed to send status placeholder: {e}"); return; }
+        };
+
+        let content_line = match self.source.fetch().await {
+            Ok(text) => format!(
+                "\n\n🔍 <b>Current content:</b>\n<code>{}</code>",
+                html_escape(text.trim()),
+            ),
+            Err(e) => {
+                warn!("Status fetch failed: {e}");
+                format!(
+                    "\n\n🔍 <b>Current content:</b> <i>fetch failed — {}</i>",
+                    html_escape(&e.to_string()),
+                )
+            }
+        };
+
+        // List dynamic monitors.
+        let monitors_line = {
+            let guard = self.store.lock().await;
+            let all = guard.all();
+            if all.is_empty() {
+                String::new()
+            } else {
+                let list = all
+                    .iter()
+                    .map(|m| format!(
+                        "  • <code>{}</code> — <code>{}</code> every {} s",
+                        html_escape(&m.alias),
+                        html_escape(&m.selector),
+                        m.interval_secs,
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                format!("\n\n📋 <b>Extra monitors:</b>\n{list}")
+            }
+        };
+
+        let reply = format!(
+            "✅ <b>Bot is running</b>\n\n\
+             📄 <b>Monitoring:</b> <code>{}</code>\n\
+             ⏱ <b>Check interval:</b> {} s\
+             {content_line}\
+             {monitors_line}",
+            html_escape(self.source.location()),
+            self.interval_secs,
+        );
+
+        if let Err(e) = edit_message(&self.client, &self.bot_token, &chat, placeholder_id, &reply).await {
+            error!("Failed to edit status reply: {e}");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Polling
+    // -----------------------------------------------------------------------
+
     async fn poll_updates(&self, offset: i64) -> anyhow::Result<Vec<Update>> {
         let url = format!("https://api.telegram.org/bot{}/getUpdates", self.bot_token);
-
         let resp = self
             .client
             .get(&url)
@@ -124,122 +377,42 @@ impl CommandHandler {
                 ("timeout",         "30".to_string()),
                 ("allowed_updates", r#"["message"]"#.to_string()),
             ])
-            // Must be > poll timeout to avoid a spurious reqwest timeout.
             .timeout(Duration::from_secs(40))
             .send()
             .await?
             .json::<serde_json::Value>()
             .await?;
 
-        let updates = resp["result"]
+        Ok(resp["result"]
             .as_array()
             .map(|arr| {
                 arr.iter()
                     .filter_map(|v| serde_json::from_value::<Update>(v.clone()).ok())
                     .collect()
             })
-            .unwrap_or_default();
-
-        Ok(updates)
-    }
-
-    async fn handle_message(&self, msg: IncomingMessage) {
-        // Ignore messages from other chats.
-        if msg.chat.id != self.chat_id {
-            return;
-        }
-
-        let text = msg.text.as_deref().unwrap_or("");
-
-        // Strip optional "@botname" suffix that Telegram appends in groups.
-        let command = text.split('@').next().unwrap_or("").trim();
-
-        match command {
-            "/status" | "/check" => {
-                info!("Received {command} from chat {}", self.chat_id);
-                let chat_id_str = self.chat_id.to_string();
-
-                // Reply immediately so the user knows the command was received.
-                let placeholder_id = match send_message(
-                    &self.client,
-                    &self.bot_token,
-                    &chat_id_str,
-                    "🔄 Fetching current content…",
-                )
-                .await
-                {
-                    Ok(id) => id,
-                    Err(e) => { error!("Failed to send placeholder for {command}: {e}"); return; }
-                };
-
-                // Now do the (potentially slow) source fetch.
-                let content_line = match self.source.fetch().await {
-                    Ok(text) => format!(
-                        "\n\n🔍 <b>Current content:</b>\n<code>{}</code>",
-                        html_escape(text.trim()),
-                    ),
-                    Err(e) => {
-                        warn!("Could not fetch source for {command} reply: {e}");
-                        format!(
-                            "\n\n🔍 <b>Current content:</b> <i>fetch failed — {}</i>",
-                            html_escape(&e.to_string()),
-                        )
-                    }
-                };
-
-                let reply = format!(
-                    "✅ <b>Bot is running</b>\n\n\
-                     📄 <b>Monitoring:</b> <code>{}</code>\n\
-                     ⏱ <b>Check interval:</b> {} s\
-                     {content_line}",
-                    html_escape(self.source.location()),
-                    self.interval_secs,
-                );
-
-                // Edit the placeholder in-place with the final reply.
-                if let Err(e) = edit_message(
-                    &self.client,
-                    &self.bot_token,
-                    &chat_id_str,
-                    placeholder_id,
-                    &reply,
-                )
-                .await
-                {
-                    error!("Failed to edit status reply: {e}");
-                }
-            }
-            _ => {} // Ignore unknown commands and plain messages.
-        }
+            .unwrap_or_default())
     }
 }
 
 // ---------------------------------------------------------------------------
-// Shared helpers
+// Shared HTTP helpers
 // ---------------------------------------------------------------------------
 
-/// Send a message and return the `message_id` assigned by Telegram.
 async fn send_message(
-    client: &Client,
+    client: &reqwest::Client,
     bot_token: &str,
     chat_id: &str,
     text: &str,
 ) -> anyhow::Result<i64> {
     let url = format!("https://api.telegram.org/bot{bot_token}/sendMessage");
-
     let payload = json!({
         "chat_id":    chat_id,
         "text":       text,
         "parse_mode": "HTML",
         "link_preview_options": { "is_disabled": true },
     });
-
-    let resp = client
-        .post(&url)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("HTTP request to Telegram failed: {e}"))?;
+    let resp = client.post(&url).json(&payload).send().await
+        .map_err(|e| anyhow::anyhow!("sendMessage request failed: {e}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
@@ -249,22 +422,19 @@ async fn send_message(
 
     let body: serde_json::Value = resp.json().await
         .map_err(|e| anyhow::anyhow!("Failed to parse sendMessage response: {e}"))?;
-
     body["result"]["message_id"]
         .as_i64()
         .ok_or_else(|| anyhow::anyhow!("sendMessage response missing message_id"))
 }
 
-/// Edit the text of an already-sent message in-place.
 async fn edit_message(
-    client: &Client,
+    client: &reqwest::Client,
     bot_token: &str,
     chat_id: &str,
     message_id: i64,
     text: &str,
 ) -> anyhow::Result<()> {
     let url = format!("https://api.telegram.org/bot{bot_token}/editMessageText");
-
     let payload = json!({
         "chat_id":    chat_id,
         "message_id": message_id,
@@ -272,18 +442,10 @@ async fn edit_message(
         "parse_mode": "HTML",
         "link_preview_options": { "is_disabled": true },
     });
+    let resp = client.post(&url).json(&payload).send().await
+        .map_err(|e| anyhow::anyhow!("editMessageText request failed: {e}"))?;
 
-    let resp = client
-        .post(&url)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("HTTP request to Telegram failed: {e}"))?;
-
-    if resp.status().is_success() {
-        return Ok(());
-    }
-
+    if resp.status().is_success() { return Ok(()); }
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
     anyhow::bail!("editMessageText returned {status}: {body}");
@@ -304,7 +466,7 @@ pub fn html_escape(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Telegram API DTOs (private — only used for update deserialization)
+// Telegram API DTOs
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]

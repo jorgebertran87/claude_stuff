@@ -1,15 +1,20 @@
 mod config;
 mod detector;
+mod monitor;
+mod runner;
 mod source;
 mod telegram;
 
 use std::sync::Arc;
 
 use config::Config;
-use detector::{ChangeDetector, CheckResult};
+use detector::ChangeDetector;
+use monitor::MonitorStore;
+use runner::{MonitorSpawner, run_loop};
 use source::{browser::BrowserSource, file::FileSource, http::HttpSource, rcdeportivo::RcDeportivoSource, Source};
 use telegram::{CommandHandler, TelegramNotifier};
-use tracing::{error, info, warn};
+use tokio::sync::Mutex;
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -25,104 +30,87 @@ async fn main() -> anyhow::Result<()> {
     let cfg = Config::from_env()?;
 
     // -----------------------------------------------------------------------
-    // Wire the source.
-    //
-    // SOURCE_TYPE selects explicitly; when absent the type is inferred:
-    //   "browser"                          → BrowserSource (headless Chrome)
-    //   "http" | http(s):// prefix         → HttpSource    (plain HTTP fetch)
-    //   "file" | anything else             → FileSource
-    //
-    // To add a new source: create src/source/<name>.rs, implement the trait,
-    // add a branch here — nothing else changes.
+    // Build the primary source.
     // -----------------------------------------------------------------------
     let is_url = cfg.monitor_target.starts_with("http://")
         || cfg.monitor_target.starts_with("https://");
 
     let source: Arc<dyn Source> = match cfg.source_type.as_deref() {
         Some("rcdeportivo") => Arc::new(RcDeportivoSource::new(
-            cfg.monitor_target,
-            cfg.html_selector.ok_or_else(|| anyhow::anyhow!(
-                "SOURCE_TYPE=rcdeportivo requires HTML_SELECTOR (the match card selector, e.g. [id=\"237\"])"
+            cfg.monitor_target.clone(),
+            cfg.html_selector.clone().ok_or_else(|| anyhow::anyhow!(
+                "SOURCE_TYPE=rcdeportivo requires HTML_SELECTOR"
             ))?,
-            cfg.webdriver_url,
+            cfg.webdriver_url.clone(),
         )),
         Some("browser") => Arc::new(BrowserSource::new(
-            cfg.monitor_target,
-            cfg.html_selector,
-            cfg.webdriver_url,
+            cfg.monitor_target.clone(),
+            cfg.html_selector.clone(),
+            cfg.webdriver_url.clone(),
         )),
         Some("http") => Arc::new(HttpSource::new(
-            cfg.monitor_target,
+            cfg.monitor_target.clone(),
             cfg.html_selector.as_deref(),
         )?),
-        Some("file") => Arc::new(FileSource::new(cfg.monitor_target.into())),
-        // Auto-detect
+        Some("file") => Arc::new(FileSource::new(cfg.monitor_target.clone().into())),
         _ if is_url => Arc::new(HttpSource::new(
-            cfg.monitor_target,
+            cfg.monitor_target.clone(),
             cfg.html_selector.as_deref(),
         )?),
-        _ => Arc::new(FileSource::new(cfg.monitor_target.into())),
+        _ => Arc::new(FileSource::new(cfg.monitor_target.clone().into())),
     };
 
     info!(
-        location       = source.location(),
-        interval_secs  = cfg.check_interval.as_secs(),
+        location      = source.location(),
+        interval_secs = cfg.check_interval.as_secs(),
         "Changes detector starting"
     );
 
-    let notifier = TelegramNotifier::new(
+    // -----------------------------------------------------------------------
+    // Create the notifier and spawner.
+    // -----------------------------------------------------------------------
+    let notifier = Arc::new(TelegramNotifier::new(
         cfg.telegram_bot_token.clone(),
         cfg.telegram_chat_id.clone(),
-    );
+    ));
 
-    // Spawn the command handler in the background so /status and /check
-    // can be sent to the bot at any time without blocking the polling loop.
+    let spawner = MonitorSpawner {
+        base_url:     cfg.monitor_target.clone(),
+        webdriver_url: cfg.webdriver_url.clone(),
+        notifier:     notifier.clone(),
+        data_dir:     cfg.data_dir.clone(),
+    };
+
+    // -----------------------------------------------------------------------
+    // Load the monitor store and resume any previously-added monitors.
+    // -----------------------------------------------------------------------
+    let store = {
+        let loaded = MonitorStore::load(&cfg.data_dir);
+        for config in loaded.all() {
+            info!("Resuming monitor: {} ({})", config.alias, config.selector);
+            spawner.spawn(config.clone());
+        }
+        Arc::new(Mutex::new(loaded))
+    };
+
+    // -----------------------------------------------------------------------
+    // Spawn the Telegram command handler.
+    // -----------------------------------------------------------------------
     let cmd_handler = CommandHandler::new(
-        cfg.telegram_bot_token,
+        cfg.telegram_bot_token.clone(),
         &cfg.telegram_chat_id,
         Arc::clone(&source),
         cfg.check_interval.as_secs(),
+        spawner,
+        store,
     )?;
     tokio::spawn(cmd_handler.run());
-    let mut detector = ChangeDetector::load(&cfg.state_file);
 
     // -----------------------------------------------------------------------
-    // Bootstrap: take an initial snapshot on startup so the first real cycle
-    // always has a previous state to diff against.
+    // Run the primary monitoring loop (blocks until the process is killed).
     // -----------------------------------------------------------------------
-    match source.fetch().await {
-        Ok(content) => match detector.check(content)? {
-            CheckResult::Bootstrapped => info!("Initial snapshot saved"),
-            CheckResult::NoChange    => info!("Resumed — content unchanged since last run"),
-            CheckResult::Changed { .. } => info!("State updated on startup (file changed while stopped)"),
-        },
-        Err(e) => error!("Cannot fetch source on startup: {e}"),
-    }
+    let detector = ChangeDetector::load(&cfg.state_file);
+    run_loop(source, detector, notifier, "main".to_string(), cfg.check_interval).await;
 
-    // -----------------------------------------------------------------------
-    // Main polling loop — completely source-agnostic.
-    // -----------------------------------------------------------------------
-    let mut interval = tokio::time::interval(cfg.check_interval);
-    interval.tick().await; // first tick fires immediately; skip it
-
-    loop {
-        interval.tick().await;
-        info!("Checking for changes…");
-
-        let content = match source.fetch().await {
-            Ok(c)  => c,
-            Err(e) => { warn!("Fetch failed: {e}"); continue; }
-        };
-
-        match detector.check(content)? {
-            CheckResult::NoChange       => info!("No changes"),
-            CheckResult::Bootstrapped   => info!("Snapshot saved (first run)"),
-            CheckResult::Changed { diff } => {
-                info!("Change detected — sending notification");
-                if let Err(e) = notifier.send_change_notification(source.location(), &diff).await {
-                    error!("Telegram notification failed: {e}");
-                }
-            }
-        }
-    }
+    Ok(())
 }
