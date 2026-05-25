@@ -118,7 +118,7 @@ impl BrowserSource {
                 let raw = client
                     .execute(
                         "var el = document.querySelector(arguments[0]); \
-                         return el ? el.innerHTML.replace(/\\s+/g, ' ').trim() : null;",
+                         return el ? el.outerHTML.replace(/\\s+/g, ' ').trim() : null;",
                         vec![serde_json::json!(selector)],
                     )
                     .await
