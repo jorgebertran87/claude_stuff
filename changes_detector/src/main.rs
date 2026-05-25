@@ -6,7 +6,7 @@ mod telegram;
 use config::Config;
 use detector::{ChangeDetector, CheckResult};
 use source::{browser::BrowserSource, file::FileSource, http::HttpSource, Source};
-use telegram::TelegramNotifier;
+use telegram::{CommandHandler, TelegramNotifier};
 use tracing::{error, info, warn};
 
 #[tokio::main]
@@ -61,7 +61,20 @@ async fn main() -> anyhow::Result<()> {
         "Changes detector starting"
     );
 
-    let notifier = TelegramNotifier::new(cfg.telegram_bot_token, cfg.telegram_chat_id);
+    let notifier = TelegramNotifier::new(
+        cfg.telegram_bot_token.clone(),
+        cfg.telegram_chat_id.clone(),
+    );
+
+    // Spawn the command handler in the background so /status and /check
+    // can be sent to the bot at any time without blocking the polling loop.
+    let cmd_handler = CommandHandler::new(
+        cfg.telegram_bot_token,
+        &cfg.telegram_chat_id,
+        source.location().to_string(),
+        cfg.check_interval.as_secs(),
+    )?;
+    tokio::spawn(cmd_handler.run());
     let mut detector = ChangeDetector::load(&cfg.state_file);
 
     // -----------------------------------------------------------------------
