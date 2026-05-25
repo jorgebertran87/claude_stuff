@@ -42,7 +42,24 @@ impl Source for BrowserSource {
     }
 
     async fn fetch(&self) -> anyhow::Result<String> {
+        // Chrome requires --no-sandbox when running as root inside a container.
+        // --disable-dev-shm-usage avoids crashes caused by the limited /dev/shm
+        // size that some container runtimes enforce even when shm_size is set.
+        let mut caps = serde_json::Map::new();
+        caps.insert(
+            "goog:chromeOptions".into(),
+            serde_json::json!({
+                "args": [
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--headless=new"
+                ]
+            }),
+        );
+
         let client = ClientBuilder::native()
+            .capabilities(caps)
             .connect(&self.webdriver_url)
             .await
             .map_err(|e| anyhow::anyhow!(
