@@ -9,12 +9,11 @@ services:
     volumes:
       # Mount the file you want to monitor (adjust the host path).
       - ${MONITOR_FILE_HOST:-./watched/example.txt}:/watched/target.txt:ro
-      # Persist state across container restarts.
+      # Persist detector state across container restarts.
       - changes_state:/data
 
     environment:
-      # Override the path inside the container if you changed the mount above.
-      MONITOR_FILE: /watched/target.txt
+      MONITOR_TARGET: /watched/target.txt
       RUST_LOG: changes_detector=info
 
 volumes:
