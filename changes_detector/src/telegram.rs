@@ -34,7 +34,8 @@ impl TelegramNotifier {
             html_escape(location),
             html_escape(diff),
         );
-        send_message(&self.client, &self.bot_token, &self.chat_id, &message).await
+        send_message(&self.client, &self.bot_token, &self.chat_id, &message).await?;
+        Ok(())
     }
 }
 
@@ -156,7 +157,22 @@ impl CommandHandler {
         match command {
             "/status" | "/check" => {
                 info!("Received {command} from chat {}", self.chat_id);
+                let chat_id_str = self.chat_id.to_string();
 
+                // Reply immediately so the user knows the command was received.
+                let placeholder_id = match send_message(
+                    &self.client,
+                    &self.bot_token,
+                    &chat_id_str,
+                    "🔄 Fetching current content…",
+                )
+                .await
+                {
+                    Ok(id) => id,
+                    Err(e) => { error!("Failed to send placeholder for {command}: {e}"); return; }
+                };
+
+                // Now do the (potentially slow) source fetch.
                 let content_line = match self.source.fetch().await {
                     Ok(text) => format!(
                         "\n\n🔍 <b>Current content:</b>\n<code>{}</code>",
@@ -164,7 +180,10 @@ impl CommandHandler {
                     ),
                     Err(e) => {
                         warn!("Could not fetch source for {command} reply: {e}");
-                        format!("\n\n🔍 <b>Current content:</b> <i>fetch failed — {}</i>", html_escape(&e.to_string()))
+                        format!(
+                            "\n\n🔍 <b>Current content:</b> <i>fetch failed — {}</i>",
+                            html_escape(&e.to_string()),
+                        )
                     }
                 };
 
@@ -177,11 +196,17 @@ impl CommandHandler {
                     self.interval_secs,
                 );
 
-                if let Err(e) =
-                    send_message(&self.client, &self.bot_token, &self.chat_id.to_string(), &reply)
-                        .await
+                // Edit the placeholder in-place with the final reply.
+                if let Err(e) = edit_message(
+                    &self.client,
+                    &self.bot_token,
+                    &chat_id_str,
+                    placeholder_id,
+                    &reply,
+                )
+                .await
                 {
-                    error!("Failed to reply to {command}: {e}");
+                    error!("Failed to edit status reply: {e}");
                 }
             }
             _ => {} // Ignore unknown commands and plain messages.
@@ -193,16 +218,56 @@ impl CommandHandler {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
+/// Send a message and return the `message_id` assigned by Telegram.
 async fn send_message(
     client: &Client,
     bot_token: &str,
     chat_id: &str,
     text: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<i64> {
     let url = format!("https://api.telegram.org/bot{bot_token}/sendMessage");
 
     let payload = json!({
         "chat_id":    chat_id,
+        "text":       text,
+        "parse_mode": "HTML",
+        "link_preview_options": { "is_disabled": true },
+    });
+
+    let resp = client
+        .post(&url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("HTTP request to Telegram failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Telegram API returned {status}: {body}");
+    }
+
+    let body: serde_json::Value = resp.json().await
+        .map_err(|e| anyhow::anyhow!("Failed to parse sendMessage response: {e}"))?;
+
+    body["result"]["message_id"]
+        .as_i64()
+        .ok_or_else(|| anyhow::anyhow!("sendMessage response missing message_id"))
+}
+
+/// Edit the text of an already-sent message in-place.
+async fn edit_message(
+    client: &Client,
+    bot_token: &str,
+    chat_id: &str,
+    message_id: i64,
+    text: &str,
+) -> anyhow::Result<()> {
+    let url = format!("https://api.telegram.org/bot{bot_token}/editMessageText");
+
+    let payload = json!({
+        "chat_id":    chat_id,
+        "message_id": message_id,
         "text":       text,
         "parse_mode": "HTML",
         "link_preview_options": { "is_disabled": true },
@@ -221,7 +286,7 @@ async fn send_message(
 
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
-    anyhow::bail!("Telegram API returned {status}: {body}");
+    anyhow::bail!("editMessageText returned {status}: {body}");
 }
 
 pub fn html_escape(s: &str) -> String {
