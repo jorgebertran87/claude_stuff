@@ -11,7 +11,7 @@ use config::Config;
 use detector::ChangeDetector;
 use monitor::MonitorStore;
 use runner::{MonitorSpawner, run_loop};
-use source::{browser::BrowserSource, file::FileSource, http::HttpSource, rcdeportivo::RcDeportivoSource, Source};
+use source::{browser::BrowserSource, file::FileSource, http::HttpSource, Source};
 use telegram::{CommandHandler, TelegramNotifier};
 use tokio::sync::Mutex;
 use tracing::info;
@@ -36,13 +36,6 @@ async fn main() -> anyhow::Result<()> {
         || cfg.monitor_target.starts_with("https://");
 
     let source: Arc<dyn Source> = match cfg.source_type.as_deref() {
-        Some("rcdeportivo") => Arc::new(RcDeportivoSource::new(
-            cfg.monitor_target.clone(),
-            cfg.html_selector.clone().ok_or_else(|| anyhow::anyhow!(
-                "SOURCE_TYPE=rcdeportivo requires HTML_SELECTOR"
-            ))?,
-            cfg.webdriver_url.clone(),
-        )),
         Some("browser") => Arc::new(BrowserSource::new(
             cfg.monitor_target.clone(),
             cfg.html_selector.clone(),
