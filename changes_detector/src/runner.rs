@@ -1,6 +1,7 @@
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 use crate::{
@@ -31,13 +32,23 @@ pub struct MonitorSpawner {
     pub webdriver_url: String,
     pub notifier: Arc<dyn Notifier>,
     pub data_dir: PathBuf,
+    /// Abort handles for every running monitor task, keyed by alias.
+    /// "main" is included so it can also be stopped via /remove.
+    pub tasks: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
 }
 
 impl MonitorSpawner {
-    /// Spawn a `tokio` task that runs `run_loop` for the given config.
-    pub fn spawn(&self, config: MonitorConfig) {
+    /// Register an externally-spawned task handle (e.g. the main monitor).
+    pub async fn register(&self, alias: &str, handle: tokio::task::AbortHandle) {
+        self.tasks.lock().await.insert(alias.to_string(), handle);
+    }
+
+    /// Spawn a `tokio` task that runs `run_loop` for the given config and
+    /// register its abort handle under `config.alias`.
+    pub async fn spawn(&self, config: MonitorConfig) {
         let s = self.clone();
-        tokio::spawn(async move {
+        let alias = config.alias.clone();
+        let handle = tokio::spawn(async move {
             let source: Arc<dyn Source> = Arc::new(BrowserSource::new(
                 s.base_url.clone(),
                 Some(config.selector.clone()),
@@ -54,6 +65,25 @@ impl MonitorSpawner {
             )
             .await;
         });
+        self.tasks.lock().await.insert(alias, handle.abort_handle());
+    }
+
+    /// Abort the task for `alias` and remove it from the tracker.
+    /// Returns `true` if a task was found and aborted.
+    pub async fn remove(&self, alias: &str) -> bool {
+        if let Some(handle) = self.tasks.lock().await.remove(alias) {
+            handle.abort();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Return a sorted list of all currently-tracked monitor aliases.
+    pub async fn list_aliases(&self) -> Vec<String> {
+        let mut aliases: Vec<String> = self.tasks.lock().await.keys().cloned().collect();
+        aliases.sort();
+        aliases
     }
 }
 

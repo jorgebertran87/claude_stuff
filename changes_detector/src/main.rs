@@ -5,7 +5,7 @@ mod runner;
 mod source;
 mod telegram;
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use config::Config;
 use detector::ChangeDetector;
@@ -72,6 +72,7 @@ async fn main() -> anyhow::Result<()> {
         webdriver_url: cfg.webdriver_url.clone(),
         notifier:     notifier.clone(),
         data_dir:     cfg.data_dir.clone(),
+        tasks:        Arc::new(Mutex::new(HashMap::new())),
     };
 
     // -----------------------------------------------------------------------
@@ -81,10 +82,27 @@ async fn main() -> anyhow::Result<()> {
         let loaded = MonitorStore::load(&cfg.data_dir);
         for config in loaded.all() {
             info!("Resuming monitor: {} ({})", config.alias, config.selector);
-            spawner.spawn(config.clone());
+            spawner.spawn(config.clone()).await;
         }
         Arc::new(Mutex::new(loaded))
     };
+
+    // -----------------------------------------------------------------------
+    // Spawn the primary monitoring loop and register its handle as "main"
+    // so it can be stopped via the /remove command.
+    // Must happen BEFORE spawner is moved into the command handler;
+    // the Arc<Mutex<tasks>> is shared so the handle is still visible
+    // to the command handler after the move.
+    // -----------------------------------------------------------------------
+    let detector = ChangeDetector::load(&cfg.state_file);
+    let main_handle = tokio::spawn(run_loop(
+        Arc::clone(&source),
+        detector,
+        notifier.clone(),
+        "main".to_string(),
+        cfg.check_interval,
+    ));
+    spawner.register("main", main_handle.abort_handle()).await;
 
     // -----------------------------------------------------------------------
     // Spawn the Telegram command handler.
@@ -99,11 +117,9 @@ async fn main() -> anyhow::Result<()> {
     )?;
     tokio::spawn(cmd_handler.run());
 
-    // -----------------------------------------------------------------------
-    // Run the primary monitoring loop (blocks until the process is killed).
-    // -----------------------------------------------------------------------
-    let detector = ChangeDetector::load(&cfg.state_file);
-    run_loop(source, detector, notifier, "main".to_string(), cfg.check_interval).await;
+    // Keep the process alive until SIGINT / SIGTERM.
+    tokio::signal::ctrl_c().await.ok();
+    info!("Shutdown signal received — exiting");
 
     Ok(())
 }

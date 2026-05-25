@@ -59,12 +59,15 @@ impl Notifier for TelegramNotifier {
 // CommandHandler — long-polls for bot commands and handles conversations
 // ---------------------------------------------------------------------------
 
-/// Multi-step conversation state for the `/add` command.
+/// Multi-step conversation state for interactive commands.
 #[derive(Clone, Debug)]
 enum ConversationStep {
+    // /add steps
     WaitingForAlias,
     WaitingForSelector { alias: String },
     WaitingForInterval { alias: String, selector: String },
+    // /remove step
+    WaitingForRemoveTarget,
 }
 
 pub struct CommandHandler {
@@ -163,6 +166,7 @@ impl CommandHandler {
         let command = text.split('@').next().unwrap_or("").trim();
         match command {
             "/add"            => self.cmd_add().await,
+            "/remove"         => self.cmd_remove().await,
             "/status" | "/check" => self.cmd_status().await,
             "/cancel"         => {
                 let _ = send_message(
@@ -191,9 +195,86 @@ impl CommandHandler {
         ).await;
     }
 
+    // -----------------------------------------------------------------------
+    // /remove — list monitors, ask which to stop
+    // -----------------------------------------------------------------------
+
+    async fn cmd_remove(&self) {
+        let chat = self.chat_id.to_string();
+        let aliases = self.spawner.list_aliases().await;
+
+        if aliases.is_empty() {
+            let _ = send_message(
+                &self.client, &self.bot_token, &chat,
+                "ℹ️ No monitors are currently running.",
+            ).await;
+            return;
+        }
+
+        let list = aliases
+            .iter()
+            .map(|a| format!("  • <code>{}</code>", html_escape(a)))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        {
+            let mut guard = self.conversation.lock().await;
+            *guard = Some(ConversationStep::WaitingForRemoveTarget);
+        }
+
+        let _ = send_message(
+            &self.client, &self.bot_token, &chat,
+            &format!(
+                "🗑 <b>Remove monitor</b>\n\n\
+                 Running monitors:\n{list}\n\n\
+                 Reply with the <b>alias</b> to stop and remove:\n\
+                 <i>(Send /cancel to abort)</i>",
+            ),
+        ).await;
+    }
+
     async fn handle_conversation_reply(&self, text: &str, step: ConversationStep) {
         let chat = self.chat_id.to_string();
         match step {
+            // ── /remove: alias received ────────────────────────────────────
+            ConversationStep::WaitingForRemoveTarget => {
+                let alias = text.trim().to_string();
+
+                // Abort the task.
+                let stopped = self.spawner.remove(&alias).await;
+
+                // Remove from persistent store (no-op for "main").
+                let store_result = if alias != "main" {
+                    let mut guard = self.store.lock().await;
+                    guard.remove(&alias)
+                } else {
+                    Ok(false)
+                };
+
+                let reply = if stopped {
+                    match store_result {
+                        Ok(_) => format!(
+                            "✅ Monitor <code>{}</code> stopped and removed.",
+                            html_escape(&alias),
+                        ),
+                        Err(e) => format!(
+                            "⚠️ Monitor <code>{}</code> stopped but could not be removed \
+                             from storage: {}",
+                            html_escape(&alias),
+                            html_escape(&e.to_string()),
+                        ),
+                    }
+                } else {
+                    format!(
+                        "❌ No running monitor named <code>{}</code>. \
+                         Send /remove to see the current list.",
+                        html_escape(&alias),
+                    )
+                };
+
+                let _ = send_message(&self.client, &self.bot_token, &chat, &reply).await;
+            }
+
             // ── Step 1: alias received ─────────────────────────────────────
             ConversationStep::WaitingForAlias => {
                 let alias = text.to_string();
@@ -270,7 +351,7 @@ impl CommandHandler {
 
                 match save_result {
                     Ok(()) => {
-                        self.spawner.spawn(config);
+                        self.spawner.spawn(config).await;
                         let _ = send_message(
                             &self.client, &self.bot_token, &chat,
                             &format!(

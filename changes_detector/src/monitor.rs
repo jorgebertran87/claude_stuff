@@ -36,6 +36,19 @@ impl MonitorStore {
         self.save()
     }
 
+    /// Remove the monitor with the given alias from the store.
+    /// Returns `true` if it was found and removed.
+    pub fn remove(&mut self, alias: &str) -> anyhow::Result<bool> {
+        let before = self.monitors.len();
+        self.monitors.retain(|m| m.alias != alias);
+        if self.monitors.len() < before {
+            self.save()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     fn save(&self) -> anyhow::Result<()> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
