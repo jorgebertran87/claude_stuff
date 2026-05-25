@@ -1,0 +1,21 @@
+services:
+  changes_detector:
+    build: .
+    restart: unless-stopped
+
+    env_file:
+      - .env           # copy .env.example → .env and fill in your values
+
+    volumes:
+      # Mount the file you want to monitor (adjust the host path).
+      - ${MONITOR_FILE_HOST:-./watched/example.txt}:/watched/target.txt:ro
+      # Persist state across container restarts.
+      - changes_state:/data
+
+    environment:
+      # Override the path inside the container if you changed the mount above.
+      MONITOR_FILE: /watched/target.txt
+      RUST_LOG: changes_detector=info
+
+volumes:
+  changes_state:
