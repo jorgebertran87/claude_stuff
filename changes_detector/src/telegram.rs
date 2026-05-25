@@ -62,11 +62,12 @@ impl Notifier for TelegramNotifier {
 /// Multi-step conversation state for interactive commands.
 #[derive(Clone, Debug)]
 enum ConversationStep {
-    // /add steps
+    // /add steps (5 steps total)
     WaitingForAlias,
-    WaitingForSelector { alias: String },
-    WaitingForMode     { alias: String, selector: String },
-    WaitingForInterval { alias: String, selector: String, mode: MonitorMode },
+    WaitingForUrl      { alias: String },
+    WaitingForSelector { alias: String, url: String },
+    WaitingForMode     { alias: String, url: String, selector: String },
+    WaitingForInterval { alias: String, url: String, selector: String, mode: MonitorMode },
     // /remove step
     WaitingForRemoveTarget,
 }
@@ -191,7 +192,7 @@ impl CommandHandler {
         let _ = send_message(
             &self.client, &self.bot_token, &self.chat_id.to_string(),
             "➕ <b>New monitor</b>\n\n\
-             Step 1/4 — Send the <b>alias</b> for this monitor:\n\
+             Step 1/5 — Send the <b>alias</b> for this monitor:\n\
              <i>A short name to identify it, e.g. </i><code>match-456</code>",
         ).await;
     }
@@ -281,26 +282,61 @@ impl CommandHandler {
                 let alias = text.to_string();
                 {
                     let mut guard = self.conversation.lock().await;
-                    *guard = Some(ConversationStep::WaitingForSelector { alias: alias.clone() });
+                    *guard = Some(ConversationStep::WaitingForUrl { alias: alias.clone() });
                 }
                 let _ = send_message(
                     &self.client, &self.bot_token, &chat,
                     &format!(
                         "✅ Alias: <code>{}</code>\n\n\
-                         Step 2/4 — Send the <b>CSS selector</b> to monitor:\n\
-                         <i>e.g. </i><code>[id=\"456\"] .some-class</code>",
+                         Step 2/5 — Send the <b>URL</b> to monitor:\n\
+                         <i>e.g. </i><code>https://example.com/page</code>",
                         html_escape(&alias),
                     ),
                 ).await;
             }
 
-            // ── Step 2: selector received ──────────────────────────────────
-            ConversationStep::WaitingForSelector { alias } => {
+            // ── Step 2: URL received ───────────────────────────────────────
+            ConversationStep::WaitingForUrl { alias } => {
+                let url = text.trim().to_string();
+                if !url.starts_with("http://") && !url.starts_with("https://") {
+                    // Invalid — keep same step and ask again.
+                    {
+                        let mut guard = self.conversation.lock().await;
+                        *guard = Some(ConversationStep::WaitingForUrl { alias });
+                    }
+                    let _ = send_message(
+                        &self.client, &self.bot_token, &chat,
+                        "❌ URL must start with <code>http://</code> or <code>https://</code>.\n\
+                         Please send a valid URL:",
+                    ).await;
+                    return;
+                }
+                {
+                    let mut guard = self.conversation.lock().await;
+                    *guard = Some(ConversationStep::WaitingForSelector {
+                        alias: alias.clone(),
+                        url: url.clone(),
+                    });
+                }
+                let _ = send_message(
+                    &self.client, &self.bot_token, &chat,
+                    &format!(
+                        "✅ URL: <code>{}</code>\n\n\
+                         Step 3/5 — Send the <b>CSS selector</b> to monitor:\n\
+                         <i>e.g. </i><code>[id=\"456\"] .some-class</code>",
+                        html_escape(&url),
+                    ),
+                ).await;
+            }
+
+            // ── Step 3: selector received ──────────────────────────────────
+            ConversationStep::WaitingForSelector { alias, url } => {
                 let selector = text.to_string();
                 {
                     let mut guard = self.conversation.lock().await;
                     *guard = Some(ConversationStep::WaitingForMode {
                         alias: alias.clone(),
+                        url: url.clone(),
                         selector: selector.clone(),
                     });
                 }
@@ -308,7 +344,7 @@ impl CommandHandler {
                     &self.client, &self.bot_token, &chat,
                     &format!(
                         "✅ Selector: <code>{}</code>\n\n\
-                         Step 3/4 — What should I monitor?\n\n\
+                         Step 4/5 — What should I monitor?\n\n\
                          • <code>content</code> — notify when the element's HTML changes\n\
                          • <code>exists</code>  — notify when the element appears or disappears",
                         html_escape(&selector),
@@ -316,16 +352,15 @@ impl CommandHandler {
                 ).await;
             }
 
-            // ── Step 3: mode received ──────────────────────────────────────
-            ConversationStep::WaitingForMode { alias, selector } => {
+            // ── Step 4: mode received ──────────────────────────────────────
+            ConversationStep::WaitingForMode { alias, url, selector } => {
                 let mode = match text.trim().to_lowercase().as_str() {
-                    "content" | "c"           => MonitorMode::Content,
+                    "content" | "c"               => MonitorMode::Content,
                     "exists"  | "existence" | "e" => MonitorMode::Existence,
                     _ => {
-                        // Invalid — keep the same step and ask again.
                         {
                             let mut guard = self.conversation.lock().await;
-                            *guard = Some(ConversationStep::WaitingForMode { alias, selector });
+                            *guard = Some(ConversationStep::WaitingForMode { alias, url, selector });
                         }
                         let _ = send_message(
                             &self.client, &self.bot_token, &chat,
@@ -342,6 +377,7 @@ impl CommandHandler {
                     let mut guard = self.conversation.lock().await;
                     *guard = Some(ConversationStep::WaitingForInterval {
                         alias: alias.clone(),
+                        url: url.clone(),
                         selector: selector.clone(),
                         mode,
                     });
@@ -350,22 +386,22 @@ impl CommandHandler {
                     &self.client, &self.bot_token, &chat,
                     &format!(
                         "✅ Mode: <b>{mode_label}</b>\n\n\
-                         Step 4/4 — Send the <b>check interval</b> in seconds:\n\
+                         Step 5/5 — Send the <b>check interval</b> in seconds:\n\
                          <i>e.g. </i><code>60</code>",
                     ),
                 ).await;
             }
 
-            // ── Step 4: interval received ──────────────────────────────────
-            ConversationStep::WaitingForInterval { alias, selector, mode } => {
+            // ── Step 5: interval received ──────────────────────────────────
+            ConversationStep::WaitingForInterval { alias, url, selector, mode } => {
                 let interval_secs = match text.trim().parse::<u64>() {
                     Ok(n) if n > 0 => n,
                     _ => {
-                        // Invalid — keep the same step and ask again.
                         {
                             let mut guard = self.conversation.lock().await;
                             *guard = Some(ConversationStep::WaitingForInterval {
                                 alias,
+                                url,
                                 selector,
                                 mode,
                             });
@@ -390,6 +426,7 @@ impl CommandHandler {
                 };
                 let config = MonitorConfig {
                     alias: alias.clone(),
+                    url: Some(url.clone()),
                     selector: selector.clone(),
                     interval_secs,
                     mode,
@@ -409,11 +446,13 @@ impl CommandHandler {
                             &format!(
                                 "✅ <b>Monitor added and running!</b>\n\n\
                                  🏷 <b>Alias:</b>    <code>{}</code>\n\
+                                 🌐 <b>URL:</b>      <code>{}</code>\n\
                                  🔍 <b>Selector:</b> <code>{}</code>\n\
                                  👁 <b>Mode:</b>     {}\n\
                                  ⏱ <b>Interval:</b> {} s\n\n\
                                  <i>Send /cancel at any time to abort a new /add.</i>",
                                 html_escape(&alias),
+                                html_escape(&url),
                                 html_escape(&selector),
                                 mode_label,
                                 interval_secs,
@@ -476,9 +515,14 @@ impl CommandHandler {
                             MonitorMode::Content   => "📝",
                             MonitorMode::Existence => "👁",
                         };
+                        let url_part = match &m.url {
+                            Some(u) => format!(" @ <code>{}</code>", html_escape(u)),
+                            None    => String::new(),
+                        };
                         format!(
-                            "  • <code>{}</code> — <code>{}</code> {} every {} s",
+                            "  • <code>{}</code>{} — <code>{}</code> {} every {} s",
                             html_escape(&m.alias),
+                            url_part,
                             html_escape(&m.selector),
                             mode_icon,
                             m.interval_secs,

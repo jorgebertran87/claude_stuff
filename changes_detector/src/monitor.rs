@@ -17,6 +17,11 @@ pub enum MonitorMode {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MonitorConfig {
     pub alias: String,
+    /// URL to monitor.  `None` means "use the primary MONITOR_TARGET from
+    /// the environment" — kept for backward-compatibility with older
+    /// monitors.json files that pre-date per-monitor URLs.
+    #[serde(default)]
+    pub url: Option<String>,
     pub selector: String,
     pub interval_secs: u64,
     /// Defaults to `Content` when deserialised from an older JSON that

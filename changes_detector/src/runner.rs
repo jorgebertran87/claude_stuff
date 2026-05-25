@@ -53,8 +53,10 @@ impl MonitorSpawner {
                 MonitorMode::Content   => BrowserMode::Content,
                 MonitorMode::Existence => BrowserMode::Existence,
             };
+            // Use the per-monitor URL when set; fall back to the primary target.
+            let url = config.url.clone().unwrap_or_else(|| s.base_url.clone());
             let source: Arc<dyn Source> = Arc::new(BrowserSource::with_mode(
-                s.base_url.clone(),
+                url,
                 Some(config.selector.clone()),
                 s.webdriver_url.clone(),
                 browser_mode,
