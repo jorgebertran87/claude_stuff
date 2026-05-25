@@ -95,38 +95,50 @@ impl BrowserSource {
                     .map_err(|e| anyhow::anyhow!("Failed to read page body text: {e}"))
             }
 
-            // Selector present — wait for the JS-rendered element, then extract
-            // its innerHTML so that icon class changes (e.g. fa-user-lock →
-            // fa-lock) are captured in addition to visible text changes.
-            // Whitespace is normalised via JS so minor formatting differences
-            // don't trigger false positives.
+            // Selector present — wait for the JS-rendered element, then build
+            // a focused semantic snapshot:
+            //   line 1: visible text (collapsed whitespace)
+            //   line 2: fa-* icon class names present inside the element
+            //            (omitted entirely when no icons are found)
+            //
+            // Using this representation instead of raw innerHTML means that
+            // only meaningful changes — text or icon presence — trigger a
+            // notification. Irrelevant HTML noise (attribute ordering,
+            // whitespace, extra wrappers) is ignored.
             Some(selector) => {
-                // Wait until the element is present in the DOM.
                 client
                     .wait()
                     .at_most(ELEMENT_TIMEOUT)
                     .for_element(Locator::Css(selector.as_str()))
                     .await
                     .map_err(|e| anyhow::anyhow!(
-                        "Timed out waiting for '{selector}' to appear \
-                         (JS may still be loading — consider raising CHECK_INTERVAL_SECS): {e}"
+                        "Timed out waiting for '{selector}' \
+                         (JS may still be loading): {e}"
                     ))?;
 
-                // Extract innerHTML with collapsed whitespace via JS.
-                // innerHTML is used instead of innerText so that element
-                // attributes (e.g. icon classes on <i> tags) are included.
                 let raw = client
                     .execute(
-                        "var el = document.querySelector(arguments[0]); \
-                         return el ? el.innerHTML.replace(/\\s+/g, ' ').trim() : null;",
+                        "(function(sel) { \
+                            var el = document.querySelector(sel); \
+                            if (!el) return null; \
+                            var text = (el.innerText || el.textContent || '') \
+                                           .replace(/\\s+/g, ' ').trim(); \
+                            var icons = Array.from(el.querySelectorAll('[class]')) \
+                                .flatMap(function(e) { return Array.from(e.classList); }) \
+                                .filter(function(c) { return c.indexOf('fa-') === 0; }) \
+                                .filter(function(c, i, a) { return a.indexOf(c) === i; }); \
+                            return icons.length \
+                                ? text + '\\n[icons: ' + icons.join(' ') + ']' \
+                                : text; \
+                        })(arguments[0])",
                         vec![serde_json::json!(selector)],
                     )
                     .await
-                    .map_err(|e| anyhow::anyhow!("JS execution failed for '{selector}': {e}"))?;
+                    .map_err(|e| anyhow::anyhow!("JS extraction failed for '{selector}': {e}"))?;
 
                 raw.as_str()
                     .map(str::to_string)
-                    .ok_or_else(|| anyhow::anyhow!("Element '{selector}' disappeared after wait"))
+                    .ok_or_else(|| anyhow::anyhow!("Element '{selector}' not found"))
             }
         }
     }
