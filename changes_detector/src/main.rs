@@ -3,6 +3,8 @@ mod detector;
 mod source;
 mod telegram;
 
+use std::sync::Arc;
+
 use config::Config;
 use detector::{ChangeDetector, CheckResult};
 use source::{browser::BrowserSource, file::FileSource, http::HttpSource, Source};
@@ -36,23 +38,23 @@ async fn main() -> anyhow::Result<()> {
     let is_url = cfg.monitor_target.starts_with("http://")
         || cfg.monitor_target.starts_with("https://");
 
-    let source: Box<dyn Source> = match cfg.source_type.as_deref() {
-        Some("browser") => Box::new(BrowserSource::new(
+    let source: Arc<dyn Source> = match cfg.source_type.as_deref() {
+        Some("browser") => Arc::new(BrowserSource::new(
             cfg.monitor_target,
             cfg.html_selector,
             cfg.webdriver_url,
         )),
-        Some("http") => Box::new(HttpSource::new(
+        Some("http") => Arc::new(HttpSource::new(
             cfg.monitor_target,
             cfg.html_selector.as_deref(),
         )?),
-        Some("file") => Box::new(FileSource::new(cfg.monitor_target.into())),
+        Some("file") => Arc::new(FileSource::new(cfg.monitor_target.into())),
         // Auto-detect
-        _ if is_url => Box::new(HttpSource::new(
+        _ if is_url => Arc::new(HttpSource::new(
             cfg.monitor_target,
             cfg.html_selector.as_deref(),
         )?),
-        _ => Box::new(FileSource::new(cfg.monitor_target.into())),
+        _ => Arc::new(FileSource::new(cfg.monitor_target.into())),
     };
 
     info!(
@@ -71,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
     let cmd_handler = CommandHandler::new(
         cfg.telegram_bot_token,
         &cfg.telegram_chat_id,
-        source.location().to_string(),
+        Arc::clone(&source),
         cfg.check_interval.as_secs(),
     )?;
     tokio::spawn(cmd_handler.run());

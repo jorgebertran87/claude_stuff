@@ -1,9 +1,11 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 use tracing::{error, info, warn};
+
+use crate::source::Source;
 
 // ---------------------------------------------------------------------------
 // Notifier — sends change-detection alerts to a Telegram chat
@@ -54,8 +56,8 @@ pub struct CommandHandler {
     bot_token: String,
     /// The authorised chat id (as configured in TELEGRAM_CHAT_ID).
     chat_id: i64,
-    /// Human-readable description of the monitored source shown in /status.
-    location: String,
+    /// The source is fetched live when /status is requested.
+    source: Arc<dyn Source>,
     interval_secs: u64,
 }
 
@@ -64,7 +66,7 @@ impl CommandHandler {
     pub fn new(
         bot_token: String,
         chat_id_str: &str,
-        location: String,
+        source: Arc<dyn Source>,
         interval_secs: u64,
     ) -> anyhow::Result<Self> {
         let chat_id: i64 = chat_id_str
@@ -76,7 +78,7 @@ impl CommandHandler {
             client: Client::new(),
             bot_token,
             chat_id,
-            location,
+            source,
             interval_secs,
         })
     }
@@ -154,13 +156,27 @@ impl CommandHandler {
         match command {
             "/status" | "/check" => {
                 info!("Received {command} from chat {}", self.chat_id);
+
+                let content_line = match self.source.fetch().await {
+                    Ok(text) => format!(
+                        "\n\n🔍 <b>Current content:</b>\n<code>{}</code>",
+                        html_escape(text.trim()),
+                    ),
+                    Err(e) => {
+                        warn!("Could not fetch source for {command} reply: {e}");
+                        format!("\n\n🔍 <b>Current content:</b> <i>fetch failed — {}</i>", html_escape(&e.to_string()))
+                    }
+                };
+
                 let reply = format!(
                     "✅ <b>Bot is running</b>\n\n\
                      📄 <b>Monitoring:</b> <code>{}</code>\n\
-                     ⏱ <b>Check interval:</b> {} s",
-                    html_escape(&self.location),
+                     ⏱ <b>Check interval:</b> {} s\
+                     {content_line}",
+                    html_escape(self.source.location()),
                     self.interval_secs,
                 );
+
                 if let Err(e) =
                     send_message(&self.client, &self.bot_token, &self.chat_id.to_string(), &reply)
                         .await
