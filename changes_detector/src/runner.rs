@@ -28,33 +28,37 @@ pub trait Notifier: Send + Sync {
 /// Cheap to clone — all heavy state is behind `Arc`.
 #[derive(Clone)]
 pub struct MonitorSpawner {
-    pub base_url: String,
     pub webdriver_url: String,
     pub notifier: Arc<dyn Notifier>,
     pub data_dir: PathBuf,
     /// Abort handles for every running monitor task, keyed by alias.
-    /// "main" is included so it can also be stopped via /remove.
     pub tasks: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
 }
 
 impl MonitorSpawner {
-    /// Register an externally-spawned task handle (e.g. the main monitor).
-    pub async fn register(&self, alias: &str, handle: tokio::task::AbortHandle) {
-        self.tasks.lock().await.insert(alias.to_string(), handle);
-    }
-
     /// Spawn a `tokio` task that runs `run_loop` for the given config and
     /// register its abort handle under `config.alias`.
     pub async fn spawn(&self, config: MonitorConfig) {
         let s = self.clone();
         let alias = config.alias.clone();
+        let url = match config.url.clone() {
+            Some(u) => u,
+            None => {
+                warn!(
+                    "[{}] Skipping monitor — no URL configured \
+                     (legacy entry without a url field in monitors.json). \
+                     Remove it and re-add via /add.",
+                    config.alias
+                );
+                return;
+            }
+        };
+
         let handle = tokio::spawn(async move {
             let browser_mode = match config.mode {
                 MonitorMode::Content   => BrowserMode::Content,
                 MonitorMode::Existence => BrowserMode::Existence,
             };
-            // Use the per-monitor URL when set; fall back to the primary target.
-            let url = config.url.clone().unwrap_or_else(|| s.base_url.clone());
             let source: Arc<dyn Source> = Arc::new(BrowserSource::with_mode(
                 url,
                 Some(config.selector.clone()),

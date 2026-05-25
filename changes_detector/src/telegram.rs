@@ -10,7 +10,6 @@ use tracing::{error, info, warn};
 use crate::{
     monitor::{MonitorConfig, MonitorMode, MonitorStore},
     runner::{MonitorSpawner, Notifier},
-    source::Source,
 };
 
 // ---------------------------------------------------------------------------
@@ -76,8 +75,6 @@ pub struct CommandHandler {
     client: reqwest::Client,
     bot_token: String,
     chat_id: i64,
-    source: Arc<dyn Source>,
-    interval_secs: u64,
     spawner: MonitorSpawner,
     store: Arc<Mutex<MonitorStore>>,
     /// Tracks an in-progress `/add` conversation (one at a time per chat).
@@ -88,8 +85,6 @@ impl CommandHandler {
     pub fn new(
         bot_token: String,
         chat_id_str: &str,
-        source: Arc<dyn Source>,
-        interval_secs: u64,
         spawner: MonitorSpawner,
         store: Arc<Mutex<MonitorStore>>,
     ) -> anyhow::Result<Self> {
@@ -101,8 +96,6 @@ impl CommandHandler {
             client: reqwest::Client::new(),
             bot_token,
             chat_id,
-            source,
-            interval_secs,
             spawner,
             store,
             conversation: Arc::new(Mutex::new(None)),
@@ -472,80 +465,56 @@ impl CommandHandler {
     }
 
     // -----------------------------------------------------------------------
-    // /status — show bot state + live content
+    // /status — list all configured monitors
     // -----------------------------------------------------------------------
 
     async fn cmd_status(&self) {
         info!("Received /status from chat {}", self.chat_id);
         let chat = self.chat_id.to_string();
 
-        let placeholder_id = match send_message(
-            &self.client, &self.bot_token, &chat,
-            "🔄 Fetching current content…",
-        ).await {
-            Ok(id) => id,
-            Err(e) => { error!("Failed to send status placeholder: {e}"); return; }
-        };
+        let guard = self.store.lock().await;
+        let all = guard.all();
 
-        let content_line = match self.source.fetch().await {
-            Ok(text) => format!(
-                "\n\n🔍 <b>Current content:</b>\n<code>{}</code>",
-                html_escape(text.trim()),
-            ),
-            Err(e) => {
-                warn!("Status fetch failed: {e}");
-                format!(
-                    "\n\n🔍 <b>Current content:</b> <i>fetch failed — {}</i>",
-                    html_escape(&e.to_string()),
-                )
-            }
-        };
-
-        // List dynamic monitors.
-        let monitors_line = {
-            let guard = self.store.lock().await;
-            let all = guard.all();
-            if all.is_empty() {
-                String::new()
-            } else {
-                let list = all
-                    .iter()
-                    .map(|m| {
-                        let mode_icon = match m.mode {
-                            MonitorMode::Content   => "📝",
-                            MonitorMode::Existence => "👁",
-                        };
-                        let url_part = match &m.url {
-                            Some(u) => format!(" @ <code>{}</code>", html_escape(u)),
-                            None    => String::new(),
-                        };
-                        format!(
-                            "  • <code>{}</code>{} — <code>{}</code> {} every {} s",
-                            html_escape(&m.alias),
-                            url_part,
-                            html_escape(&m.selector),
-                            mode_icon,
-                            m.interval_secs,
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                format!("\n\n📋 <b>Extra monitors:</b>\n{list}")
-            }
-        };
-
-        let reply = format!(
+        let reply = if all.is_empty() {
             "✅ <b>Bot is running</b>\n\n\
-             📄 <b>Monitoring:</b> <code>{}</code>\n\
-             ⏱ <b>Check interval:</b> {} s\
-             {content_line}\
-             {monitors_line}",
-            html_escape(self.source.location()),
-            self.interval_secs,
-        );
+             ℹ️ No monitors yet — use /add to create one."
+                .to_string()
+        } else {
+            let list = all
+                .iter()
+                .map(|m| {
+                    let mode_label = match m.mode {
+                        MonitorMode::Content   => "content 📝",
+                        MonitorMode::Existence => "exists 👁",
+                    };
+                    let url_display = m.url.as_deref().unwrap_or("(no URL)");
+                    format!(
+                        "🏷 <b>{}</b>\n\
+                         🌐 <code>{}</code>\n\
+                         🔍 <code>{}</code>\n\
+                         👁 {} · ⏱ {} s",
+                        html_escape(&m.alias),
+                        html_escape(url_display),
+                        html_escape(&m.selector),
+                        mode_label,
+                        m.interval_secs,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n");
 
-        if let Err(e) = edit_message(&self.client, &self.bot_token, &chat, placeholder_id, &reply).await {
-            error!("Failed to edit status reply: {e}");
+            format!(
+                "✅ <b>Bot is running</b>\n\n\
+                 📋 <b>Monitors ({}):</b>\n\n{list}",
+                all.len(),
+            )
+        };
+
+        // Drop the lock before any await.
+        drop(guard);
+
+        if let Err(e) = send_message(&self.client, &self.bot_token, &chat, &reply).await {
+            error!("Failed to send status reply: {e}");
         }
     }
 

@@ -43,11 +43,6 @@ pub struct BrowserSource {
 }
 
 impl BrowserSource {
-    /// Create a `Content`-mode source (the original behaviour).
-    pub fn new(url: String, selector: Option<String>, webdriver_url: String) -> Self {
-        Self::with_mode(url, selector, webdriver_url, BrowserMode::Content)
-    }
-
     /// Create a source with an explicit mode.
     pub fn with_mode(
         url: String,
