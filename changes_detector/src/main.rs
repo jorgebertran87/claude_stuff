@@ -5,7 +5,7 @@ mod telegram;
 
 use config::Config;
 use detector::{ChangeDetector, CheckResult};
-use source::{file::FileSource, http::HttpSource, Source};
+use source::{browser::BrowserSource, file::FileSource, http::HttpSource, Source};
 use telegram::TelegramNotifier;
 use tracing::{error, info, warn};
 
@@ -25,22 +25,34 @@ async fn main() -> anyhow::Result<()> {
     // -----------------------------------------------------------------------
     // Wire the source.
     //
-    // Source type is inferred from MONITOR_TARGET:
-    //   http:// or https:// prefix → HttpSource  (optional HTML_SELECTOR)
-    //   anything else              → FileSource
+    // SOURCE_TYPE selects explicitly; when absent the type is inferred:
+    //   "browser"                          → BrowserSource (headless Chrome)
+    //   "http" | http(s):// prefix         → HttpSource    (plain HTTP fetch)
+    //   "file" | anything else             → FileSource
     //
-    // To add a new kind of source add a file under src/source/ and a branch
-    // here — nothing else in the codebase needs to change.
+    // To add a new source: create src/source/<name>.rs, implement the trait,
+    // add a branch here — nothing else changes.
     // -----------------------------------------------------------------------
-    let source: Box<dyn Source> = if cfg.monitor_target.starts_with("http://")
-        || cfg.monitor_target.starts_with("https://")
-    {
-        Box::new(HttpSource::new(
+    let is_url = cfg.monitor_target.starts_with("http://")
+        || cfg.monitor_target.starts_with("https://");
+
+    let source: Box<dyn Source> = match cfg.source_type.as_deref() {
+        Some("browser") => Box::new(BrowserSource::new(
+            cfg.monitor_target,
+            cfg.html_selector,
+            cfg.webdriver_url,
+        )),
+        Some("http") => Box::new(HttpSource::new(
             cfg.monitor_target,
             cfg.html_selector.as_deref(),
-        )?)
-    } else {
-        Box::new(FileSource::new(cfg.monitor_target.into()))
+        )?),
+        Some("file") => Box::new(FileSource::new(cfg.monitor_target.into())),
+        // Auto-detect
+        _ if is_url => Box::new(HttpSource::new(
+            cfg.monitor_target,
+            cfg.html_selector.as_deref(),
+        )?),
+        _ => Box::new(FileSource::new(cfg.monitor_target.into())),
     };
 
     info!(

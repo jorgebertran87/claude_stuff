@@ -2,12 +2,18 @@ use std::{path::PathBuf, time::Duration};
 
 pub struct Config {
     /// Passed to the concrete `Source` implementation chosen at startup.
-    /// A value that starts with `http://` or `https://` selects `HttpSource`;
-    /// anything else selects `FileSource`.
     pub monitor_target: String,
-    /// Optional CSS selector applied when using `HttpSource`.
+    /// Explicit source type override. Values: `"file"`, `"http"`, `"browser"`.
+    /// When absent, the type is inferred from `monitor_target`:
+    ///   http(s):// prefix → `http`
+    ///   anything else     → `file`
+    pub source_type: Option<String>,
+    /// Optional CSS selector used by `HttpSource` and `BrowserSource`.
     /// Example: `a[id="237"]`
     pub html_selector: Option<String>,
+    /// WebDriver server URL used by `BrowserSource`.
+    /// Default: `http://chrome:4444` (the service name in docker-compose).
+    pub webdriver_url: String,
     /// Telegram Bot token (from BotFather).
     pub telegram_bot_token: String,
     /// Telegram chat/channel ID.
@@ -23,7 +29,10 @@ impl Config {
         let monitor_target = std::env::var("MONITOR_TARGET")
             .map_err(|_| anyhow::anyhow!("MONITOR_TARGET env var is required"))?;
 
+        let source_type = std::env::var("SOURCE_TYPE").ok();
         let html_selector = std::env::var("HTML_SELECTOR").ok();
+        let webdriver_url = std::env::var("WEBDRIVER_URL")
+            .unwrap_or_else(|_| "http://chrome:4444".into());
 
         let telegram_bot_token = std::env::var("TELEGRAM_BOT_TOKEN")
             .map_err(|_| anyhow::anyhow!("TELEGRAM_BOT_TOKEN env var is required"))?;
@@ -36,10 +45,7 @@ impl Config {
             .parse()
             .map_err(|_| anyhow::anyhow!("CHECK_INTERVAL_SECS must be a positive integer"))?;
 
-        // STATE_FILE defaults to /data/<slug>.state (persists across container
-        // restarts when /data is a Docker volume).
         let state_file = std::env::var("STATE_FILE").map(PathBuf::from).unwrap_or_else(|_| {
-            // Derive a safe filename from the target (replace path separators / `:` / `?`).
             let slug: String = monitor_target
                 .chars()
                 .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
@@ -49,7 +55,9 @@ impl Config {
 
         Ok(Self {
             monitor_target,
+            source_type,
             html_selector,
+            webdriver_url,
             telegram_bot_token,
             telegram_chat_id,
             check_interval: Duration::from_secs(check_interval_secs),

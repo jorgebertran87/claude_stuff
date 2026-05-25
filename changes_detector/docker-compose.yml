@@ -1,19 +1,34 @@
 services:
+
   changes_detector:
     build: .
     restart: unless-stopped
-
     env_file:
       - .env           # copy .env.example → .env and fill in your values
-
     volumes:
-      # Persist detector state across container restarts.
       - changes_state:/data
       # Uncomment if using FileSource (MONITOR_TARGET is a local path):
       # - ${MONITOR_FILE_HOST:-./watched/example.txt}:/watched/target.txt:ro
-
     environment:
       RUST_LOG: changes_detector=info
+    depends_on:
+      chrome:
+        condition: service_healthy
+
+  # Headless Chrome — used only when SOURCE_TYPE=browser.
+  # Remove this service (and the depends_on above) if you don't need it.
+  chrome:
+    image: selenium/standalone-chrome:latest
+    shm_size: 2gb          # prevents Chrome from crashing on complex pages
+    environment:
+      SE_NODE_MAX_SESSIONS: 1
+      SE_SESSION_REQUEST_TIMEOUT: 60
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4444/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
 
 volumes:
   changes_state:
