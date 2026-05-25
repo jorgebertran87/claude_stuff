@@ -7,7 +7,7 @@ use super::Source;
 
 /// How long to wait for the target element to appear after page load.
 /// A JS-heavy SPA typically renders within a few seconds; 30 s is generous.
-const ELEMENT_TIMEOUT: Duration = Duration::from_secs(30);
+const ELEMENT_TIMEOUT: Duration = Duration::from_secs(40);
 
 /// Fetches a URL using a real headless browser (via WebDriver), waits for
 /// JavaScript to render the page, then returns either the full visible body
