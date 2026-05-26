@@ -33,11 +33,15 @@ impl TelegramNotifier {
         location: &str,
         diff: &str,
     ) -> anyhow::Result<()> {
+        // location is "https://…  [selector]" — extract just the URL for the link.
+        let url = location.split("  [").next().unwrap_or(location).trim();
         let message = format!(
             "🔔 <b>Change detected</b>\n\n\
-             📄 <b>Source:</b> <code>{}</code>\n\n\
+             📄 <b>Source:</b> <code>{}</code>\n\
+             🔗 <a href=\"{}\">Open page</a>\n\n\
              <b>Diff:</b>\n<pre>{}</pre>",
             html_escape(location),
+            html_escape(url),
             html_escape(diff),
         );
         send_message(&self.client, &self.bot_token, &self.chat_id, &message).await?;
@@ -551,13 +555,21 @@ impl CommandHandler {
                         SourceType::Flare   => "flare 🔥",
                     };
                     let url_display = m.url.as_deref().unwrap_or("(no URL)");
+                    let url_line = match &m.url {
+                        Some(u) => format!(
+                            "🌐 <a href=\"{}\">{}</a>",
+                            html_escape(u),
+                            html_escape(u),
+                        ),
+                        None => format!("🌐 {}", html_escape(url_display)),
+                    };
                     format!(
                         "🏷 <b>{}</b>\n\
-                         🌐 <code>{}</code>\n\
+                         {}\n\
                          ⚙️ {} · 👁 {} · ⏱ {} s\n\
                          🔍 <code>{}</code>",
                         html_escape(&m.alias),
-                        html_escape(url_display),
+                        url_line,
                         source_label,
                         mode_label,
                         m.interval_secs,
@@ -629,21 +641,29 @@ impl CommandHandler {
             Err(e) => { error!("Failed to send check placeholder: {e}"); return; }
         };
 
+        let url_line = match &config.url {
+            Some(u) => format!("🔗 <a href=\"{}\">{}</a>\n", html_escape(u), html_escape(u)),
+            None    => String::new(),
+        };
+
         let reply = match self.spawner.fetch_text(&config).await {
             Ok(text) if text.is_empty() => format!(
-                "🔍 <b>{}</b>\n\n<i>(empty — selector matched but contained no text)</i>",
+                "🔍 <b>{}</b>\n{}\n<i>(empty — selector matched but contained no text)</i>",
                 html_escape(alias),
+                url_line,
             ),
             Ok(text) => format!(
-                "🔍 <b>{}</b>\n\n<code>{}</code>",
+                "🔍 <b>{}</b>\n{}\n<code>{}</code>",
                 html_escape(alias),
+                url_line,
                 html_escape(&text),
             ),
             Err(e) => {
                 warn!("check_content fetch failed for '{alias}': {e}");
                 format!(
-                    "❌ Fetch failed for <code>{}</code>:\n<i>{}</i>",
+                    "❌ Fetch failed for <code>{}</code>:\n{}<i>{}</i>",
                     html_escape(alias),
+                    url_line,
                     html_escape(&e.to_string()),
                 )
             }
