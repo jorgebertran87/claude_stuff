@@ -2,6 +2,17 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+/// Which fetch backend the monitor uses.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceType {
+    /// Headless Chrome via Selenium WebDriver (default).
+    #[default]
+    Browser,
+    /// FlareSolverr — bypasses Cloudflare JS challenges.
+    Flare,
+}
+
 /// What the monitor tracks for a given CSS selector.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -28,6 +39,10 @@ pub struct MonitorConfig {
     /// pre-dates this field (backward-compatible with existing state files).
     #[serde(default)]
     pub mode: MonitorMode,
+    /// Fetch backend. Defaults to `Browser`; use `Flare` for
+    /// Cloudflare-protected sites.
+    #[serde(default)]
+    pub source_type: SourceType,
 }
 
 /// Persists the list of dynamic monitors to `/data/monitors.json`.

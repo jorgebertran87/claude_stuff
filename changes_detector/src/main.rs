@@ -36,10 +36,11 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     let spawner = MonitorSpawner {
-        webdriver_url: cfg.webdriver_url.clone(),
-        notifier:      notifier.clone(),
-        data_dir:      cfg.data_dir.clone(),
-        tasks:         Arc::new(Mutex::new(HashMap::new())),
+        webdriver_url:    cfg.webdriver_url.clone(),
+        flaresolverr_url: cfg.flaresolverr_url.clone(),
+        notifier:         notifier.clone(),
+        data_dir:         cfg.data_dir.clone(),
+        tasks:            Arc::new(Mutex::new(HashMap::new())),
     };
 
     // -----------------------------------------------------------------------

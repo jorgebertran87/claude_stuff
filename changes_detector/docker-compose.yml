@@ -7,16 +7,15 @@ services:
       - .env           # copy .env.example → .env and fill in your values
     volumes:
       - changes_state:/data
-      # Uncomment if using FileSource (MONITOR_TARGET is a local path):
-      # - ${MONITOR_FILE_HOST:-./watched/example.txt}:/watched/target.txt:ro
     environment:
       RUST_LOG: changes_detector=info
     depends_on:
       chrome:
         condition: service_healthy
+      flaresolverr:
+        condition: service_healthy
 
-  # Headless Chrome — used only when SOURCE_TYPE=browser.
-  # Remove this service (and the depends_on above) if you don't need it.
+  # Headless Chrome — used by BrowserSource monitors.
   chrome:
     image: selenium/standalone-chrome:latest
     shm_size: 2gb          # prevents Chrome from crashing on complex pages
@@ -29,6 +28,20 @@ services:
       timeout: 5s
       retries: 6
       start_period: 10s
+
+  # FlareSolverr — bypasses Cloudflare JS challenges.
+  # Used by FlareSolverSource monitors (source_type = flare).
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: info
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8191/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
 volumes:
   changes_state:

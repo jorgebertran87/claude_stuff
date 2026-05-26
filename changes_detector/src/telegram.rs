@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 use crate::{
-    monitor::{MonitorConfig, MonitorMode, MonitorStore},
+    monitor::{MonitorConfig, MonitorMode, MonitorStore, SourceType},
     runner::{MonitorSpawner, Notifier},
 };
 
@@ -61,12 +61,13 @@ impl Notifier for TelegramNotifier {
 /// Multi-step conversation state for interactive commands.
 #[derive(Clone, Debug)]
 enum ConversationStep {
-    // /add steps (5 steps total)
+    // /add steps (6 steps total)
     WaitingForAlias,
-    WaitingForUrl      { alias: String },
-    WaitingForSelector { alias: String, url: String },
-    WaitingForMode     { alias: String, url: String, selector: String },
-    WaitingForInterval { alias: String, url: String, selector: String, mode: MonitorMode },
+    WaitingForUrl        { alias: String },
+    WaitingForSourceType { alias: String, url: String },
+    WaitingForSelector   { alias: String, url: String, source_type: SourceType },
+    WaitingForMode       { alias: String, url: String, source_type: SourceType, selector: String },
+    WaitingForInterval   { alias: String, url: String, source_type: SourceType, selector: String, mode: MonitorMode },
     // /remove step
     WaitingForRemoveTarget,
 }
@@ -185,7 +186,7 @@ impl CommandHandler {
         let _ = send_message(
             &self.client, &self.bot_token, &self.chat_id.to_string(),
             "➕ <b>New monitor</b>\n\n\
-             Step 1/5 — Send the <b>alias</b> for this monitor:\n\
+             Step 1/6 — Send the <b>alias</b> for this monitor:\n\
              <i>A short name to identify it, e.g. </i><code>match-456</code>",
         ).await;
     }
@@ -281,7 +282,7 @@ impl CommandHandler {
                     &self.client, &self.bot_token, &chat,
                     &format!(
                         "✅ Alias: <code>{}</code>\n\n\
-                         Step 2/5 — Send the <b>URL</b> to monitor:\n\
+                         Step 2/6 — Send the <b>URL</b> to monitor:\n\
                          <i>e.g. </i><code>https://example.com/page</code>",
                         html_escape(&alias),
                     ),
@@ -292,7 +293,6 @@ impl CommandHandler {
             ConversationStep::WaitingForUrl { alias } => {
                 let url = text.trim().to_string();
                 if !url.starts_with("http://") && !url.starts_with("https://") {
-                    // Invalid — keep same step and ask again.
                     {
                         let mut guard = self.conversation.lock().await;
                         *guard = Some(ConversationStep::WaitingForUrl { alias });
@@ -306,7 +306,7 @@ impl CommandHandler {
                 }
                 {
                     let mut guard = self.conversation.lock().await;
-                    *guard = Some(ConversationStep::WaitingForSelector {
+                    *guard = Some(ConversationStep::WaitingForSourceType {
                         alias: alias.clone(),
                         url: url.clone(),
                     });
@@ -315,21 +315,62 @@ impl CommandHandler {
                     &self.client, &self.bot_token, &chat,
                     &format!(
                         "✅ URL: <code>{}</code>\n\n\
-                         Step 3/5 — Send the <b>CSS selector</b> to monitor:\n\
-                         <i>e.g. </i><code>[id=\"456\"] .some-class</code>",
+                         Step 3/6 — Which fetch method?\n\n\
+                         • <code>browser</code> — headless Chrome (most sites)\n\
+                         • <code>flare</code>   — FlareSolverr (Cloudflare-protected sites)",
                         html_escape(&url),
                     ),
                 ).await;
             }
 
-            // ── Step 3: selector received ──────────────────────────────────
-            ConversationStep::WaitingForSelector { alias, url } => {
+            // ── Step 3: source type received ───────────────────────────────
+            ConversationStep::WaitingForSourceType { alias, url } => {
+                let source_type = match text.trim().to_lowercase().as_str() {
+                    "browser" | "b" => SourceType::Browser,
+                    "flare"   | "f" => SourceType::Flare,
+                    _ => {
+                        {
+                            let mut guard = self.conversation.lock().await;
+                            *guard = Some(ConversationStep::WaitingForSourceType { alias, url });
+                        }
+                        let _ = send_message(
+                            &self.client, &self.bot_token, &chat,
+                            "❌ Please reply with <code>browser</code> or <code>flare</code>:",
+                        ).await;
+                        return;
+                    }
+                };
+                let source_label = match source_type {
+                    SourceType::Browser => "browser (headless Chrome)",
+                    SourceType::Flare   => "flare (FlareSolverr)",
+                };
+                {
+                    let mut guard = self.conversation.lock().await;
+                    *guard = Some(ConversationStep::WaitingForSelector {
+                        alias: alias.clone(),
+                        url: url.clone(),
+                        source_type,
+                    });
+                }
+                let _ = send_message(
+                    &self.client, &self.bot_token, &chat,
+                    &format!(
+                        "✅ Method: <b>{source_label}</b>\n\n\
+                         Step 4/6 — Send the <b>CSS selector</b> to monitor:\n\
+                         <i>e.g. </i><code>[data-t=\"threadLink\"]</code>",
+                    ),
+                ).await;
+            }
+
+            // ── Step 4: selector received ──────────────────────────────────
+            ConversationStep::WaitingForSelector { alias, url, source_type } => {
                 let selector = text.to_string();
                 {
                     let mut guard = self.conversation.lock().await;
                     *guard = Some(ConversationStep::WaitingForMode {
                         alias: alias.clone(),
                         url: url.clone(),
+                        source_type,
                         selector: selector.clone(),
                     });
                 }
@@ -337,7 +378,7 @@ impl CommandHandler {
                     &self.client, &self.bot_token, &chat,
                     &format!(
                         "✅ Selector: <code>{}</code>\n\n\
-                         Step 4/5 — What should I monitor?\n\n\
+                         Step 5/6 — What should I monitor?\n\n\
                          • <code>content</code> — notify when the element's HTML changes\n\
                          • <code>exists</code>  — notify when the element appears or disappears",
                         html_escape(&selector),
@@ -345,15 +386,17 @@ impl CommandHandler {
                 ).await;
             }
 
-            // ── Step 4: mode received ──────────────────────────────────────
-            ConversationStep::WaitingForMode { alias, url, selector } => {
+            // ── Step 5: mode received ──────────────────────────────────────
+            ConversationStep::WaitingForMode { alias, url, source_type, selector } => {
                 let mode = match text.trim().to_lowercase().as_str() {
                     "content" | "c"               => MonitorMode::Content,
                     "exists"  | "existence" | "e" => MonitorMode::Existence,
                     _ => {
                         {
                             let mut guard = self.conversation.lock().await;
-                            *guard = Some(ConversationStep::WaitingForMode { alias, url, selector });
+                            *guard = Some(ConversationStep::WaitingForMode {
+                                alias, url, source_type, selector,
+                            });
                         }
                         let _ = send_message(
                             &self.client, &self.bot_token, &chat,
@@ -371,6 +414,7 @@ impl CommandHandler {
                     *guard = Some(ConversationStep::WaitingForInterval {
                         alias: alias.clone(),
                         url: url.clone(),
+                        source_type,
                         selector: selector.clone(),
                         mode,
                     });
@@ -379,14 +423,14 @@ impl CommandHandler {
                     &self.client, &self.bot_token, &chat,
                     &format!(
                         "✅ Mode: <b>{mode_label}</b>\n\n\
-                         Step 5/5 — Send the <b>check interval</b> in seconds:\n\
+                         Step 6/6 — Send the <b>check interval</b> in seconds:\n\
                          <i>e.g. </i><code>60</code>",
                     ),
                 ).await;
             }
 
-            // ── Step 5: interval received ──────────────────────────────────
-            ConversationStep::WaitingForInterval { alias, url, selector, mode } => {
+            // ── Step 6: interval received ──────────────────────────────────
+            ConversationStep::WaitingForInterval { alias, url, source_type, selector, mode } => {
                 let interval_secs = match text.trim().parse::<u64>() {
                     Ok(n) if n > 0 => n,
                     _ => {
@@ -395,6 +439,7 @@ impl CommandHandler {
                             *guard = Some(ConversationStep::WaitingForInterval {
                                 alias,
                                 url,
+                                source_type,
                                 selector,
                                 mode,
                             });
@@ -417,12 +462,17 @@ impl CommandHandler {
                     MonitorMode::Content   => "content",
                     MonitorMode::Existence => "exists",
                 };
+                let source_label = match source_type {
+                    SourceType::Browser => "browser",
+                    SourceType::Flare   => "flare",
+                };
                 let config = MonitorConfig {
                     alias: alias.clone(),
                     url: Some(url.clone()),
                     selector: selector.clone(),
                     interval_secs,
                     mode,
+                    source_type,
                 };
 
                 // Persist and spawn.
@@ -440,12 +490,14 @@ impl CommandHandler {
                                 "✅ <b>Monitor added and running!</b>\n\n\
                                  🏷 <b>Alias:</b>    <code>{}</code>\n\
                                  🌐 <b>URL:</b>      <code>{}</code>\n\
+                                 ⚙️ <b>Method:</b>   {}\n\
                                  🔍 <b>Selector:</b> <code>{}</code>\n\
                                  👁 <b>Mode:</b>     {}\n\
                                  ⏱ <b>Interval:</b> {} s\n\n\
                                  <i>Send /cancel at any time to abort a new /add.</i>",
                                 html_escape(&alias),
                                 html_escape(&url),
+                                source_label,
                                 html_escape(&selector),
                                 mode_label,
                                 interval_secs,
@@ -487,17 +539,22 @@ impl CommandHandler {
                         MonitorMode::Content   => "content 📝",
                         MonitorMode::Existence => "exists 👁",
                     };
+                    let source_label = match m.source_type {
+                        SourceType::Browser => "browser 🌐",
+                        SourceType::Flare   => "flare 🔥",
+                    };
                     let url_display = m.url.as_deref().unwrap_or("(no URL)");
                     format!(
                         "🏷 <b>{}</b>\n\
                          🌐 <code>{}</code>\n\
-                         🔍 <code>{}</code>\n\
-                         👁 {} · ⏱ {} s",
+                         ⚙️ {} · 👁 {} · ⏱ {} s\n\
+                         🔍 <code>{}</code>",
                         html_escape(&m.alias),
                         html_escape(url_display),
-                        html_escape(&m.selector),
+                        source_label,
                         mode_label,
                         m.interval_secs,
+                        html_escape(&m.selector),
                     )
                 })
                 .collect::<Vec<_>>()

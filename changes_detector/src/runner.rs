@@ -6,8 +6,12 @@ use tracing::{error, info, warn};
 
 use crate::{
     detector::{ChangeDetector, CheckResult},
-    monitor::{MonitorConfig, MonitorMode},
-    source::{browser::{BrowserMode, BrowserSource}, Source},
+    monitor::{MonitorConfig, MonitorMode, SourceType},
+    source::{
+        browser::{BrowserMode, BrowserSource},
+        flare::{FetchMode, FlareSolverSource},
+        Source,
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -29,6 +33,7 @@ pub trait Notifier: Send + Sync {
 #[derive(Clone)]
 pub struct MonitorSpawner {
     pub webdriver_url: String,
+    pub flaresolverr_url: String,
     pub notifier: Arc<dyn Notifier>,
     pub data_dir: PathBuf,
     /// Abort handles for every running monitor task, keyed by alias.
@@ -55,16 +60,32 @@ impl MonitorSpawner {
         };
 
         let handle = tokio::spawn(async move {
-            let browser_mode = match config.mode {
-                MonitorMode::Content   => BrowserMode::Content,
-                MonitorMode::Existence => BrowserMode::Existence,
+            let source: Arc<dyn Source> = match config.source_type {
+                SourceType::Browser => {
+                    let mode = match config.mode {
+                        MonitorMode::Content   => BrowserMode::Content,
+                        MonitorMode::Existence => BrowserMode::Existence,
+                    };
+                    Arc::new(BrowserSource::with_mode(
+                        url,
+                        Some(config.selector.clone()),
+                        s.webdriver_url.clone(),
+                        mode,
+                    ))
+                }
+                SourceType::Flare => {
+                    let mode = match config.mode {
+                        MonitorMode::Content   => FetchMode::Content,
+                        MonitorMode::Existence => FetchMode::Existence,
+                    };
+                    Arc::new(FlareSolverSource::new(
+                        url,
+                        Some(config.selector.clone()),
+                        mode,
+                        s.flaresolverr_url.clone(),
+                    ))
+                }
             };
-            let source: Arc<dyn Source> = Arc::new(BrowserSource::with_mode(
-                url,
-                Some(config.selector.clone()),
-                s.webdriver_url.clone(),
-                browser_mode,
-            ));
             let state_file = s.data_dir.join(format!("{}.state", config.alias));
             let detector = ChangeDetector::load(&state_file);
             run_loop(

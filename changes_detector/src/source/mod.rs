@@ -1,4 +1,5 @@
 pub mod browser;
+pub mod flare;
 
 use async_trait::async_trait;
 

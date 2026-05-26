@@ -8,6 +8,10 @@ pub struct Config {
     /// WebDriver server URL used by `BrowserSource` for every monitor.
     /// Default: `http://chrome:4444` (the service name in docker-compose).
     pub webdriver_url: String,
+    /// FlareSolverr API URL used by `FlareSolverSource` for monitors that
+    /// need Cloudflare bypass.
+    /// Default: `http://flaresolverr:8191` (the service name in docker-compose).
+    pub flaresolverr_url: String,
     /// Directory used for all state files and the monitor store.
     pub data_dir: PathBuf,
 }
@@ -23,6 +27,9 @@ impl Config {
         let webdriver_url = std::env::var("WEBDRIVER_URL")
             .unwrap_or_else(|_| "http://chrome:4444".into());
 
+        let flaresolverr_url = std::env::var("FLARESOLVERR_URL")
+            .unwrap_or_else(|_| "http://flaresolverr:8191".into());
+
         let data_dir = std::env::var("DATA_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/data"));
@@ -31,6 +38,7 @@ impl Config {
             telegram_bot_token,
             telegram_chat_id,
             webdriver_url,
+            flaresolverr_url,
             data_dir,
         })
     }
