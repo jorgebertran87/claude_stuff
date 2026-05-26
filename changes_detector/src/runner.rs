@@ -100,6 +100,33 @@ impl MonitorSpawner {
         self.tasks.lock().await.insert(alias, handle.abort_handle());
     }
 
+    /// Fetch the current text content of `config`'s selector using the
+    /// appropriate source backend.  Returns plain text — HTML tags stripped.
+    pub async fn fetch_text(&self, config: &MonitorConfig) -> anyhow::Result<String> {
+        let url = config
+            .url
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("Monitor has no URL configured"))?;
+
+        let source: Arc<dyn Source> = match config.source_type {
+            SourceType::Browser => Arc::new(BrowserSource::with_mode(
+                url,
+                Some(config.selector.clone()),
+                self.webdriver_url.clone(),
+                BrowserMode::Content,
+            )),
+            SourceType::Flare => Arc::new(FlareSolverSource::new(
+                url,
+                Some(config.selector.clone()),
+                FetchMode::Content,
+                self.flaresolverr_url.clone(),
+            )),
+        };
+
+        let html = source.fetch().await?;
+        Ok(strip_tags(&html))
+    }
+
     /// Abort the task for `alias` and remove it from the tracker.
     /// Returns `true` if a task was found and aborted.
     pub async fn remove(&self, alias: &str) -> bool {
@@ -168,4 +195,32 @@ pub async fn run_loop(
             Err(e) => error!("[{alias}] Detector error: {e}"),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Strip HTML tags from a string and collapse whitespace.
+/// Used to extract human-readable text from outerHTML for the /check command.
+pub fn strip_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            c if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    // Decode the most common HTML entities and collapse whitespace.
+    out.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }

@@ -158,13 +158,20 @@ impl CommandHandler {
             return;
         }
 
-        // Strip optional "@botname" suffix added in groups.
-        let command = text.split('@').next().unwrap_or("").trim();
-        match command {
-            "/add"            => self.cmd_add().await,
-            "/remove"         => self.cmd_remove().await,
-            "/status" | "/check" => self.cmd_status().await,
-            "/cancel"         => {
+        // Strip optional "@botname" suffix added in groups, then split
+        // the command word from any trailing argument (e.g. "/check alias").
+        let full = text.split('@').next().unwrap_or("").trim();
+        let (cmd_word, cmd_arg) = match full.split_once(' ') {
+            Some((w, a)) => (w.trim(), a.trim()),
+            None         => (full, ""),
+        };
+
+        match cmd_word {
+            "/add"    => self.cmd_add().await,
+            "/remove" => self.cmd_remove().await,
+            "/status" => self.cmd_status().await,
+            "/check"  => self.cmd_check_content(cmd_arg).await,
+            "/cancel" => {
                 let _ = send_message(
                     &self.client, &self.bot_token, &self.chat_id.to_string(),
                     "❌ Cancelled.",
@@ -572,6 +579,78 @@ impl CommandHandler {
 
         if let Err(e) = send_message(&self.client, &self.bot_token, &chat, &reply).await {
             error!("Failed to send status reply: {e}");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // /check <alias> — fetch the current text content of a monitor's selector
+    // -----------------------------------------------------------------------
+
+    async fn cmd_check_content(&self, alias: &str) {
+        let chat = self.chat_id.to_string();
+
+        if alias.is_empty() {
+            let _ = send_message(
+                &self.client, &self.bot_token, &chat,
+                "ℹ️ Usage: /check <code>&lt;alias&gt;</code>\n\
+                 <i>Fetches the current text content of the selector for that monitor.</i>\n\n\
+                 Use /status to see available aliases.",
+            ).await;
+            return;
+        }
+
+        // Look up the monitor config.
+        let config = {
+            let guard = self.store.lock().await;
+            guard.all().iter().find(|m| m.alias == alias).cloned()
+        };
+
+        let config = match config {
+            Some(c) => c,
+            None => {
+                let _ = send_message(
+                    &self.client, &self.bot_token, &chat,
+                    &format!(
+                        "❌ No monitor named <code>{}</code>.\n\
+                         Use /status to see available aliases.",
+                        html_escape(alias),
+                    ),
+                ).await;
+                return;
+            }
+        };
+
+        // Send a placeholder while fetching (can take up to 60 s via FlareSolverr).
+        let placeholder_id = match send_message(
+            &self.client, &self.bot_token, &chat,
+            &format!("🔄 Fetching <code>{}</code>…", html_escape(alias)),
+        ).await {
+            Ok(id) => id,
+            Err(e) => { error!("Failed to send check placeholder: {e}"); return; }
+        };
+
+        let reply = match self.spawner.fetch_text(&config).await {
+            Ok(text) if text.is_empty() => format!(
+                "🔍 <b>{}</b>\n\n<i>(empty — selector matched but contained no text)</i>",
+                html_escape(alias),
+            ),
+            Ok(text) => format!(
+                "🔍 <b>{}</b>\n\n<code>{}</code>",
+                html_escape(alias),
+                html_escape(&text),
+            ),
+            Err(e) => {
+                warn!("check_content fetch failed for '{alias}': {e}");
+                format!(
+                    "❌ Fetch failed for <code>{}</code>:\n<i>{}</i>",
+                    html_escape(alias),
+                    html_escape(&e.to_string()),
+                )
+            }
+        };
+
+        if let Err(e) = edit_message(&self.client, &self.bot_token, &chat, placeholder_id, &reply).await {
+            error!("Failed to edit check reply: {e}");
         }
     }
 
