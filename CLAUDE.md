@@ -48,6 +48,17 @@ Make targeted, minimal fixes. Default to the smallest possible diff that solves 
 - Test pattern: Gherkin feature files + cucumber for both unit (fake infrastructure) and integration (real I/O with mocks). See `voice_assistant` and `changes_detector` for reference.
 - `serde_json = "1"` is always a dev-dependency when using `wiremock`.
 
+## Skills
+
+Use these slash commands instead of ad-hoc prompts — each one encodes the correct workflow for its task:
+
+| Skill | When to use |
+|---|---|
+| `/tdd <feature>` | Building something new. Writes the Gherkin feature file first, stops for your approval, then implements and loops in Docker until all tests are green. Never writes production code before you confirm the spec. |
+| `/refactor <goal>` | Changing existing code. Scopes the change upfront (stops for plan approval if >2 functions or >3 files), applies it, then self-corrects in a Docker loop until green. Never surfaces intermediate compile errors to you. |
+| `/commit` | Committing. Detects all projects with changes, runs their test suites in parallel, and commits only if every project is green. |
+| `/simplify` | Code-quality pass. Runs three parallel review agents (reuse, quality, efficiency) across the **whole codebase**, then applies the findings. |
+
 ## Commit Policy
 
 **Never commit without green tests.** Run the full test suite in Docker first. If anything fails or is unexpectedly skipped, stop and show the output before committing.
