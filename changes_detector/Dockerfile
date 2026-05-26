@@ -23,7 +23,16 @@ FROM builder AS test
 
 # Merge the test-specific Cargo entries (dev-dependencies + [[test]] targets).
 COPY config/Cargo-test.toml ./
-RUN cat Cargo-test.toml >> Cargo.toml
+RUN cat Cargo-test.toml >> Cargo.toml \
+    && mkdir -p tests/unit tests/integration \
+    && printf 'fn main() {}\n' | tee \
+         tests/unit/change_detector.rs \
+         tests/unit/monitor_spawner.rs \
+         tests/unit/strip_tags.rs \
+         tests/integration/monitor_store.rs \
+         tests/integration/flare_source.rs > /dev/null \
+    && cargo test --no-run \
+    && rm -rf tests
 
 # Copy test files and feature files.
 COPY tests/ tests/
