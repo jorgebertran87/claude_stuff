@@ -127,6 +127,24 @@ impl MonitorSpawner {
         Ok(strip_tags(&html))
     }
 
+    /// Abort the running task for `alias` without removing it from the store.
+    /// Returns `true` if a task was found and aborted.
+    /// (The caller is responsible for persisting the paused state in MonitorStore.)
+    pub async fn pause(&self, alias: &str) -> bool {
+        if let Some(handle) = self.tasks.lock().await.remove(alias) {
+            handle.abort();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Spawn a fresh task for a previously-paused monitor config.
+    /// Equivalent to `spawn()` — provided as a named alias for clarity.
+    pub async fn resume(&self, config: MonitorConfig) {
+        self.spawn(config).await;
+    }
+
     /// Abort the task for `alias` and remove it from the tracker.
     /// Returns `true` if a task was found and aborted.
     pub async fn remove(&self, alias: &str) -> bool {

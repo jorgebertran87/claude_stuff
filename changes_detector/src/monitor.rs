@@ -43,6 +43,10 @@ pub struct MonitorConfig {
     /// Cloudflare-protected sites.
     #[serde(default)]
     pub source_type: SourceType,
+    /// When `true` the monitor is kept in the store but its polling task
+    /// is not running.  Persisted so paused monitors survive restarts.
+    #[serde(default)]
+    pub paused: bool,
 }
 
 /// Persists the list of dynamic monitors to `/data/monitors.json`.
@@ -69,6 +73,18 @@ impl MonitorStore {
     pub fn add(&mut self, config: MonitorConfig) -> anyhow::Result<()> {
         self.monitors.push(config);
         self.save()
+    }
+
+    /// Set the `paused` flag for a monitor.
+    /// Returns `true` if the alias was found.
+    pub fn set_paused(&mut self, alias: &str, paused: bool) -> anyhow::Result<bool> {
+        if let Some(m) = self.monitors.iter_mut().find(|m| m.alias == alias) {
+            m.paused = paused;
+            self.save()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// Remove the monitor with the given alias from the store.

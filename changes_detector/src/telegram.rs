@@ -173,6 +173,8 @@ impl CommandHandler {
         match cmd_word {
             "/add"    => self.cmd_add().await,
             "/remove" => self.cmd_remove().await,
+            "/pause"  => self.cmd_pause(cmd_arg).await,
+            "/resume" => self.cmd_resume(cmd_arg).await,
             "/status" => self.cmd_status().await,
             "/check"  => self.cmd_check_content(cmd_arg).await,
             "/cancel" => {
@@ -484,6 +486,7 @@ impl CommandHandler {
                     interval_secs,
                     mode,
                     source_type,
+                    paused: false,
                 };
 
                 // Persist and spawn.
@@ -546,6 +549,7 @@ impl CommandHandler {
             let list = all
                 .iter()
                 .map(|m| {
+                    let status_icon = if m.paused { "⏸" } else { "▶️" };
                     let mode_label = match m.mode {
                         MonitorMode::Content   => "content 📝",
                         MonitorMode::Existence => "exists 👁",
@@ -554,20 +558,20 @@ impl CommandHandler {
                         SourceType::Browser => "browser 🌐",
                         SourceType::Flare   => "flare 🔥",
                     };
-                    let url_display = m.url.as_deref().unwrap_or("(no URL)");
                     let url_line = match &m.url {
                         Some(u) => format!(
                             "🌐 <a href=\"{}\">{}</a>",
                             html_escape(u),
                             html_escape(u),
                         ),
-                        None => format!("🌐 {}", html_escape(url_display)),
+                        None => "🌐 (no URL)".to_string(),
                     };
                     format!(
-                        "🏷 <b>{}</b>\n\
+                        "{} <b>{}</b>\n\
                          {}\n\
                          ⚙️ {} · 👁 {} · ⏱ {} s\n\
                          🔍 <code>{}</code>",
+                        status_icon,
                         html_escape(&m.alias),
                         url_line,
                         source_label,
@@ -592,6 +596,106 @@ impl CommandHandler {
         if let Err(e) = send_message(&self.client, &self.bot_token, &chat, &reply).await {
             error!("Failed to send status reply: {e}");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // /pause <alias> — stop polling without removing the monitor
+    // -----------------------------------------------------------------------
+
+    async fn cmd_pause(&self, alias: &str) {
+        let chat = self.chat_id.to_string();
+
+        if alias.is_empty() {
+            let _ = send_message(
+                &self.client, &self.bot_token, &chat,
+                "ℹ️ Usage: /pause <code>&lt;alias&gt;</code>",
+            ).await;
+            return;
+        }
+
+        // Mark as paused in the store first.
+        let store_result = {
+            let mut guard = self.store.lock().await;
+            guard.set_paused(alias, true)
+        };
+
+        let reply = match store_result {
+            Err(e) => format!(
+                "❌ Failed to persist pause state for <code>{}</code>: {}",
+                html_escape(alias), html_escape(&e.to_string()),
+            ),
+            Ok(false) => format!(
+                "❌ No monitor named <code>{}</code>.\n\
+                 Use /status to see available aliases.",
+                html_escape(alias),
+            ),
+            Ok(true) => {
+                // Abort the running task (may already be absent if it wasn't running).
+                self.spawner.pause(alias).await;
+                format!(
+                    "⏸ Monitor <code>{}</code> paused.\n\
+                     Use /resume <code>{}</code> to restart it.",
+                    html_escape(alias), html_escape(alias),
+                )
+            }
+        };
+
+        let _ = send_message(&self.client, &self.bot_token, &chat, &reply).await;
+    }
+
+    // -----------------------------------------------------------------------
+    // /resume <alias> — restart a paused monitor
+    // -----------------------------------------------------------------------
+
+    async fn cmd_resume(&self, alias: &str) {
+        let chat = self.chat_id.to_string();
+
+        if alias.is_empty() {
+            let _ = send_message(
+                &self.client, &self.bot_token, &chat,
+                "ℹ️ Usage: /resume <code>&lt;alias&gt;</code>",
+            ).await;
+            return;
+        }
+
+        // Look up the config and clear the paused flag.
+        let result = {
+            let mut guard = self.store.lock().await;
+            let config = guard.all().iter().find(|m| m.alias == alias).cloned();
+            match config {
+                None => Err("not_found".to_string()),
+                Some(c) if !c.paused => Err("not_paused".to_string()),
+                Some(c) => match guard.set_paused(alias, false) {
+                    Ok(_)  => Ok(c),
+                    Err(e) => Err(e.to_string()),
+                },
+            }
+        };
+
+        let reply = match result {
+            Err(e) if e == "not_found" => format!(
+                "❌ No monitor named <code>{}</code>.\n\
+                 Use /status to see available aliases.",
+                html_escape(alias),
+            ),
+            Err(e) if e == "not_paused" => format!(
+                "ℹ️ Monitor <code>{}</code> is already running.",
+                html_escape(alias),
+            ),
+            Err(e) => format!(
+                "❌ Failed to persist resume state for <code>{}</code>: {}",
+                html_escape(alias), html_escape(&e),
+            ),
+            Ok(config) => {
+                self.spawner.resume(config).await;
+                format!(
+                    "▶️ Monitor <code>{}</code> resumed.",
+                    html_escape(alias),
+                )
+            }
+        };
+
+        let _ = send_message(&self.client, &self.bot_token, &chat, &reply).await;
     }
 
     // -----------------------------------------------------------------------

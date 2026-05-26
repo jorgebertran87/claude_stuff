@@ -49,6 +49,10 @@ async fn main() -> anyhow::Result<()> {
     let store = {
         let loaded = MonitorStore::load(&cfg.data_dir);
         for monitor_cfg in loaded.all() {
+            if monitor_cfg.paused {
+                info!("Skipping paused monitor: {}", monitor_cfg.alias);
+                continue;
+            }
             info!("Resuming monitor: {} ({})", monitor_cfg.alias, monitor_cfg.selector);
             spawner.spawn(monitor_cfg.clone()).await;
         }
