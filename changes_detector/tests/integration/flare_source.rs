@@ -26,25 +26,18 @@ impl std::fmt::Debug for FlareWorld {
 
 impl Default for FlareWorld {
     fn default() -> Self {
-        Self {
-            server:       None,
-            server_uri:   String::new(),
-            source:       None,
-            fetch_result: None,
-        }
+        Self { server: None, server_uri: String::new(), source: None, fetch_result: None }
     }
 }
 
 // ── Given ─────────────────────────────────────────────────────────────────────
 
-/// Mount a mock FlareSolverr that returns an HTML page containing the
-/// given CSS element (class selector) with the specified text content.
 #[given(regex = r#"^a mock FlareSolverr returning a page with element "([^"]+)" containing "([^"]+)"$"#)]
 async fn given_mock_with_element(world: &mut FlareWorld, selector: String, text: String) {
-    let (tag, class) = parse_selector(&selector);
-    let html = format!(
-        r#"<html><body><{tag} class="{class}">{text}</{tag}></body></html>"#,
-    );
+    // Split "tag.class" once to build matching HTML; sufficient for the
+    // single-class selectors used in these tests (e.g. "div.content").
+    let (tag, class) = selector.split_once('.').unwrap_or((&selector, ""));
+    let html = format!(r#"<html><body><{tag} class="{class}">{text}</{tag}></body></html>"#);
 
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -76,22 +69,12 @@ async fn given_mock_error(world: &mut FlareWorld) {
 
 #[given(regex = r#"^a FlareSolverSource in content mode targeting selector "([^"]+)"$"#)]
 fn given_source_content(world: &mut FlareWorld, selector: String) {
-    world.source = Some(FlareSolverSource::new(
-        "http://example.com".into(),
-        Some(selector),
-        FetchMode::Content,
-        world.server_uri.clone(),
-    ));
+    make_source(world, selector, FetchMode::Content);
 }
 
 #[given(regex = r#"^a FlareSolverSource in existence mode targeting selector "([^"]+)"$"#)]
 fn given_source_existence(world: &mut FlareWorld, selector: String) {
-    world.source = Some(FlareSolverSource::new(
-        "http://example.com".into(),
-        Some(selector),
-        FetchMode::Existence,
-        world.server_uri.clone(),
-    ));
+    make_source(world, selector, FetchMode::Existence);
 }
 
 // ── When ──────────────────────────────────────────────────────────────────────
@@ -122,11 +105,7 @@ fn then_err(world: &mut FlareWorld) {
 
 #[then(regex = r#"^the result contains "([^"]+)"$"#)]
 fn then_contains(world: &mut FlareWorld, needle: String) {
-    let text = world
-        .fetch_result
-        .as_ref()
-        .unwrap()
-        .as_ref()
+    let text = world.fetch_result.as_ref().unwrap().as_ref()
         .unwrap_or_else(|e| panic!("fetch failed: {e}"));
     assert!(
         text.contains(&needle),
@@ -136,25 +115,20 @@ fn then_contains(world: &mut FlareWorld, needle: String) {
 
 #[then(regex = r#"^the result is "([^"]+)"$"#)]
 fn then_equals(world: &mut FlareWorld, expected: String) {
-    let text = world
-        .fetch_result
-        .as_ref()
-        .unwrap()
-        .as_ref()
+    let text = world.fetch_result.as_ref().unwrap().as_ref()
         .unwrap_or_else(|e| panic!("fetch failed: {e}"));
     assert_eq!(text, &expected, "result mismatch");
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Parse a simple "tag.class" CSS selector into (tag, class).
-/// e.g. "div.content" → ("div", "content")
-fn parse_selector(selector: &str) -> (&str, &str) {
-    if let Some((tag, class)) = selector.split_once('.') {
-        (tag, class)
-    } else {
-        (selector, "")
-    }
+fn make_source(world: &mut FlareWorld, selector: String, mode: FetchMode) {
+    world.source = Some(FlareSolverSource::new(
+        "http://example.com".into(),
+        Some(selector),
+        mode,
+        world.server_uri.clone(),
+    ));
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────

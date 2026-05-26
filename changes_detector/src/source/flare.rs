@@ -15,6 +15,7 @@ pub struct FlareSolverSource {
     mode: FetchMode,
     api_url: String,
     location: String,
+    client: reqwest::Client,
 }
 
 /// What to return from the parsed HTML.
@@ -38,7 +39,7 @@ impl FlareSolverSource {
             (Some(s), _)                    => format!("{url}  [{s}]"),
             _                               => url.clone(),
         };
-        Self { url, selector, mode, api_url, location }
+        Self { url, selector, mode, api_url, location, client: reqwest::Client::new() }
     }
 }
 
@@ -67,10 +68,9 @@ impl Source for FlareSolverSource {
     }
 
     async fn fetch(&self) -> anyhow::Result<String> {
-        let client = reqwest::Client::new();
         let api_endpoint = format!("{}/v1", self.api_url);
 
-        let resp = client
+        let resp = self.client
             .post(&api_endpoint)
             .json(&serde_json::json!({
                 "cmd":        "request.get",

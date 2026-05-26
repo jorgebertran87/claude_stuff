@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 // ---------------------------------------------------------------------------
 
 /// The outcome of a single `check` call.
+#[derive(Debug)]
 pub enum CheckResult {
     /// Content is identical to the last known state — nothing to do.
     NoChange,

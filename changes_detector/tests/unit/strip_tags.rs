@@ -19,18 +19,14 @@ fn when_strip(world: &mut StripWorld, html: String) {
 
 #[then(regex = r#"^the stripped result is "(.+)"$"#)]
 fn then_result(world: &mut StripWorld, expected: String) {
-    // Unescape \" so the feature file can test literal double-quote output.
+    // Unescape \" so the feature file can test a literal double-quote in output.
     let expected = expected.replace("\\\"", "\"");
-    assert_eq!(
-        world.result, expected,
-        "strip_tags result mismatch"
-    );
+    assert_eq!(world.result, expected, "strip_tags result mismatch");
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-fn main() {
-    futures::executor::block_on(
-        StripWorld::run("features/strip_tags.feature"),
-    );
+#[tokio::main]
+async fn main() {
+    StripWorld::run("features/strip_tags.feature").await;
 }

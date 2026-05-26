@@ -19,7 +19,7 @@ impl std::fmt::Debug for StoreWorld {
 
 impl Default for StoreWorld {
     fn default() -> Self {
-        let dir  = tempfile::tempdir().unwrap();
+        let dir   = tempfile::tempdir().unwrap();
         let store = MonitorStore::load(dir.path());
         Self { data_dir: dir, store }
     }
@@ -28,9 +28,7 @@ impl Default for StoreWorld {
 // ── Given ─────────────────────────────────────────────────────────────────────
 
 #[given("a monitor store in a temporary directory")]
-fn given_store(_world: &mut StoreWorld) {
-    // Default already creates a fresh store — nothing to do.
-}
+fn given_store(_world: &mut StoreWorld) {}
 
 // ── When ──────────────────────────────────────────────────────────────────────
 
@@ -71,10 +69,7 @@ fn when_reload(world: &mut StoreWorld) {
 
 #[then(regex = r"^the store has (\d+) monitors$")]
 fn then_count(world: &mut StoreWorld, expected: usize) {
-    assert_eq!(
-        world.store.all().len(), expected,
-        "monitor count mismatch"
-    );
+    assert_eq!(world.store.all().len(), expected, "monitor count mismatch");
 }
 
 #[then(regex = r#"^the store contains monitor "([^"]+)"$"#)]
@@ -85,22 +80,24 @@ fn then_contains(world: &mut StoreWorld, alias: String) {
 
 #[then(regex = r#"^monitor "([^"]+)" is paused$"#)]
 fn then_paused(world: &mut StoreWorld, alias: String) {
-    let monitor = world.store.all().iter().find(|m| m.alias == alias)
-        .unwrap_or_else(|| panic!("monitor \"{alias}\" not found"));
-    assert!(monitor.paused, "expected monitor \"{alias}\" to be paused");
+    assert!(find_monitor(&world.store, &alias).paused, "expected monitor \"{alias}\" to be paused");
 }
 
 #[then(regex = r#"^monitor "([^"]+)" is not paused$"#)]
 fn then_not_paused(world: &mut StoreWorld, alias: String) {
-    let monitor = world.store.all().iter().find(|m| m.alias == alias)
-        .unwrap_or_else(|| panic!("monitor \"{alias}\" not found"));
-    assert!(!monitor.paused, "expected monitor \"{alias}\" to not be paused");
+    assert!(!find_monitor(&world.store, &alias).paused, "expected monitor \"{alias}\" to not be paused");
+}
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+
+fn find_monitor<'a>(store: &'a MonitorStore, alias: &str) -> &'a MonitorConfig {
+    store.all().iter().find(|m| m.alias == alias)
+        .unwrap_or_else(|| panic!("monitor \"{alias}\" not found"))
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-fn main() {
-    futures::executor::block_on(
-        StoreWorld::run("features/monitor_store.feature"),
-    );
+#[tokio::main]
+async fn main() {
+    StoreWorld::run("features/monitor_store.feature").await;
 }
