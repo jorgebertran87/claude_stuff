@@ -10,15 +10,26 @@ WORKDIR /build
 
 # Cache dependencies separately from application code.
 COPY Cargo.toml Cargo.lock* ./
-RUN mkdir src && echo 'fn main(){}' > src/main.rs \
+RUN mkdir src && echo 'fn main(){}' > src/main.rs && touch src/lib.rs \
     && cargo build --release \
     && rm -rf src
 
 # Build the real source.
 COPY src ./src
-RUN touch src/main.rs && cargo build --release
+RUN touch src/main.rs src/lib.rs && cargo build --release
 
-# ─── Stage 2: runtime ────────────────────────────────────────────────────────
+# ─── Stage 2: test ───────────────────────────────────────────────────────────
+FROM builder AS test
+
+# Merge the test-specific Cargo entries (dev-dependencies + [[test]] targets).
+COPY config/Cargo-test.toml ./
+RUN cat Cargo-test.toml >> Cargo.toml
+
+# Copy test files and feature files.
+COPY tests/ tests/
+COPY features/ features/
+
+# ─── Stage 3: runtime ────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

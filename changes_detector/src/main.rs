@@ -1,16 +1,9 @@
-mod config;
-mod detector;
-mod monitor;
-mod runner;
-mod source;
-mod telegram;
-
 use std::{collections::HashMap, sync::Arc};
 
-use config::Config;
-use monitor::MonitorStore;
-use runner::MonitorSpawner;
-use telegram::{CommandHandler, TelegramNotifier};
+use changes_detector::config::Config;
+use changes_detector::monitor::MonitorStore;
+use changes_detector::runner::MonitorSpawner;
+use changes_detector::telegram::{CommandHandler, TelegramNotifier};
 use tokio::sync::Mutex;
 use tracing::info;
 
