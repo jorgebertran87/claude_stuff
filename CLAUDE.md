@@ -14,6 +14,8 @@ All builds and tests run inside Docker. Per-project commands:
 
 Run the project's `Makefile` targets when they exist (`make test`, `make test-integration`).
 
+**When multiple projects have changes, run all of their test suites in parallel** — issue all `make test` calls as parallel `Bash` tool calls in a single response, then wait for all results before proceeding.
+
 ### Mutation Testing (Rust projects)
 
 Use `cargo-mutants` via the `mutants` Docker stage to verify test suite quality:
