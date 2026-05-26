@@ -77,7 +77,8 @@ impl Source for BrowserSource {
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
-                    "--headless=new"
+                    "--headless=new",
+                    "--disable-blink-features=AutomationControlled"
                 ]
             }),
         );
@@ -100,6 +101,16 @@ impl Source for BrowserSource {
 
 impl BrowserSource {
     async fn extract(&self, client: &fantoccini::Client) -> anyhow::Result<String> {
+        // Mask the webdriver flag before navigating so bot-detection scripts
+        // that check navigator.webdriver don't intercept the page.
+        let _ = client
+            .execute(
+                "Object.defineProperty(navigator, 'webdriver', \
+                 { get: () => undefined });",
+                vec![],
+            )
+            .await;
+
         client
             .goto(&self.url)
             .await
