@@ -29,7 +29,14 @@ RUN cat Cargo-test.toml >> Cargo.toml
 COPY tests/ tests/
 COPY features/ features/
 
-# ─── Stage 3: runtime ────────────────────────────────────────────────────────
+# ─── Stage 3: mutants ────────────────────────────────────────────────────────
+FROM test AS mutants
+
+RUN cargo install --locked cargo-mutants@26.0.0
+
+COPY config/mutants.toml config/mutants-integration.toml config/
+
+# ─── Stage 4: runtime ────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

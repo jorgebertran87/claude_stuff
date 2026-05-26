@@ -1,0 +1,1 @@
+exclude_globs = ["src/main.rs", "src/detector.rs", "src/monitor.rs", "src/runner.rs"]
