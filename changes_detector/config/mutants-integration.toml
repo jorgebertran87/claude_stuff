@@ -1,1 +1,10 @@
-exclude_globs = ["src/main.rs", "src/detector.rs", "src/monitor.rs", "src/runner.rs"]
+exclude_globs = [
+    "src/main.rs",
+    "src/lib.rs",
+    "src/config.rs",
+    "src/detector.rs",
+    "src/runner.rs",
+    "src/telegram.rs",
+    "src/source/browser.rs",
+    "src/source/mod.rs",
+]

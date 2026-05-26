@@ -1,1 +1,14 @@
-exclude_globs = ["src/main.rs", "src/source/**"]
+exclude_globs = [
+    "src/main.rs",
+    "src/lib.rs",
+    "src/config.rs",
+    "src/source/**",
+    "src/monitor.rs",
+    "src/telegram.rs",
+]
+exclude_re = [
+    "MonitorSpawner::spawn",
+    "MonitorSpawner::fetch_text",
+    "MonitorSpawner::resume",
+    "run_loop",
+]

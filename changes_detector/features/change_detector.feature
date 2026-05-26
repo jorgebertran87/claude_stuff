@@ -20,6 +20,12 @@ Feature: Change detector
     And the diff contains "- old line"
     And the diff contains "+ new line"
 
+  Scenario: Each changed line in the diff is separated by exactly one newline
+    Given a change detector seeded with "old line"
+    When I check "new line"
+    Then the result is Changed
+    And the diff is exactly "- old line\n+ new line\n"
+
   Scenario: Second identical check after a change returns no change
     Given a change detector seeded with "version 1"
     When I check "version 2"

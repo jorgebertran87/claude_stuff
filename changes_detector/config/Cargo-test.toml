@@ -12,6 +12,11 @@ path    = "tests/unit/change_detector.rs"
 harness = false
 
 [[test]]
+name    = "monitor_spawner"
+path    = "tests/unit/monitor_spawner.rs"
+harness = false
+
+[[test]]
 name    = "strip_tags"
 path    = "tests/unit/strip_tags.rs"
 harness = false

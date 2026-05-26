@@ -92,6 +92,17 @@ fn then_diff_contains(world: &mut DetectorWorld, needle: String) {
     }
 }
 
+#[then(regex = r#"^the diff is exactly "(.+)"$"#)]
+fn then_diff_is(world: &mut DetectorWorld, expected: String) {
+    // Unescape \n so the feature file can express literal newlines.
+    let expected = expected.replace("\\n", "\n");
+    if let Some(CheckResult::Changed { diff }) = &world.last_result {
+        assert_eq!(diff, &expected, "diff format mismatch");
+    } else {
+        panic!("expected Changed result, got: {:?}", world.last_result);
+    }
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 #[tokio::main]
