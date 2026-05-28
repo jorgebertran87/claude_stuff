@@ -6,6 +6,10 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
+build-prod:
+	docker buildx build --platform $(PROD_PLATFORM) \
+		-t $(DOCKER_USERNAME)/$(IMAGE) --push .
+
 UNIT_TESTS        = $(patsubst tests/unit/%.rs,--test %,$(wildcard tests/unit/*.rs))
 INTEGRATION_TESTS = $(patsubst tests/integration/%.rs,--test %,$(wildcard tests/integration/*.rs))
 
@@ -41,4 +45,13 @@ run:
 	docker compose up --build -d
 	docker compose logs -f
 
-.PHONY: build test test-integration test-all mutants mutants-integration run
+run-prod:
+	RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) docker compose up --no-build -d
+	docker compose logs -f
+
+deploy:
+	$(MAKE) test
+	$(MAKE) build-prod
+	scp Makefile docker-compose.yml pequenin:~/changes_detector
+
+.PHONY: build build-prod test test-integration test-all mutants mutants-integration run run-prod deploy

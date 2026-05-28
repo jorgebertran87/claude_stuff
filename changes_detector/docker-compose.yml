@@ -1,7 +1,7 @@
 services:
 
   changes_detector:
-    build: .
+    image: ${RUN_IMAGE:-changes-detector}
     restart: unless-stopped
     env_file:
       - .env           # copy .env.example → .env and fill in your values

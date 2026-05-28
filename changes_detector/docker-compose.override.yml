@@ -1,0 +1,3 @@
+services:
+  changes_detector:
+    build: .
