@@ -4,7 +4,7 @@ use anyhow::Context;
 
 use services_controller::{
     config::Config,
-    control::docker::DockerController,
+    control::{compose::ComposeController, system::SystemCommandRunner},
     manager::ServiceManager,
     registry::ServiceRegistry,
     telegram::{http::HttpTelegramGateway, TelegramBot, TelegramGateway},
@@ -20,9 +20,9 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::from_env()?;
 
-    // Wire the hexagon: domain manager + Docker adapter behind the port.
+    // Wire the hexagon: domain manager + docker compose adapter behind the port.
     let registry = ServiceRegistry::load(&config.alias_config)?;
-    let controller = Arc::new(DockerController::new(config.docker_api_url));
+    let controller = Arc::new(ComposeController::new(Arc::new(SystemCommandRunner)));
     let manager = Arc::new(ServiceManager::new(registry, controller));
 
     let mut args = std::env::args().skip(1);

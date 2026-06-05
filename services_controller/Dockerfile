@@ -28,8 +28,8 @@ RUN cat Cargo-test.toml >> Cargo.toml \
     && printf 'fn main() {}\n' | tee \
          tests/unit/service_manager.rs \
          tests/unit/telegram_command.rs \
-         tests/integration/alias_registry.rs \
-         tests/integration/docker_control.rs > /dev/null \
+         tests/unit/compose_control.rs \
+         tests/integration/alias_registry.rs > /dev/null \
     && cargo test --no-run \
     && rm -rf tests
 
@@ -53,9 +53,17 @@ COPY config/mutants.toml config/mutants-integration.toml config/
 # ─── Stage 4: runtime ────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 
+# Docker CLI + compose plugin so the controller can run `docker compose`
+# against the host daemon (its socket is mounted at runtime).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    libssl3 \
+        ca-certificates curl gnupg libssl3 \
+    && install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+    && chmod a+r /etc/apt/keyrings/docker.asc \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        docker-ce-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
 
 # Directory for the alias config — mount your aliases.yaml here.
@@ -63,8 +71,5 @@ RUN mkdir -p /config
 
 COPY --from=builder /build/target/release/services_controller /usr/local/bin/services_controller
 
-# Run as a non-root user.
-RUN useradd -r -M -s /bin/false appuser
-USER appuser
-
+# Runs as root: driving the host Docker socket requires access to it.
 ENTRYPOINT ["/usr/local/bin/services_controller"]

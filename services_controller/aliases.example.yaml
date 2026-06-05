@@ -1,5 +1,4 @@
-# Map stable aliases to the underlying service names your backend understands.
-# For the Docker adapter, the value is the container name.
-web: nginx
-db: postgres
-cache: redis
+# Map each alias to the directory that contains that service's
+# docker-compose.yml. The controller runs `docker compose` in it.
+web: /srv/web
+db: /srv/db

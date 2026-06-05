@@ -17,11 +17,11 @@ path    = "tests/unit/telegram_command.rs"
 harness = false
 
 [[test]]
-name    = "alias_registry"
-path    = "tests/integration/alias_registry.rs"
+name    = "compose_control"
+path    = "tests/unit/compose_control.rs"
 harness = false
 
 [[test]]
-name    = "docker_control"
-path    = "tests/integration/docker_control.rs"
+name    = "alias_registry"
+path    = "tests/integration/alias_registry.rs"
 harness = false

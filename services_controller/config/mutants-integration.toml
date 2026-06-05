@@ -2,8 +2,10 @@ exclude_globs = [
     "src/main.rs",
     "src/lib.rs",
     "src/manager.rs",
-    "src/registry.rs",
     "src/command.rs",
     "src/control/mod.rs",
+    "src/control/compose.rs",
+    "src/control/system.rs",
     "src/telegram/mod.rs",
+    "src/telegram/http.rs",
 ]

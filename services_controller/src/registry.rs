@@ -1,13 +1,13 @@
 use std::{collections::HashMap, path::Path};
 
-/// Maps stable, human-friendly aliases to the underlying service names that
-/// the active backend understands (e.g. Docker container names).
+/// Maps stable, human-friendly aliases to the target each backend understands.
 ///
-/// Declared in a YAML config file:
+/// For the docker compose backend the target is the directory holding the
+/// service's `docker-compose.yml`. Declared in a YAML config file:
 ///
 /// ```yaml
-/// web: nginx
-/// db: postgres
+/// web: /srv/web
+/// db: /srv/db
 /// ```
 pub struct ServiceRegistry {
     aliases: HashMap<String, String>,
