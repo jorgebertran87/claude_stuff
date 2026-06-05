@@ -12,6 +12,11 @@ path    = "tests/unit/service_manager.rs"
 harness = false
 
 [[test]]
+name    = "telegram_command"
+path    = "tests/unit/telegram_command.rs"
+harness = false
+
+[[test]]
 name    = "alias_registry"
 path    = "tests/integration/alias_registry.rs"
 harness = false

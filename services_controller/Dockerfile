@@ -27,6 +27,7 @@ RUN cat Cargo-test.toml >> Cargo.toml \
     && mkdir -p tests/unit tests/integration \
     && printf 'fn main() {}\n' | tee \
          tests/unit/service_manager.rs \
+         tests/unit/telegram_command.rs \
          tests/integration/alias_registry.rs \
          tests/integration/docker_control.rs > /dev/null \
     && cargo test --no-run \
