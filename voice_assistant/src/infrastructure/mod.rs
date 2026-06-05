@@ -1,9 +1,13 @@
+pub mod audio;
+pub mod audio_player;
 pub mod claude_handler;
 pub mod google_sheets;
 pub mod minesweeper;
 pub mod skill_loader;
 pub mod speaker;
+pub mod speech;
 pub mod telegram_bot;
+pub mod transcriber;
 pub mod telegram_gateway;
 pub mod telegram_skills;
 pub mod token_usage;

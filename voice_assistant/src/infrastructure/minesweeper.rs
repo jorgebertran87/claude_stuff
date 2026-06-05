@@ -1,5 +1,8 @@
 use std::time::Duration;
 
+use shaku::Component;
+
+use crate::domain::ports::MinesweeperAnalyzer;
 use crate::infrastructure::telegram_skills::run_claude_skill;
 
 pub fn run_minesweeper_parser(bytes: &[u8]) -> Option<String> {
@@ -64,4 +67,20 @@ pub fn analyze_minesweeper_board(board: &str, caption: &str, model: &str) -> Str
     let prompt = format!("/minesweeper {board_json}\n\nPregunta del usuario: {caption}");
     eprintln!("[minesweeper: prompt]\n{prompt}");
     run_claude_skill(&prompt, model, Some("Bash,WebSearch"), "minesweeper")
+}
+
+// ── MinesweeperService ────────────────────────────────────────────────────────
+
+#[derive(Component)]
+#[shaku(interface = MinesweeperAnalyzer)]
+pub struct MinesweeperService;
+
+impl MinesweeperAnalyzer for MinesweeperService {
+    fn parse_board(&self, image: &[u8]) -> Option<String> {
+        run_minesweeper_parser(image)
+    }
+
+    fn analyze(&self, board: &str, caption: &str, model: &str) -> String {
+        analyze_minesweeper_board(board, caption, model)
+    }
 }

@@ -7,23 +7,37 @@ use std::sync::Arc;
 
 use shaku::{module, HasComponent, Interface};
 
+use crate::domain::model::{Language, WakeWord};
 use crate::domain::ports::{
-    GoogleSheetsGateway, ImageAnalyzer, OrderHandler, TextSynthesizer,
+    AudioCapturer, AudioPlayer, AudioSpeaker, GoogleSheetsGateway, ImageAnalyzer,
+    MinesweeperAnalyzer, OrderHandler, SkillCommands, TextSynthesizer, Transcriber,
 };
+use crate::domain::service::VoiceListenerService;
 use crate::infrastructure::{
+    audio::MicrophoneCapturer,
+    audio_player::FfplayAudioPlayer,
     claude_handler::{ClaudeBackend, ClaudeCliBackend, ClaudeCodeHandler,
                      ClaudeCodeHandlerParameters, ClaudeImageAnalyzer},
     google_sheets::GoogleSheetsGatewayImpl,
-    speaker::GttsTextSynthesizer,
+    minesweeper::MinesweeperService,
+    speaker::{GTTSSpeaker, GttsTextSynthesizer},
     telegram_bot::{TelegramBot, TelegramGateway, UreqGateway, UreqGatewayParameters},
+    telegram_skills::ClaudeSkillCommands,
+    transcriber::GoogleTranscriber,
 };
 
 // ── Interface marker impls ────────────────────────────────────────────────────
 
+impl Interface for dyn AudioCapturer {}
 impl Interface for dyn OrderHandler {}
+impl Interface for dyn Transcriber {}
+impl Interface for dyn AudioSpeaker {}
 impl Interface for dyn GoogleSheetsGateway {}
 impl Interface for dyn TextSynthesizer {}
 impl Interface for dyn ImageAnalyzer {}
+impl Interface for dyn MinesweeperAnalyzer {}
+impl Interface for dyn SkillCommands {}
+impl Interface for dyn AudioPlayer {}
 impl Interface for dyn ClaudeBackend {}
 impl Interface for dyn TelegramGateway {}
 
@@ -39,12 +53,18 @@ module! {
 
             // ── google ────────────────────────────────────────────────────────
             GoogleSheetsGatewayImpl,  // → GoogleSheetsGateway
+            GoogleTranscriber,        // → Transcriber
 
-            // ── text-to-speech ────────────────────────────────────────────────
+            // ── audio / speech ────────────────────────────────────────────────
+            MicrophoneCapturer,   // → AudioCapturer
             GttsTextSynthesizer,  // → TextSynthesizer
+            GTTSSpeaker,          // → AudioSpeaker
+            FfplayAudioPlayer,    // → AudioPlayer
 
             // ── telegram ─────────────────────────────────────────────────────
             UreqGateway,          // → TelegramGateway  (token parameter)
+            MinesweeperService,   // → MinesweeperAnalyzer
+            ClaudeSkillCommands,  // → SkillCommands  (injects GoogleSheetsGateway)
         ],
         providers = []
     }
@@ -80,10 +100,28 @@ pub fn build_telegram_bot(token: String) -> TelegramBot {
         HasComponent::<dyn GoogleSheetsGateway>::resolve(&module),
         HasComponent::<dyn TextSynthesizer>::resolve(&module),
         HasComponent::<dyn ImageAnalyzer>::resolve(&module),
+        HasComponent::<dyn MinesweeperAnalyzer>::resolve(&module),
+        HasComponent::<dyn SkillCommands>::resolve(&module),
+        HasComponent::<dyn AudioPlayer>::resolve(&module),
         allowed,
     )
 }
 
+/// Create a fresh `OrderHandler`. Used both for direct-order (CLI) mode and as
+/// a factory passed to the Telegram bot (one handler per chat session).
 pub fn make_order_handler() -> Arc<dyn OrderHandler> {
     Arc::new(ClaudeCodeHandler::new())
+}
+
+/// Build a ready-to-use `VoiceListenerService`.
+pub fn build_voice_service(wake_word: WakeWord, language: Language) -> VoiceListenerService {
+    let module = build_module(String::new());
+    VoiceListenerService::new(
+        HasComponent::<dyn AudioCapturer>::resolve(&module),
+        HasComponent::<dyn Transcriber>::resolve(&module),
+        HasComponent::<dyn OrderHandler>::resolve(&module),
+        HasComponent::<dyn AudioSpeaker>::resolve(&module),
+        wake_word,
+        language,
+    )
 }

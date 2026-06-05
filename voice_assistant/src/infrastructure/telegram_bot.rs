@@ -1,16 +1,11 @@
 use std::collections::{HashMap, HashSet};
-use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::domain::ports::{GoogleSheetsGateway, ImageAnalyzer, OrderHandler, TextSynthesizer};
-use crate::infrastructure::claude_handler::ClaudeImageAnalyzer;
-use crate::infrastructure::google_sheets::GoogleSheetsGatewayImpl;
-use crate::infrastructure::minesweeper::analyze_minesweeper_board;
-use crate::infrastructure::speaker::GttsTextSynthesizer;
-use crate::infrastructure::telegram_skills::{
-    handle_bus, handle_cuentas, handle_volume, read_usage_report,
+use crate::domain::ports::{
+    AudioPlayer, GoogleSheetsGateway, ImageAnalyzer, MinesweeperAnalyzer, OrderHandler,
+    SkillCommands, TextSynthesizer,
 };
 
 // Re-export gateway types so external code (tests, container) keeps its import path.
@@ -31,67 +26,33 @@ fn resolve_model(name: &str) -> Option<&'static str> {
     }
 }
 
-fn play_audio_bytes(bytes: &[u8]) {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let tmp = format!("/tmp/tts_telegram_play_{nanos}.mp3");
-    if let Err(e) = std::fs::write(&tmp, bytes) {
-        eprintln!("[play_audio_bytes: failed to write tmp file: {e}]");
-        return;
-    }
-    match Command::new("ffplay")
-        .args(["-nodisp", "-autoexit", "-loglevel", "warning", &tmp])
-        .stdout(Stdio::null())
-        .status()
-    {
-        Ok(status) if status.success() => {}
-        Ok(status) => eprintln!("[play_audio_bytes: ffplay exited with {status}]"),
-        Err(e) => eprintln!("[play_audio_bytes: failed to spawn ffplay: {e}]"),
-    }
-    let _ = std::fs::remove_file(&tmp);
-}
-
 pub struct TelegramBot {
     gateway: Arc<dyn TelegramGateway>,
     sheets: Arc<dyn GoogleSheetsGateway>,
     synthesizer: Arc<dyn TextSynthesizer>,
     image_analyzer: Arc<dyn ImageAnalyzer>,
+    minesweeper: Arc<dyn MinesweeperAnalyzer>,
+    skills: Arc<dyn SkillCommands>,
+    audio_player: Arc<dyn AudioPlayer>,
     allowed_chat_ids: Vec<i64>,
 }
 
 impl TelegramBot {
-    pub fn new(token: String) -> Self {
-        let allowed: Vec<i64> = std::env::var("TELEGRAM_ALLOWED_CHAT_IDS")
-            .unwrap_or_default()
-            .split(',')
-            .filter_map(|s| s.trim().parse::<i64>().ok())
-            .collect();
-
-        if allowed.is_empty() {
-            eprintln!("[telegram bot initializing with token (hidden), allowed chats: all (no filter)]");
-        } else {
-            eprintln!("[telegram bot initializing with token (hidden), allowed chats: {:?}]", allowed);
-        }
-
-        Self {
-            gateway: Arc::new(UreqGateway::new(token)),
-            sheets: Arc::new(GoogleSheetsGatewayImpl),
-            synthesizer: Arc::new(GttsTextSynthesizer),
-            image_analyzer: Arc::new(ClaudeImageAnalyzer),
-            allowed_chat_ids: allowed,
-        }
-    }
-
+    #[allow(clippy::too_many_arguments)]
     pub fn with_injectable(
         gateway: Arc<dyn TelegramGateway>,
         sheets: Arc<dyn GoogleSheetsGateway>,
         synthesizer: Arc<dyn TextSynthesizer>,
         image_analyzer: Arc<dyn ImageAnalyzer>,
+        minesweeper: Arc<dyn MinesweeperAnalyzer>,
+        skills: Arc<dyn SkillCommands>,
+        audio_player: Arc<dyn AudioPlayer>,
         allowed_chat_ids: Vec<i64>,
     ) -> Self {
-        Self { gateway, sheets, synthesizer, image_analyzer, allowed_chat_ids }
+        Self {
+            gateway, sheets, synthesizer, image_analyzer,
+            minesweeper, skills, audio_player, allowed_chat_ids,
+        }
     }
 
     fn is_allowed(&self, chat_id: i64) -> bool {
@@ -122,6 +83,7 @@ impl TelegramBot {
 
     fn spawn_minesweeper_analysis(
         gateway: Arc<dyn TelegramGateway>,
+        minesweeper: Arc<dyn MinesweeperAnalyzer>,
         chat_id: i64,
         file_id: String,
         caption: String,
@@ -137,7 +99,7 @@ impl TelegramBot {
                 }
             };
             gateway.post_message(chat_id, "Analizando tablero de buscaminas...");
-            let json = match crate::infrastructure::minesweeper::run_minesweeper_parser(&bytes) {
+            let json = match minesweeper.parse_board(&bytes) {
                 Some(j) => j,
                 None => {
                     gateway.post_message(
@@ -150,7 +112,7 @@ impl TelegramBot {
             };
             eprintln!("[minesweeper: board]\n{json}");
             gateway.post_message(chat_id, &json);
-            let response = analyze_minesweeper_board(&json, &caption, &model);
+            let response = minesweeper.analyze(&json, &caption, &model);
             let msg = if response.trim().is_empty() {
                 "No pude obtener una respuesta de Claude.".to_string()
             } else {
@@ -192,7 +154,7 @@ impl TelegramBot {
                     let lower = caption.to_lowercase();
                     let handle = if lower.contains("buscaminas") || lower.contains("minesweeper") {
                         Self::spawn_minesweeper_analysis(
-                            Arc::clone(&self.gateway), update.chat_id,
+                            Arc::clone(&self.gateway), Arc::clone(&self.minesweeper), update.chat_id,
                             file_id.clone(), caption.to_string(), current_model.clone(),
                         )
                     } else {
@@ -213,7 +175,7 @@ impl TelegramBot {
                     let lower_text = text.to_lowercase();
                     let handle = if lower_text.contains("buscaminas") || lower_text.contains("minesweeper") {
                         Self::spawn_minesweeper_analysis(
-                            Arc::clone(&self.gateway), update.chat_id,
+                            Arc::clone(&self.gateway), Arc::clone(&self.minesweeper), update.chat_id,
                             file_id, text.to_string(), current_model.clone(),
                         )
                     } else {
@@ -279,7 +241,7 @@ impl TelegramBot {
             }
 
             if text == "/usage" {
-                let report = read_usage_report(".orders_tokens");
+                let report = self.skills.usage_report(".orders_tokens");
                 self.gateway.post_message(update.chat_id, &report);
                 continue;
             }
@@ -313,11 +275,11 @@ impl TelegramBot {
 
             if text == "/cuentas" {
                 let gateway = Arc::clone(&self.gateway);
-                let sheets  = Arc::clone(&self.sheets);
+                let skills  = Arc::clone(&self.skills);
                 let model   = current_model.clone();
                 let chat_id = update.chat_id;
                 handles.push(thread::spawn(move || {
-                    let msg = handle_cuentas(sheets.as_ref(), &model);
+                    let msg = skills.cuentas(&model);
                     gateway.post_message(chat_id, &msg);
                 }));
                 continue;
@@ -326,10 +288,11 @@ impl TelegramBot {
             if text.starts_with("/bus") {
                 let stop_code = text["/bus".len()..].trim().to_string();
                 let gateway   = Arc::clone(&self.gateway);
+                let skills    = Arc::clone(&self.skills);
                 let model     = current_model.clone();
                 let chat_id   = update.chat_id;
                 handles.push(thread::spawn(move || {
-                    let msg = handle_bus(&model, &stop_code);
+                    let msg = skills.bus(&model, &stop_code);
                     gateway.post_message(chat_id, &msg);
                 }));
                 continue;
@@ -337,7 +300,7 @@ impl TelegramBot {
 
             if text.starts_with("/volume") {
                 let arg = text["/volume".len()..].trim();
-                let msg = handle_volume(arg);
+                let msg = self.skills.volume(arg);
                 self.gateway.post_message(update.chat_id, &msg);
                 continue;
             }
@@ -364,7 +327,7 @@ impl TelegramBot {
                 if bytes.is_empty() {
                     eprintln!("[telegram: TTS synthesis failed]");
                 } else {
-                    play_audio_bytes(&bytes);
+                    self.audio_player.play(&bytes);
                     on_voice();
                 }
             }
@@ -392,6 +355,7 @@ impl TelegramBot {
         let last_voice: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
         let last_voice_bg = Arc::clone(&last_voice);
 
+        let audio_player_bg = Arc::clone(&self.audio_player);
         std::thread::spawn(move || {
             loop {
                 std::thread::sleep(Duration::from_secs(30));
@@ -399,13 +363,14 @@ impl TelegramBot {
                     .map(|t| t.elapsed())
                     .unwrap_or(Duration::ZERO);
                 if elapsed >= Duration::from_secs(300) {
-                    crate::infrastructure::speaker::disconnect_bt_speaker();
+                    audio_player_bg.disconnect();
                     *last_voice_bg.lock().unwrap() = None;
                 }
             }
         });
 
         let synthesizer = Arc::clone(&self.synthesizer);
+        let audio_player = Arc::clone(&self.audio_player);
         let speak_text = move |text: &str| {
             eprintln!("[voice_mode: synthesizing {} chars]", text.len());
             let bytes = synthesizer.synthesize_text(text);
@@ -413,7 +378,7 @@ impl TelegramBot {
                 eprintln!("[voice_mode: synthesis returned empty bytes, skipping playback]");
             } else {
                 eprintln!("[voice_mode: playing {} bytes]", bytes.len());
-                play_audio_bytes(&bytes);
+                audio_player.play(&bytes);
             }
         };
 

@@ -5,10 +5,13 @@ use std::time::Instant;
 use cucumber::{given, when, then, World};
 
 use voice_assistant::domain::ports::OrderHandler;
+use voice_assistant::infrastructure::audio_player::FfplayAudioPlayer;
 use voice_assistant::infrastructure::claude_handler::ClaudeImageAnalyzer;
 use voice_assistant::infrastructure::google_sheets::GoogleSheetsGatewayImpl;
+use voice_assistant::infrastructure::minesweeper::MinesweeperService;
 use voice_assistant::infrastructure::speaker::GttsTextSynthesizer;
 use voice_assistant::infrastructure::telegram_bot::{TelegramBot, TelegramGateway, TelegramUpdate};
+use voice_assistant::infrastructure::telegram_skills::ClaudeSkillCommands;
 
 // ── Fake gateway ──────────��────────────────────────────────────────────────────
 
@@ -112,6 +115,9 @@ fn given_bot(world: &mut TelegramWorld) {
         Arc::new(GoogleSheetsGatewayImpl),
         Arc::new(GttsTextSynthesizer),
         Arc::new(ClaudeImageAnalyzer),
+        Arc::new(MinesweeperService),
+        Arc::new(ClaudeSkillCommands::new(Arc::new(GoogleSheetsGatewayImpl))),
+        Arc::new(FfplayAudioPlayer),
         vec![],
     ));
 }
@@ -125,6 +131,9 @@ fn given_bot_restricted(world: &mut TelegramWorld, chat_id: i64) {
         Arc::new(GoogleSheetsGatewayImpl),
         Arc::new(GttsTextSynthesizer),
         Arc::new(ClaudeImageAnalyzer),
+        Arc::new(MinesweeperService),
+        Arc::new(ClaudeSkillCommands::new(Arc::new(GoogleSheetsGatewayImpl))),
+        Arc::new(FfplayAudioPlayer),
         vec![chat_id],
     ));
 }
