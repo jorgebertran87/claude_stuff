@@ -1,0 +1,5 @@
+# Map stable aliases to the underlying service names your backend understands.
+# For the Docker adapter, the value is the container name.
+web: nginx
+db: postgres
+cache: redis

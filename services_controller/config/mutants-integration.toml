@@ -1,0 +1,7 @@
+exclude_globs = [
+    "src/main.rs",
+    "src/lib.rs",
+    "src/manager.rs",
+    "src/registry.rs",
+    "src/control/mod.rs",
+]
