@@ -1,5 +1,7 @@
 # ─── Stage 1: build ──────────────────────────────────────────────────────────
-FROM rust:1-slim AS builder
+# Pinned to bookworm so the binary links against the same glibc as the
+# debian:bookworm-slim runtime (plain rust:1-slim now tracks trixie/glibc 2.39).
+FROM rust:1-slim-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
