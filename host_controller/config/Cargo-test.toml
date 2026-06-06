@@ -35,3 +35,8 @@ harness = false
 name    = "http_gateway"
 path    = "tests/integration/http_gateway.rs"
 harness = false
+
+[[test]]
+name    = "config"
+path    = "tests/unit/config.rs"
+harness = false
