@@ -5,6 +5,8 @@
 //! `http.rs` (added with the wiring). The bot depends only on the ports
 //! (`TelegramGateway`, `CommandExecutor`) plus the domain pieces.
 
+pub mod http;
+
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;

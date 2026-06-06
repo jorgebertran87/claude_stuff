@@ -10,5 +10,4 @@ exclude_globs = [
     "src/executor/mod.rs",
     "src/executor/ssh.rs",
     "src/telegram/mod.rs",
-    "src/telegram/http.rs",
 ]
