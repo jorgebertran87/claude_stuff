@@ -1,0 +1,9 @@
+# Unit mutants: domain logic only. Exclude entrypoints and the infrastructure
+# adapters (those are exercised by the integration suite, not unit tests).
+exclude_globs = [
+    "src/main.rs",
+    "src/lib.rs",
+    "src/config.rs",
+    "src/executor/system.rs",
+    "src/telegram/http.rs",
+]
