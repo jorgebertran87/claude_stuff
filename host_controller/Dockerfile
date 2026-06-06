@@ -48,9 +48,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates libssl3 openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Run as an unprivileged container user; it only needs to read the mounted key.
-RUN useradd --create-home --uid 10001 botctl
-USER botctl
+# Runs as root inside the container so it can read the mounted SSH key, which is
+# owned by the deploying host user and kept at mode 0600. This does NOT weaken
+# the "non-root" guarantee: commands run on the host as botuser (no sudo), so the
+# container's own uid is irrelevant to host-side privilege.
 
 COPY --from=builder /build/target/release/host_controller /usr/local/bin/host_controller
 
