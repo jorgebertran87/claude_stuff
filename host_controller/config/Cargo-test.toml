@@ -25,3 +25,8 @@ harness = false
 name    = "formatter"
 path    = "tests/unit/formatter.rs"
 harness = false
+
+[[test]]
+name    = "telegram_bot"
+path    = "tests/unit/telegram_bot.rs"
+harness = false
