@@ -11,4 +11,5 @@
 
 pub mod authorizer;
 pub mod executor;
+pub mod formatter;
 pub mod request;

@@ -20,3 +20,8 @@ harness = false
 name    = "ssh_executor"
 path    = "tests/unit/ssh_executor.rs"
 harness = false
+
+[[test]]
+name    = "formatter"
+path    = "tests/unit/formatter.rs"
+harness = false
