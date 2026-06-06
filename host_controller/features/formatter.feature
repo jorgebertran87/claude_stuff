@@ -19,6 +19,11 @@ Feature: Formatting command output for a Telegram reply
     When the output is formatted
     Then the reply contains "warning: deprecated"
 
+  Scenario: Stdout and stderr are combined on separate lines
+    Given command output with exit code 0, stdout "out", and stderr "err"
+    When the output is formatted
+    Then the reply joins "out" and "err" on separate lines
+
   Scenario: A command with no output still produces a reply
     Given command output with exit code 0 and no output
     When the output is formatted
@@ -27,11 +32,11 @@ Feature: Formatting command output for a Telegram reply
   Scenario: Output longer than the Telegram limit is truncated with a marker
     Given command output with exit code 0 and stdout of 5000 characters
     When the output is formatted
-    Then the reply is at most 4096 characters
+    Then the reply is exactly 4096 characters
     And the reply ends with "[truncated]"
 
   Scenario: The exit code survives truncation of long output
     Given command output with exit code 7 and stdout of 5000 characters
     When the output is formatted
     Then the reply contains "[exit 7]"
-    And the reply is at most 4096 characters
+    And the reply is exactly 4096 characters

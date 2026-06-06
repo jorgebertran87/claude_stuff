@@ -27,3 +27,8 @@ Feature: Authorizing who can run commands
     Given an allowlist of chats 1, -1002003000
     When chat -1002003000 is checked
     Then the chat is denied
+
+  Scenario: A chat id of zero is denied even if allowlisted
+    Given an allowlist of chats 0
+    When chat 0 is checked
+    Then the chat is denied

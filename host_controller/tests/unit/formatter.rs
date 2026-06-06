@@ -22,6 +22,11 @@ fn given_stderr(world: &mut FormatterWorld, code: i32, stderr: String) {
     world.output = Some(CommandOutput { exit_code: code, stdout: String::new(), stderr });
 }
 
+#[given(regex = r#"^command output with exit code (\d+), stdout "([^"]*)", and stderr "([^"]*)"$"#)]
+fn given_both(world: &mut FormatterWorld, code: i32, stdout: String, stderr: String) {
+    world.output = Some(CommandOutput { exit_code: code, stdout, stderr });
+}
+
 #[given(regex = r"^command output with exit code (\d+) and no output$")]
 fn given_no_output(world: &mut FormatterWorld, code: i32) {
     world.output = Some(CommandOutput { exit_code: code, stdout: String::new(), stderr: String::new() });
@@ -57,6 +62,19 @@ fn then_reply_contains(world: &mut FormatterWorld, needle: String) {
 fn then_reply_atmost(world: &mut FormatterWorld, max: usize) {
     let len = world.reply.as_ref().expect("no reply").chars().count();
     assert!(len <= max, "reply length {len} exceeds {max}");
+}
+
+#[then(regex = r"^the reply is exactly (\d+) characters$")]
+fn then_reply_exact(world: &mut FormatterWorld, expected: usize) {
+    let len = world.reply.as_ref().expect("no reply").chars().count();
+    assert_eq!(len, expected, "reply length mismatch");
+}
+
+#[then(regex = r#"^the reply joins "([^"]*)" and "([^"]*)" on separate lines$"#)]
+fn then_reply_joins(world: &mut FormatterWorld, first: String, second: String) {
+    let reply = world.reply.as_ref().expect("no reply");
+    let expected = format!("{first}\n{second}");
+    assert!(reply.contains(&expected), "reply did not join with a newline: {reply:?}");
 }
 
 #[then(regex = r#"^the reply ends with "([^"]*)"$"#)]
