@@ -1,4 +1,0 @@
-# Map each alias to the directory that contains that service's
-# docker-compose.yml. The controller runs `docker compose` in it.
-web: /srv/web
-db: /srv/db
