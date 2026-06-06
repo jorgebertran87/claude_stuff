@@ -10,3 +10,8 @@ tempfile   = "3"
 name    = "authorization"
 path    = "tests/unit/authorization.rs"
 harness = false
+
+[[test]]
+name    = "request"
+path    = "tests/unit/request.rs"
+harness = false
