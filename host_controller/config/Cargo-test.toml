@@ -15,3 +15,8 @@ harness = false
 name    = "request"
 path    = "tests/unit/request.rs"
 harness = false
+
+[[test]]
+name    = "ssh_executor"
+path    = "tests/unit/ssh_executor.rs"
+harness = false

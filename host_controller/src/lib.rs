@@ -10,4 +10,5 @@
 //! Modules are added feature-by-feature via /tdd.
 
 pub mod authorizer;
+pub mod executor;
 pub mod request;
