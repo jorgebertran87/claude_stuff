@@ -45,4 +45,18 @@ run:
 	docker compose up --build -d
 	docker compose logs -f
 
-.PHONY: build build-prod test test-integration test-all mutants mutants-integration run
+run-prod:
+	RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) docker compose up --no-build -d
+	docker compose logs -f
+
+# Test, build-and-push the prod image, then ship the run files to pequenin.
+# Unlike the other projects (Makefile + compose only), host_controller also
+# needs .env and secrets/ there — docker-compose.yml mounts them at runtime.
+deploy:
+	$(MAKE) test
+	$(MAKE) build-prod
+	ssh pequenin 'mkdir -p ~/host_controller'
+	scp Makefile docker-compose.yml .env pequenin:~/host_controller/
+	scp -r secrets pequenin:~/host_controller/
+
+.PHONY: build build-prod test test-integration test-all mutants mutants-integration run run-prod deploy

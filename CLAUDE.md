@@ -32,6 +32,21 @@ Config files live in `config/mutants.toml` (unit) and `config/mutants-integratio
 
 After any code change in a Rust file: build and run the affected test suite before declaring done or suggesting a commit. If tests fail, fix the errors yourself — do not surface compile errors for the user to report back.
 
+## Deployment (production)
+
+Production runs on a remote host (`pequenin`) from a **registry image** — the host pulls and runs it, it never builds. The three targets work together:
+
+| Target | Runs where | What it does |
+|---|---|---|
+| `make build-prod` | dev | `docker buildx build --platform $(PROD_PLATFORM) -t $(DOCKER_USERNAME)/$(IMAGE) --push .` — build for the host's arch and push to the registry |
+| `make deploy` | dev | `make test` → `make build-prod` → `scp` the run files to `pequenin:~/<project>/` |
+| `make run-prod` | the host | `RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) docker compose up --no-build -d` — pull and run the pushed image (never builds), then follow logs |
+
+- `deploy` always gates on green tests and a freshly pushed image before copying anything.
+- Ship whatever `docker-compose.yml` needs at runtime: always `Makefile` + `docker-compose.yml`, plus per-project extras (`host_controller` also ships `.env` and `secrets/`; `voice_assistant` ships `run.sh` and `.claude/`).
+- `docker-compose.yml` must default the image to a local tag and honour a `RUN_IMAGE` override: `image: ${RUN_IMAGE:-<image>}`.
+- Requires `DOCKER_USERNAME` and `PROD_PLATFORM` in `.env`, plus a registry login.
+
 ## Change Scope Discipline
 
 Make targeted, minimal fixes. Default to the smallest possible diff that solves the problem.
