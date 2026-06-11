@@ -17,7 +17,7 @@ services:
 
   # Headless Chrome — used by BrowserSource monitors.
   chrome:
-    image: selenium/standalone-chrome:latest
+    image: ${CHROME_IMAGE:-selenium/standalone-chrome:latest}
     shm_size: 2gb          # prevents Chrome from crashing on complex pages
     environment:
       SE_NODE_MAX_SESSIONS: 1
