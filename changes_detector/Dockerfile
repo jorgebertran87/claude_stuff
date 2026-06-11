@@ -38,6 +38,12 @@ RUN cat Cargo-test.toml >> Cargo.toml \
 COPY tests/ tests/
 COPY features/ features/
 
+# Docker `COPY` preserves source mtimes, which can predate the stub-built test
+# binaries above and make cargo treat the real test sources as "fresh" —
+# silently running the empty stubs and faking green. Touch every test source so
+# it is always recompiled here.
+RUN find tests -type f -name '*.rs' -exec touch {} + ; cargo test --no-run
+
 # ─── Stage 3: mutants ────────────────────────────────────────────────────────
 FROM test AS mutants
 
