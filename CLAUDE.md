@@ -11,7 +11,6 @@ All builds and tests run inside Docker. Per-project commands:
 | `flights_scanner` | `docker build -t flights-scanner-test --target test .` | `docker run --rm flights-scanner-test cargo test` |
 | `voice_assistant` | `docker build --platform linux/amd64 --target test -t voice-assistant-test .` | `docker run --rm voice-assistant-test cargo test` |
 | `minesweeper` | `docker build --target test -t minesweeper-test .` | `docker run --rm minesweeper-test python -m pytest` |
-| `host_controller` | `docker build --target test -t host-controller-test .` | `docker run --rm host-controller-test cargo test` |
 
 **Any top-level directory with a `Makefile` is a project** — discover projects from the
 filesystem, never from a memorised list (tables like the one above go stale). Prefer the
@@ -47,7 +46,7 @@ Production runs on a remote host (`pequenin`) from a **registry image** — the 
 | `make run-prod` | the host | `RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE) docker compose up --no-build -d` — pull and run the pushed image (never builds), then follow logs |
 
 - `deploy` always gates on green tests and a freshly pushed image before copying anything.
-- Ship whatever `docker-compose.yml` needs at runtime: always `Makefile` + `docker-compose.yml`, plus per-project extras (`host_controller` also ships `.env` and `secrets/`; `voice_assistant` ships `run.sh` and `.claude/`).
+- Ship whatever `docker-compose.yml` needs at runtime: always `Makefile` + `docker-compose.yml`, plus per-project extras (`voice_assistant` ships `run.sh` and `.claude/`).
 - `docker-compose.yml` must default the image to a local tag and honour a `RUN_IMAGE` override: `image: ${RUN_IMAGE:-<image>}`.
 - Requires `DOCKER_USERNAME` and `PROD_PLATFORM` in `.env`, plus a registry login.
 - Every image referenced at runtime (base images, sidecars like Selenium/Chrome) must support
