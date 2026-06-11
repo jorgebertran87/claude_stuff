@@ -50,10 +50,11 @@ Production runs on a remote host (`pequenin`) from a **registry image** — the 
 - Ship whatever `docker-compose.yml` needs at runtime: always `Makefile` + `docker-compose.yml`, plus per-project extras (`host_controller` also ships `.env` and `secrets/`; `voice_assistant` ships `run.sh` and `.claude/`).
 - `docker-compose.yml` must default the image to a local tag and honour a `RUN_IMAGE` override: `image: ${RUN_IMAGE:-<image>}`.
 - Requires `DOCKER_USERNAME` and `PROD_PLATFORM` in `.env`, plus a registry login.
-- The production host is **ARM64** (Raspberry Pi class, `PROD_PLATFORM=linux/arm64`): every
-  image referenced at runtime (base images, sidecars like Selenium/Chrome) must support that
-  arch. x86-only images (e.g. `selenium/standalone-chrome`) need an ARM substitute behind an
-  env override (e.g. `CHROME_IMAGE=seleniarm/standalone-chromium`).
+- Every image referenced at runtime (base images, sidecars like Selenium/Chrome) must support
+  the arch in `PROD_PLATFORM` — currently `linux/amd64` (pequenin is an Intel i5 / 16 GB box).
+  If the host ever changes arch again, flip `PROD_PLATFORM` in each project's `.env` and use
+  the env overrides for single-arch sidecars (e.g. `CHROME_IMAGE=seleniarm/standalone-chromium`
+  on ARM). Don't hardcode an architecture in docs or images — check `PROD_PLATFORM`.
 
 ## Verify Before Acting
 
