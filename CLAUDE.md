@@ -11,8 +11,12 @@ All builds and tests run inside Docker. Per-project commands:
 | `flights_scanner` | `docker build -t flights-scanner-test --target test .` | `docker run --rm flights-scanner-test cargo test` |
 | `voice_assistant` | `docker build --platform linux/amd64 --target test -t voice-assistant-test .` | `docker run --rm voice-assistant-test cargo test` |
 | `minesweeper` | `docker build --target test -t minesweeper-test .` | `docker run --rm minesweeper-test python -m pytest` |
+| `host_controller` | `docker build --target test -t host-controller-test .` | `docker run --rm host-controller-test cargo test` |
 
-Run the project's `Makefile` targets when they exist (`make test`, `make test-integration`).
+**Any top-level directory with a `Makefile` is a project** — discover projects from the
+filesystem, never from a memorised list (tables like the one above go stale). Prefer the
+project's own targets: `make test-all` when it exists, otherwise `make test`
+(plus `make test-integration` where present).
 
 **When multiple projects have changes, run all of their test suites in parallel** — issue all `make test` calls as parallel `Bash` tool calls in a single response, then wait for all results before proceeding.
 
@@ -46,6 +50,21 @@ Production runs on a remote host (`pequenin`) from a **registry image** — the 
 - Ship whatever `docker-compose.yml` needs at runtime: always `Makefile` + `docker-compose.yml`, plus per-project extras (`host_controller` also ships `.env` and `secrets/`; `voice_assistant` ships `run.sh` and `.claude/`).
 - `docker-compose.yml` must default the image to a local tag and honour a `RUN_IMAGE` override: `image: ${RUN_IMAGE:-<image>}`.
 - Requires `DOCKER_USERNAME` and `PROD_PLATFORM` in `.env`, plus a registry login.
+- The production host is **ARM64** (Raspberry Pi class, `PROD_PLATFORM=linux/arm64`): every
+  image referenced at runtime (base images, sidecars like Selenium/Chrome) must support that
+  arch. x86-only images (e.g. `selenium/standalone-chrome`) need an ARM substitute behind an
+  env override (e.g. `CHROME_IMAGE=seleniarm/standalone-chromium`).
+
+## Verify Before Acting
+
+Never act on an assumed fact about the repo or environment — check it first:
+
+- Before referencing a file (`Cargo.lock`, a config, a DLL), confirm it exists (`ls`) and is
+  tracked (`git ls-files`) — e.g. no `--locked` flags without a checked-in `Cargo.lock`.
+- Before editing "the file that does X", read it and confirm it actually does X.
+- Before relying on a tool, base image, or daemon behaviour, verify it on this machine
+  (the sandbox, AppArmor, and snap Docker have surprised us before).
+- If a signal pattern-matches a known failure, confirm the cause before applying the known fix.
 
 ## Change Scope Discipline
 
@@ -73,6 +92,17 @@ Use these slash commands instead of ad-hoc prompts — each one encodes the corr
 | `/refactor <goal>` | Changing existing code. Scopes the change upfront (stops for plan approval if >2 functions or >3 files), applies it, then self-corrects in a Docker loop until green. Never surfaces intermediate compile errors to you. |
 | `/commit` | Committing. Detects all projects with changes, runs their test suites in parallel, and commits only if every project is green. |
 | `/simplify` | Code-quality pass. Runs three parallel review agents (reuse, quality, efficiency) across the **whole codebase**, then applies the findings. |
+
+### Skills encode workflow, not judgment
+
+A skill is the correct *procedure*; it is not a substitute for thinking. While running one:
+
+- If a hardcoded detail in the skill (project table, model name, path) conflicts with
+  reality, **follow reality** — and update the skill file in the same session so it never
+  bites again. Stale skills are bugs.
+- If the request is broader or narrower than the skill assumes, adapt the procedure to the
+  request, and say so.
+- Prefer dynamic discovery (filesystem, Makefiles, git) over any list baked into a skill.
 
 ## Commit Policy
 
