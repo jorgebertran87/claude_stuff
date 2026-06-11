@@ -154,7 +154,7 @@ Build a local image for the current machine (amd64):
 make build
 ```
 
-To build a multi-architecture image (amd64 + arm64) and push it to Docker Hub (requires `DOCKER_USERNAME` in `.env`):
+To build the image for the production host's architecture (`PROD_PLATFORM`, currently `linux/amd64`) and push it to Docker Hub (requires `DOCKER_USERNAME` in `.env`):
 
 ```bash
 make build-prod
@@ -223,7 +223,7 @@ If `TELEGRAM_ALLOWED_CHAT_IDS` is empty, the bot responds to any chat. Populate 
 
 ### Run with the published Docker Hub image
 
-To pull the latest image from Docker Hub before running (useful on the Raspberry Pi or any machine without a local build):
+To pull the latest image from Docker Hub before running (useful on the production host or any machine without a local build):
 
 ```bash
 make run-prod
@@ -233,7 +233,7 @@ make run-telegram-prod
 
 `run-prod` sets `RUN_IMAGE=$(DOCKER_USERNAME)/$(IMAGE)`, which causes `run.sh` to pull the image before starting the container.
 
-### Deploy to a remote host (Raspberry Pi)
+### Deploy to the production host (pequenin)
 
 Copy the `Makefile` and `run.sh` to a remote host configured as `pequenin` in `~/.ssh/config`:
 
@@ -241,7 +241,7 @@ Copy the `Makefile` and `run.sh` to a remote host configured as `pequenin` in `~
 make deploy
 ```
 
-After deploying, SSH into the Pi and use `make run-prod` or `make run-telegram-prod` to pull and run the published image.
+After deploying, SSH into pequenin and use `make run-prod` or `make run-telegram-prod` to pull and run the published image.
 
 ### Debug audio devices
 
