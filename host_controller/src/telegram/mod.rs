@@ -1,5 +1,6 @@
-//! Orchestration: poll Telegram, authorize the sender, interpret the message,
-//! run it on the host within a timeout, and reply with the result.
+//! Orchestration: poll Telegram, authorize the sender, discard stale updates,
+//! interpret the message, run it on the host within a timeout, and reply with
+//! the result. Every executed command is logged for audit.
 //!
 //! `TelegramGateway` is the port to Telegram; the HTTP adapter lives in
 //! `http.rs` (added with the wiring). The bot depends only on the ports
@@ -19,7 +20,18 @@ pub struct TelegramUpdate {
     pub update_id: i64,
     pub chat_id: i64,
     pub text: String,
+    /// Unix timestamp (seconds) at which the message was sent.
+    pub date: i64,
 }
+
+/// Clock port: the current unix time in seconds. Injected so the staleness
+/// cutoff is deterministic under test.
+pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
+
+/// Updates older than this are confirmed (the offset advances past them) but
+/// never executed: a command sent while the bot was down, or one executed just
+/// before a crash, must not run again when the bot comes back up.
+const MAX_UPDATE_AGE_SECS: i64 = 300;
 
 /// Port to Telegram: long-poll for updates and post replies.
 #[async_trait]
@@ -37,6 +49,7 @@ pub struct TelegramBot {
     authorizer: Authorizer,
     executor: Arc<dyn CommandExecutor>,
     timeout: Duration,
+    now: Clock,
 }
 
 impl TelegramBot {
@@ -45,8 +58,9 @@ impl TelegramBot {
         authorizer: Authorizer,
         executor: Arc<dyn CommandExecutor>,
         timeout: Duration,
+        now: Clock,
     ) -> Self {
-        Self { gateway, authorizer, executor, timeout }
+        Self { gateway, authorizer, executor, timeout, now }
     }
 
     /// Fetch the pending updates and handle each, advancing `offset` past them.
@@ -64,10 +78,20 @@ impl TelegramBot {
         if !self.authorizer.is_authorized(update.chat_id) {
             return;
         }
+        let age = (self.now)() - update.date;
+        if age > MAX_UPDATE_AGE_SECS {
+            tracing::info!(
+                "chat {}: ignoring stale update {} sent {age}s ago",
+                update.chat_id,
+                update.update_id,
+            );
+            return;
+        }
         match Request::parse(&update.text) {
             Request::Ignore => {}
             Request::Help => self.gateway.post_message(update.chat_id, HELP_TEXT).await,
             Request::Run(command) => {
+                tracing::info!("chat {}: running {command:?}", update.chat_id);
                 let reply = self.run_command(&command).await;
                 self.gateway.post_message(update.chat_id, &reply).await;
             }

@@ -50,3 +50,19 @@ Feature: Driving the host from Telegram
     And a command with id 42 "ls" from chat 1
     When the bot processes the updates
     Then the offset is 43
+
+  Scenario: A command sent while the bot was down is not replayed
+    Given a bot that allows chat 1
+    And the current time is 10000
+    And a command "reboot" from chat 1 sent at 9000
+    When the bot processes the updates
+    Then no command is run on the host
+    And no reply is posted
+    And the offset is 2
+
+  Scenario: A command exactly at the staleness limit still runs
+    Given a bot that allows chat 1
+    And the current time is 10000
+    And a command "ls" from chat 1 sent at 9700
+    When the bot processes the updates
+    Then the host ran "ls"

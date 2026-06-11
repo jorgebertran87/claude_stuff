@@ -40,3 +40,8 @@ harness = false
 name    = "config"
 path    = "tests/unit/config.rs"
 harness = false
+
+[[test]]
+name    = "system"
+path    = "tests/integration/system.rs"
+harness = false

@@ -49,7 +49,7 @@ async fn given_mock_message(world: &mut GatewayWorld, text: String, id: i64, cha
             "ok": true,
             "result": [{
                 "update_id": id,
-                "message": { "chat": { "id": chat }, "text": text }
+                "message": { "chat": { "id": chat }, "text": text, "date": 1_700_000_000 }
             }]
         })))
         .mount(&server)
@@ -68,7 +68,7 @@ async fn given_mock_longpoll(world: &mut GatewayWorld) {
             "ok": true,
             "result": [{
                 "update_id": 5,
-                "message": { "chat": { "id": 1 }, "text": "ok" }
+                "message": { "chat": { "id": 1 }, "text": "ok", "date": 1_700_000_000 }
             }]
         })))
         .mount(&server)
@@ -156,6 +156,17 @@ fn then_fields(world: &mut GatewayWorld, id: i64, chat: i64, text: String) {
     assert_eq!(u.update_id, id, "update_id mismatch");
     assert_eq!(u.chat_id, chat, "chat_id mismatch");
     assert_eq!(u.text, text, "text mismatch");
+}
+
+#[then(regex = r"^the update was sent at (\d+)$")]
+fn then_sent_at(world: &mut GatewayWorld, date: i64) {
+    let u = world
+        .fetched
+        .as_ref()
+        .expect("no fetch was made")
+        .first()
+        .expect("no update returned");
+    assert_eq!(u.date, date, "date mismatch");
 }
 
 #[then(regex = r#"^the API received a message to chat (\d+) containing "(.*)"$"#)]

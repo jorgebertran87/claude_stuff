@@ -76,7 +76,7 @@ fn then_chats_empty(world: &mut ConfigWorld) {
 #[then(regex = r#"^the ssh target is "(.*)"$"#)]
 fn then_target(world: &mut ConfigWorld, expected: String) {
     let c = world.config();
-    let target = format!("{}@{}:{}", c.ssh_user, c.ssh_host, c.ssh_port);
+    let target = format!("{}@{}:{}", c.ssh.user, c.ssh.host, c.ssh.port);
     assert_eq!(target, expected, "ssh target mismatch");
 }
 

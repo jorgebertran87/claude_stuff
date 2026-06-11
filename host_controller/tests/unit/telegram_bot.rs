@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicI32, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering},
         Arc, Mutex,
     },
     time::Duration,
@@ -72,6 +72,8 @@ pub struct BotWorld {
     executor: Arc<FakeExecutor>,
     bot: Option<TelegramBot>,
     offset: i64,
+    // Fake clock; commands default to being sent "now" so they are fresh.
+    now: Arc<AtomicI64>,
 }
 
 impl std::fmt::Debug for BotWorld {
@@ -87,25 +89,29 @@ impl Default for BotWorld {
             executor: Arc::new(FakeExecutor::default()),
             bot: None,
             offset: 0,
+            now: Arc::new(AtomicI64::new(1_000_000)),
         }
     }
 }
 
 impl BotWorld {
     fn build_bot(&mut self, allowed: Vec<i64>, timeout: Duration) {
+        let now = self.now.clone();
         self.bot = Some(TelegramBot::new(
             self.gateway.clone(),
             Authorizer::new(allowed),
             self.executor.clone(),
             timeout,
+            Arc::new(move || now.load(Ordering::SeqCst)),
         ));
     }
 
-    fn push_update(&mut self, update_id: i64, chat_id: i64, text: &str) {
+    fn push_update(&mut self, update_id: i64, chat_id: i64, text: &str, date: i64) {
         self.gateway.updates.lock().unwrap().push(TelegramUpdate {
             update_id,
             chat_id,
             text: text.to_string(),
+            date,
         });
     }
 }
@@ -137,15 +143,28 @@ fn given_fail(world: &mut BotWorld) {
     world.executor.fail.store(true, Ordering::SeqCst);
 }
 
+#[given(regex = r"^the current time is (\d+)$")]
+fn given_now(world: &mut BotWorld, now: i64) {
+    world.now.store(now, Ordering::SeqCst);
+}
+
 #[given(regex = r#"^a command "(.*)" from chat (\d+)$"#)]
 fn given_command(world: &mut BotWorld, text: String, chat_id: i64) {
     let id = world.offset + 1;
-    world.push_update(id, chat_id, &text);
+    let date = world.now.load(Ordering::SeqCst);
+    world.push_update(id, chat_id, &text, date);
+}
+
+#[given(regex = r#"^a command "(.*)" from chat (\d+) sent at (\d+)$"#)]
+fn given_command_sent_at(world: &mut BotWorld, text: String, chat_id: i64, date: i64) {
+    let id = world.offset + 1;
+    world.push_update(id, chat_id, &text, date);
 }
 
 #[given(regex = r#"^a command with id (\d+) "(.*)" from chat (\d+)$"#)]
 fn given_command_with_id(world: &mut BotWorld, id: i64, text: String, chat_id: i64) {
-    world.push_update(id, chat_id, &text);
+    let date = world.now.load(Ordering::SeqCst);
+    world.push_update(id, chat_id, &text, date);
 }
 
 // ── When ─────────────────────────────────────────────────────────────────────

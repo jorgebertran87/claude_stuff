@@ -46,14 +46,15 @@ FROM debian:bookworm-slim AS runtime
 # openssh-client: the controller shells out to `ssh` to reach the parent host.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates libssl3 openssh-client \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /usr/sbin/nologin bot
 
-# Runs as root inside the container so it can read the mounted SSH key, which is
-# owned by the deploying host user and kept at mode 0600. This does NOT weaken
-# the "non-root" guarantee: commands run on the host as botuser (no sudo), so the
-# container's own uid is irrelevant to host-side privilege.
-
+# The container starts as root only so the entrypoint can copy the mounted SSH
+# key (owned by an arbitrary host uid, mode 0600) for the `bot` user — the bot
+# itself runs unprivileged. Host-side privilege is bounded separately by the
+# sudo-less ssh account.
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --from=builder /build/target/release/host_controller /usr/local/bin/host_controller
 
-ENTRYPOINT ["/usr/local/bin/host_controller"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["bot"]

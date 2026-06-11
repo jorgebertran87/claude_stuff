@@ -8,6 +8,8 @@ use std::time::Duration;
 
 use anyhow::Context;
 
+use crate::executor::ssh::SshConfig;
+
 const DEFAULT_SSH_HOST: &str = "host.docker.internal";
 const DEFAULT_SSH_PORT: u16 = 22;
 const DEFAULT_SSH_USER: &str = "botuser";
@@ -19,11 +21,7 @@ const DEFAULT_TIMEOUT_SECS: u64 = 30;
 pub struct Config {
     pub bot_token: String,
     pub allowed_chats: Vec<i64>,
-    pub ssh_host: String,
-    pub ssh_port: u16,
-    pub ssh_user: String,
-    pub ssh_key: String,
-    pub ssh_known_hosts: String,
+    pub ssh: SshConfig,
     pub command_timeout: Duration,
 }
 
@@ -53,29 +51,32 @@ impl Config {
             None => Vec::new(),
         };
 
-        let ssh_port = match get("SSH_PORT") {
-            Some(p) => p.parse::<u16>().with_context(|| format!("invalid SSH_PORT {p:?}"))?,
-            None => DEFAULT_SSH_PORT,
-        };
-
-        let command_timeout = match get("COMMAND_TIMEOUT_SECS") {
-            Some(s) => Duration::from_secs(
-                s.parse::<u64>()
-                    .with_context(|| format!("invalid COMMAND_TIMEOUT_SECS {s:?}"))?,
-            ),
-            None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),
-        };
-
-        Ok(Config {
-            bot_token,
-            allowed_chats,
-            ssh_host: get("SSH_HOST").unwrap_or_else(|| DEFAULT_SSH_HOST.to_string()),
-            ssh_port,
-            ssh_user: get("SSH_USER").unwrap_or_else(|| DEFAULT_SSH_USER.to_string()),
-            ssh_key: get("SSH_KEY").unwrap_or_else(|| DEFAULT_SSH_KEY.to_string()),
-            ssh_known_hosts: get("SSH_KNOWN_HOSTS")
+        let ssh = SshConfig {
+            host: get("SSH_HOST").unwrap_or_else(|| DEFAULT_SSH_HOST.to_string()),
+            port: parse_or("SSH_PORT", get("SSH_PORT"), DEFAULT_SSH_PORT)?,
+            user: get("SSH_USER").unwrap_or_else(|| DEFAULT_SSH_USER.to_string()),
+            key: get("SSH_KEY").unwrap_or_else(|| DEFAULT_SSH_KEY.to_string()),
+            known_hosts: get("SSH_KNOWN_HOSTS")
                 .unwrap_or_else(|| DEFAULT_SSH_KNOWN_HOSTS.to_string()),
-            command_timeout,
-        })
+        };
+
+        let command_timeout = Duration::from_secs(parse_or(
+            "COMMAND_TIMEOUT_SECS",
+            get("COMMAND_TIMEOUT_SECS"),
+            DEFAULT_TIMEOUT_SECS,
+        )?);
+
+        Ok(Config { bot_token, allowed_chats, ssh, command_timeout })
+    }
+}
+
+/// Parse an optional raw value, falling back to `default` when it is absent.
+fn parse_or<T: std::str::FromStr>(key: &str, raw: Option<String>, default: T) -> anyhow::Result<T>
+where
+    T::Err: std::error::Error + Send + Sync + 'static,
+{
+    match raw {
+        Some(raw) => raw.parse().with_context(|| format!("invalid {key} {raw:?}")),
+        None => Ok(default),
     }
 }

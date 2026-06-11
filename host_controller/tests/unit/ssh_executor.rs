@@ -5,7 +5,10 @@ use std::sync::{
 
 use async_trait::async_trait;
 use cucumber::{given, then, when, World};
-use host_controller::executor::{ssh::SshExecutor, CommandExecutor, CommandOutput, CommandRunner};
+use host_controller::executor::{
+    ssh::{SshConfig, SshExecutor},
+    CommandExecutor, CommandOutput, CommandRunner,
+};
 
 // ── Fake command runner ──────────────────────────────────────────────────────
 
@@ -86,11 +89,7 @@ fn given_executor(
 ) {
     world.executor = Some(SshExecutor::new(
         world.runner.clone(),
-        user,
-        host,
-        port,
-        key,
-        known_hosts,
+        SshConfig { user, host, port, key, known_hosts },
     ));
 }
 

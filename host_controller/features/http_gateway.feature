@@ -9,6 +9,7 @@ Feature: Talking to the Telegram Bot API over HTTP
     When I fetch updates from offset 0
     Then one update is returned
     And the update has id 7, chat 1, and text "hello"
+    And the update was sent at 1700000000
 
   Scenario: Fetching long-polls at the requested offset
     Given a mock Telegram API that only answers a long-poll at offset 5
