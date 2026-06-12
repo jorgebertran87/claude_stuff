@@ -3,4 +3,5 @@ exclude_globs = [
     "src/main.rs",
     "src/lib.rs",
     "src/source/**",
+    "src/telegram.rs",
 ]

@@ -23,9 +23,11 @@ RUN cat Cargo-test.toml >> Cargo.toml \
     && mkdir -p tests/unit tests/integration \
     && printf 'fn main() {}\n' | tee \
          tests/unit/price_comparison.rs \
+         tests/unit/basket_reply.rs \
          tests/integration/mercadona_source.rs \
          tests/integration/dia_source.rs \
-         tests/integration/lidl_source.rs > /dev/null \
+         tests/integration/lidl_source.rs \
+         tests/integration/telegram_bot.rs > /dev/null \
     && cargo test --no-run \
     && rm -rf tests
 

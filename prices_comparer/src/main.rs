@@ -1,6 +1,39 @@
-fn main() {
-    // Store adapters (Mercadona, Maskom, Dia, Carrefour, ...) are not wired
-    // yet; the comparison domain lives in prices_comparer::comparer.
-    eprintln!("prices_comparer: no store adapters wired yet");
-    std::process::exit(1);
+use prices_comparer::comparer::StoreSource;
+use prices_comparer::source::{dia::DiaSource, lidl::LidlSource, mercadona::MercadonaSource};
+use prices_comparer::telegram::TelegramBot;
+
+fn env(name: &str) -> anyhow::Result<String> {
+    std::env::var(name).map_err(|_| anyhow::anyhow!("{name} must be set"))
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let bot_token = env("TELEGRAM_BOT_TOKEN")?;
+    let chat_id: i64 = env("TELEGRAM_CHAT_ID")?
+        .trim()
+        .parse()
+        .map_err(|_| anyhow::anyhow!("TELEGRAM_CHAT_ID must be an integer"))?;
+
+    let flare_url = std::env::var("FLARESOLVERR_URL")
+        .unwrap_or_else(|_| "http://flaresolverr:8191".to_string());
+    // The Algolia app id is public (it is in the shop's page source); the
+    // search-only API key still has to be supplied explicitly.
+    let mercadona_app_id = std::env::var("MERCADONA_APP_ID")
+        .unwrap_or_else(|_| "7UZJKL1DJ0".to_string());
+    let mercadona_api_key = env("MERCADONA_API_KEY")?;
+
+    let stores: Vec<Box<dyn StoreSource>> = vec![
+        Box::new(MercadonaSource::new(
+            "https://7uzjkl1dj0-dsn.algolia.net".to_string(),
+            mercadona_app_id,
+            mercadona_api_key,
+        )),
+        Box::new(DiaSource::new(flare_url)),
+        Box::new(LidlSource::new("https://www.lidl.es".to_string())),
+    ];
+
+    TelegramBot::new("https://api.telegram.org".to_string(), bot_token, chat_id, stores)
+        .run()
+        .await;
+    Ok(())
 }
