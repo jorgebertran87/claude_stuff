@@ -18,3 +18,8 @@ harness = false
 name    = "dia_source"
 path    = "tests/integration/dia_source.rs"
 harness = false
+
+[[test]]
+name    = "lidl_source"
+path    = "tests/integration/lidl_source.rs"
+harness = false
