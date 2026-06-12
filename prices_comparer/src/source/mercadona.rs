@@ -3,6 +3,8 @@ use serde::Deserialize;
 
 use crate::comparer::StoreSource;
 
+use super::price::Price;
+
 /// Algolia index backing tienda.mercadona.es product search.
 /// The numeric part is the warehouse — prices vary slightly by region.
 const SEARCH_INDEX: &str = "products_prod_4315_es";
@@ -36,30 +38,7 @@ struct Hit {
 
 #[derive(Deserialize)]
 struct PriceInstructions {
-    unit_price: UnitPrice,
-}
-
-/// Mercadona serves the unit price as a decimal string in some endpoints and
-/// as a JSON number in others; accept both.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum UnitPrice {
-    Text(String),
-    Number(f64),
-}
-
-impl UnitPrice {
-    fn to_cents(&self) -> anyhow::Result<u64> {
-        match self {
-            UnitPrice::Number(euros) => Ok((euros * 100.0).round() as u64),
-            UnitPrice::Text(text) => {
-                let (euros, cents) = text.split_once('.').unwrap_or((text, "0"));
-                let euros: u64 = euros.parse()?;
-                let cents: u64 = format!("{cents:0<2}")[..2].parse()?;
-                Ok(euros * 100 + cents)
-            }
-        }
-    }
+    unit_price: Price,
 }
 
 #[async_trait]

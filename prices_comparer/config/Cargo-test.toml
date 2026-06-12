@@ -13,3 +13,8 @@ harness = false
 name    = "mercadona_source"
 path    = "tests/integration/mercadona_source.rs"
 harness = false
+
+[[test]]
+name    = "dia_source"
+path    = "tests/integration/dia_source.rs"
+harness = false
