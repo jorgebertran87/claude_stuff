@@ -15,6 +15,11 @@ path    = "tests/unit/basket_reply.rs"
 harness = false
 
 [[test]]
+name    = "order_reply"
+path    = "tests/unit/order_reply.rs"
+harness = false
+
+[[test]]
 name    = "mercadona_source"
 path    = "tests/integration/mercadona_source.rs"
 harness = false
@@ -32,4 +37,9 @@ harness = false
 [[test]]
 name    = "telegram_bot"
 path    = "tests/integration/telegram_bot.rs"
+harness = false
+
+[[test]]
+name    = "glovo_source"
+path    = "tests/integration/glovo_source.rs"
 harness = false

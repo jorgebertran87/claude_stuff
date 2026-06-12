@@ -128,7 +128,7 @@ fn given_store_one_product(world: &mut BotWorld, store: String, product: String,
 fn given_bot(world: &mut BotWorld) {
     let uri = world.server.as_ref().expect("mock server not started").uri();
     let stores = std::mem::take(&mut world.stores);
-    world.bot = Some(TelegramBot::new(uri, BOT_TOKEN.into(), CONFIGURED_CHAT, stores));
+    world.bot = Some(TelegramBot::new(uri, BOT_TOKEN.into(), CONFIGURED_CHAT, stores, vec![]));
 }
 
 // ── When ──────────────────────────────────────────────────────────────────────

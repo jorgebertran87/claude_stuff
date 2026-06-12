@@ -1,5 +1,8 @@
+use prices_comparer::basket::BasketSource;
 use prices_comparer::comparer::StoreSource;
-use prices_comparer::source::{dia::DiaSource, lidl::LidlSource, mercadona::MercadonaSource};
+use prices_comparer::source::{
+    dia::DiaSource, glovo::GlovoSource, lidl::LidlSource, mercadona::MercadonaSource,
+};
 use prices_comparer::telegram::TelegramBot;
 
 fn env(name: &str) -> anyhow::Result<String> {
@@ -32,7 +35,19 @@ async fn main() -> anyhow::Result<()> {
         Box::new(LidlSource::new("https://www.lidl.es".to_string())),
     ];
 
-    TelegramBot::new("https://api.telegram.org".to_string(), bot_token, chat_id, stores)
+    // Basket sources are optional — without a token, /glovo simply
+    // is not recognised.
+    let mut baskets: Vec<Box<dyn BasketSource>> = Vec::new();
+    if let Ok(token) = std::env::var("GLOVO_TOKEN") {
+        if !token.trim().is_empty() {
+            baskets.push(Box::new(GlovoSource::new(
+                "https://api.glovoapp.com".to_string(),
+                token,
+            )));
+        }
+    }
+
+    TelegramBot::new("https://api.telegram.org".to_string(), bot_token, chat_id, stores, baskets)
         .run()
         .await;
     Ok(())

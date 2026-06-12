@@ -1,13 +1,35 @@
-use crate::comparer::{compare, Comparison, StoreSource, StoreReport};
+use crate::basket::BasketSource;
+use crate::comparer::{compare, compare_items, BasketItem, Comparison, StoreSource, StoreReport};
 
-/// Build the bot's reply to a basket message.
+/// Build the bot's reply to a message.
 ///
-/// Message format: `milk x2, bread` with an optional `@ Store` suffix naming
-/// the store where the basket was bought, e.g. `milk x2, bread @ Dia`.
-pub async fn reply_to(stores: &[Box<dyn StoreSource>], message: &str) -> String {
+/// A plain message is a typed basket: `milk x2, bread`, with an optional
+/// `@ Store` suffix naming the store where it was bought. A `/command`
+/// names a basket source instead: `/glovo` compares the latest order from
+/// the source called "Glovo", `/glovo 1002` a specific one.
+pub async fn reply_to(
+    stores: &[Box<dyn StoreSource>],
+    baskets: &[Box<dyn BasketSource>],
+    message: &str,
+) -> String {
+    let trimmed = message.trim();
+    if let Some(command) = trimmed.strip_prefix('/') {
+        let (name, reference) = match command.split_once(' ') {
+            Some((name, reference)) => (name.trim(), Some(reference.trim())),
+            None => (command.trim(), None),
+        };
+        return match baskets.iter().find(|b| b.name().eq_ignore_ascii_case(name)) {
+            Some(source) => order_reply(stores, source.as_ref(), reference).await,
+            None => usage(),
+        };
+    }
+    typed_reply(stores, trimmed).await
+}
+
+async fn typed_reply(stores: &[Box<dyn StoreSource>], message: &str) -> String {
     let (basket, bought_at) = match message.split_once('@') {
         Some((basket, store)) => (basket.trim(), Some(store.trim())),
-        None => (message.trim(), None),
+        None => (message, None),
     };
 
     // Validate the bought store before spending time querying prices.
@@ -32,6 +54,51 @@ pub async fn reply_to(stores: &[Box<dyn StoreSource>], message: &str) -> String 
         lines.push(bought_lines(&comparison, bought));
     }
     lines.join("\n")
+}
+
+async fn order_reply(
+    stores: &[Box<dyn StoreSource>],
+    source: &dyn BasketSource,
+    reference: Option<&str>,
+) -> String {
+    let basket = match source.fetch_basket(reference).await {
+        Err(_) => return format!("{} could not be reached. Try again later.", source.name()),
+        Ok(None) => return format!("No {} order was found.", source.name()),
+        Ok(Some(basket)) => basket,
+    };
+    if basket.items.is_empty() {
+        return format!("The {} order has no products.", source.name());
+    }
+
+    let comparison = compare_items(stores, &basket.items).await;
+    let listing = basket.items.iter().map(item_label).collect::<Vec<_>>().join(", ");
+
+    let mut lines = vec![format!("🛒 {} order: {listing}", source.name()), String::new()];
+    for (store, report) in &comparison.stores {
+        lines.push(store_line(store, report, comparison.cheapest.as_deref()));
+    }
+    if let Some(bought) = &basket.store {
+        lines.push(String::new());
+        // Unlike a typed basket, the order is already bought — an unknown
+        // store is reported, not rejected.
+        if comparison.stores.iter().any(|(store, _)| store.eq_ignore_ascii_case(bought)) {
+            lines.push(bought_lines(&comparison, bought));
+        } else {
+            lines.push(format!("{bought} is not a compared store."));
+        }
+    }
+    if let Some(paid) = basket.paid_cents {
+        lines.push(format!("You paid {} on {}.", euros(paid), source.name()));
+    }
+    lines.join("\n")
+}
+
+fn item_label(item: &BasketItem) -> String {
+    if item.quantity > 1 {
+        format!("{} x{}", item.name, item.quantity)
+    } else {
+        item.name.clone()
+    }
 }
 
 fn usage() -> String {

@@ -103,7 +103,7 @@ fn given_store_failing(world: &mut ReplyWorld, store: String) {
 
 #[when(regex = r#"^I message "(.*)"$"#)]
 async fn when_message(world: &mut ReplyWorld, message: String) {
-    world.reply = Some(reply_to(&world.stores, &message).await);
+    world.reply = Some(reply_to(&world.stores, &[], &message).await);
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────

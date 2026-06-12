@@ -90,17 +90,22 @@ pub async fn compare(
     basket: &str,
 ) -> Result<Comparison, CompareError> {
     let items = parse_basket(basket)?;
+    Ok(compare_items(stores, &items).await)
+}
 
+/// Like [`compare`], for a basket that is already parsed (e.g. recovered
+/// from an external order rather than typed).
+pub async fn compare_items(stores: &[Box<dyn StoreSource>], items: &[BasketItem]) -> Comparison {
     let mut reports = Vec::with_capacity(stores.len());
     for store in stores {
-        let report = price_basket(store.as_ref(), &items).await;
+        let report = price_basket(store.as_ref(), items).await;
         reports.push((store.name().to_string(), report));
     }
 
-    let missing_everywhere = missing_in_every_responsive_store(&items, &reports);
+    let missing_everywhere = missing_in_every_responsive_store(items, &reports);
     let cheapest = cheapest_complete_store(&reports);
 
-    Ok(Comparison { stores: reports, missing_everywhere, cheapest })
+    Comparison { stores: reports, missing_everywhere, cheapest }
 }
 
 async fn price_basket(store: &dyn StoreSource, items: &[BasketItem]) -> StoreReport {

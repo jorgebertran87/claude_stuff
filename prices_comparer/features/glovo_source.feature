@@ -1,0 +1,49 @@
+Feature: Glovo source
+  As the prices comparer
+  I want to read baskets from the user's Glovo order history
+  So that a past order can be compared without retyping the list
+
+  Scenario: Fetching the last order returns its products, store and paid total
+    Given a mock Glovo API with an order from "Dia" of "milk x2, bread" paid 3.50
+    And a Glovo source pointed at the mock
+    When I fetch the last order
+    Then the basket has "milk" with quantity 2
+    And the basket has "bread" with quantity 1
+    And the basket was bought at "Dia"
+    And the basket was paid 3.50
+
+  Scenario: Fetching a specific order by id returns that order
+    Given a mock Glovo API with order "1001" from "Dia" of "milk" paid 1.20 and order "1002" from "Lidl" of "bread" paid 0.95
+    And a Glovo source pointed at the mock
+    When I fetch order "1002"
+    Then the basket has "bread" with quantity 1
+    And the basket was bought at "Lidl"
+
+  Scenario: An unknown order id is reported as no order found
+    Given a mock Glovo API with an order from "Dia" of "milk" paid 1.20
+    And a Glovo source pointed at the mock
+    When I fetch order "9999"
+    Then no order is found
+
+  Scenario: An empty order history is reported as no order found
+    Given a mock Glovo API with no orders
+    And a Glovo source pointed at the mock
+    When I fetch the last order
+    Then no order is found
+
+  Scenario: An HTTP error makes the fetch fail
+    Given a mock Glovo API that returns HTTP 500
+    And a Glovo source pointed at the mock
+    When I fetch the last order
+    Then the fetch fails
+
+  Scenario: A malformed response makes the fetch fail
+    Given a mock Glovo API that returns invalid JSON
+    And a Glovo source pointed at the mock
+    When I fetch the last order
+    Then the fetch fails
+
+  Scenario: The source identifies itself as Glovo
+    Given a mock Glovo API with no orders
+    And a Glovo source pointed at the mock
+    Then the basket source name is "Glovo"
