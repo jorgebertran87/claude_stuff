@@ -1,0 +1,5 @@
+services:
+
+  prices_comparer:
+    image: ${RUN_IMAGE:-prices-comparer}
+    restart: unless-stopped

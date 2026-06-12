@@ -1,0 +1,16 @@
+[package]
+name = "prices_comparer"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "prices_comparer"
+path = "src/main.rs"
+
+[lib]
+name = "prices_comparer"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow       = "1"
+async-trait  = "0.1"

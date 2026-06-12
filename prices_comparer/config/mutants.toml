@@ -1,0 +1,4 @@
+exclude_globs = [
+    "src/main.rs",
+    "src/lib.rs",
+]
