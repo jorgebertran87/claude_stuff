@@ -20,8 +20,10 @@ FROM builder AS test
 # Merge the test-specific Cargo entries (dev-dependencies + [[test]] targets).
 COPY config/Cargo-test.toml ./
 RUN cat Cargo-test.toml >> Cargo.toml \
-    && mkdir -p tests/unit \
-    && printf 'fn main() {}\n' > tests/unit/price_comparison.rs \
+    && mkdir -p tests/unit tests/integration \
+    && printf 'fn main() {}\n' | tee \
+         tests/unit/price_comparison.rs \
+         tests/integration/mercadona_source.rs > /dev/null \
     && cargo test --no-run \
     && rm -rf tests
 
@@ -40,7 +42,7 @@ FROM test AS mutants
 
 RUN cargo install --locked cargo-mutants@26.0.0
 
-COPY config/mutants.toml config/
+COPY config/mutants.toml config/mutants-integration.toml config/
 
 # ─── Stage 4: runtime ────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime

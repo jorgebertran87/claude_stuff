@@ -1,4 +1,6 @@
+# Unit mutants: domain logic only — infrastructure is covered by integration tests.
 exclude_globs = [
     "src/main.rs",
     "src/lib.rs",
+    "src/source/**",
 ]

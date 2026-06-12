@@ -10,7 +10,11 @@ build-prod:
 	docker buildx build --platform $(PROD_PLATFORM) \
 		-t $(DOCKER_USERNAME)/$(IMAGE) --push .
 
-UNIT_TESTS = $(patsubst tests/unit/%.rs,--test %,$(wildcard tests/unit/*.rs))
+UNIT_TESTS        = $(patsubst tests/unit/%.rs,--test %,$(wildcard tests/unit/*.rs))
+INTEGRATION_TESTS = $(patsubst tests/integration/%.rs,--test %,$(wildcard tests/integration/*.rs))
+
+# Map infrastructure source file → relevant integration test (name matches file stem)
+FILE_TESTS = $(if $(FILE),--test $(basename $(notdir $(FILE))),$(INTEGRATION_TESTS))
 
 build:
 	docker build --target runtime -t $(IMAGE) .
@@ -19,12 +23,23 @@ test:
 	docker build --target test -t $(IMAGE)-test .
 	docker run --rm $(IMAGE)-test cargo test $(UNIT_TESTS)
 
-test-all: test
+test-integration:
+	docker build --target test -t $(IMAGE)-test .
+	docker run --rm $(IMAGE)-test cargo test $(INTEGRATION_TESTS)
+
+test-all:
+	docker build --target test -t $(IMAGE)-test .
+	docker run --rm $(IMAGE)-test cargo test $(UNIT_TESTS) $(INTEGRATION_TESTS)
 
 mutants:
 	docker build --target mutants -t $(IMAGE)-mutants .
 	docker run --rm $(IMAGE)-mutants \
 		cargo mutants -j 3 --config config/mutants.toml -- $(UNIT_TESTS)
+
+mutants-integration:
+	docker build --target mutants -t $(IMAGE)-mutants .
+	docker run --rm $(IMAGE)-mutants \
+		cargo mutants -j 3 --config config/mutants-integration.toml -- $(FILE_TESTS)
 
 run:
 	docker compose up --build -d
@@ -39,4 +54,4 @@ deploy:
 	$(MAKE) build-prod
 	scp Makefile docker-compose.yml pequenin:~/prices_comparer
 
-.PHONY: build build-prod test test-all mutants run run-prod deploy
+.PHONY: build build-prod test test-integration test-all mutants mutants-integration run run-prod deploy

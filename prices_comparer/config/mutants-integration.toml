@@ -1,0 +1,6 @@
+# Integration mutants: infrastructure only — domain is covered by unit tests.
+exclude_globs = [
+    "src/main.rs",
+    "src/lib.rs",
+    "src/comparer.rs",
+]
