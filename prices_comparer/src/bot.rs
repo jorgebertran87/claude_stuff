@@ -1,5 +1,7 @@
-use crate::basket::{BasketSource, FetchError, OrderNormalizer, PurchasedItem};
-use crate::comparer::{compare, compare_items, BasketItem, Comparison, StoreSource, StoreReport};
+use crate::basket::{BasketSource, FetchError, OrderNormalizer};
+use crate::comparer::{
+    compare, compare_items, BasketItem, Comparison, ItemPrices, StoreSource, StoreReport,
+};
 
 /// Build the bot's reply to a message.
 ///
@@ -75,6 +77,10 @@ async fn typed_reply(stores: &[Box<dyn StoreSource>], message: &str) -> String {
     };
 
     let mut lines = vec![format!("🛒 {basket}"), String::new()];
+    for item in &comparison.items {
+        lines.push(item_breakdown_line(item, None));
+    }
+    lines.push(String::new());
     for (store, report) in &comparison.stores {
         lines.push(store_line(store, report, comparison.cheapest.as_deref()));
     }
@@ -122,13 +128,12 @@ async fn order_reply(
 
     let comparison_items: Vec<BasketItem> = items.iter().map(|i| i.to_basket_item()).collect();
     let comparison = compare_items(stores, &comparison_items).await;
-    let listing = items
-        .iter()
-        .map(|i| format!("  • {}", item_label(i)))
-        .collect::<Vec<_>>()
-        .join("\n");
 
-    let mut lines = vec![format!("🛒 {} order:", source.name()), listing, String::new()];
+    let mut lines = vec![format!("🛒 {} order:", source.name()), String::new()];
+    for (i, item) in comparison.items.iter().enumerate() {
+        lines.push(item_breakdown_line(item, Some((source.name(), items[i].price_cents))));
+    }
+    lines.push(String::new());
     for (store, report) in &comparison.stores {
         lines.push(store_line(store, report, comparison.cheapest.as_deref()));
     }
@@ -148,15 +153,23 @@ async fn order_reply(
     lines.join("\n")
 }
 
-fn item_label(item: &PurchasedItem) -> String {
-    let qty = if item.quantity > 1 {
-        format!("{} x{}", item.name, item.quantity)
-    } else {
-        item.name.clone()
-    };
-    match item.price_cents {
-        Some(cents) => format!("{qty} — {}", euros(cents)),
-        None => qty,
+/// One product's line in the breakdown: each store's price (— if not sold),
+/// optionally prefixed with the price paid at the source (e.g. Glovo).
+fn item_breakdown_line(item: &ItemPrices, source: Option<(&str, Option<u64>)>) -> String {
+    let qty = if item.quantity > 1 { format!(" x{}", item.quantity) } else { String::new() };
+    let stores = item
+        .per_store
+        .iter()
+        .map(|(store, price)| match price {
+            Some(cents) => format!("{store} {}", euros(*cents)),
+            None => format!("{store} —"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    match source {
+        Some((label, Some(cents))) => format!("{}{qty} — {label} {} | {stores}", item.name, euros(cents)),
+        Some((label, None)) => format!("{}{qty} — {label} — | {stores}", item.name),
+        None => format!("{}{qty} — {stores}", item.name),
     }
 }
 

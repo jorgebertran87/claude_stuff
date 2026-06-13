@@ -114,6 +114,16 @@ fn then_total(world: &mut ReplyWorld, store: String, total: String) {
     world.assert_reply_contains(&format!("{store}: {}", euros(cents(&total))));
 }
 
+#[then(regex = r#"^the reply shows "([^"]+)" priced (\d+\.\d+) at "([^"]+)"$"#)]
+fn then_item_priced_at(world: &mut ReplyWorld, _product: String, price: String, store: String) {
+    world.assert_reply_contains(&format!("{store} {}", euros(cents(&price))));
+}
+
+#[then(regex = r#"^the reply shows "([^"]+)" as not sold at "([^"]+)"$"#)]
+fn then_item_not_sold(world: &mut ReplyWorld, _product: String, store: String) {
+    world.assert_reply_contains(&format!("{store} —"));
+}
+
 #[then(regex = r#"^the reply marks "([^"]+)" as the cheapest$"#)]
 fn then_cheapest(world: &mut ReplyWorld, store: String) {
     let marked = world

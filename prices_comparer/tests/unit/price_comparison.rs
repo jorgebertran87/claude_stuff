@@ -67,6 +67,24 @@ impl ComparerWorld {
             .map(|(_, report)| report)
             .unwrap_or_else(|| panic!("no report for store {store:?}"))
     }
+
+    /// The recorded line price of `product` at `store` (None = not sold).
+    fn price_for(&self, product: &str, store: &str) -> Option<u64> {
+        let comparison = match &self.result {
+            Some(Ok(comparison)) => comparison,
+            other => panic!("expected a successful comparison, got: {other:?}"),
+        };
+        let item = comparison
+            .items
+            .iter()
+            .find(|i| i.name == product)
+            .unwrap_or_else(|| panic!("no item {product:?} in comparison"));
+        item.per_store
+            .iter()
+            .find(|(name, _)| name == store)
+            .unwrap_or_else(|| panic!("no store {store:?} for item {product:?}"))
+            .1
+    }
 }
 
 // ── Given ─────────────────────────────────────────────────────────────────────
@@ -142,6 +160,24 @@ fn then_cheapest(world: &mut ComparerWorld, store: String) {
         ),
         other => panic!("expected a successful comparison, got: {other:?}"),
     }
+}
+
+#[then(regex = r#"^"([^"]+)" costs (\d+\.\d+) at "([^"]+)"$"#)]
+fn then_item_costs(world: &mut ComparerWorld, product: String, price: String, store: String) {
+    assert_eq!(
+        world.price_for(&product, &store),
+        Some(cents(&price)),
+        "expected {product} to cost {price} at {store}"
+    );
+}
+
+#[then(regex = r#"^"([^"]+)" has no price at "([^"]+)"$"#)]
+fn then_item_no_price(world: &mut ComparerWorld, product: String, store: String) {
+    assert_eq!(
+        world.price_for(&product, &store),
+        None,
+        "expected {product} to have no price at {store}"
+    );
 }
 
 #[then(regex = r#"^the product "([^"]+)" is reported as missing in every store$"#)]

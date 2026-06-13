@@ -49,3 +49,22 @@ Feature: Price comparison
     When I compare the basket "milk, caviar"
     Then the product "caviar" is reported as missing in every store
     And the total for "Mercadona" is incomplete, missing "caviar"
+
+  Scenario: Each product is priced at every store that sells it
+    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
+    And a store "Dia" selling "milk" at 1.05 and "bread" at 1.00
+    When I compare the basket "milk, bread"
+    Then "milk" costs 1.10 at "Mercadona"
+    And "milk" costs 1.05 at "Dia"
+    And "bread" costs 0.90 at "Mercadona"
+
+  Scenario: A product's price reflects the quantity
+    Given a store "Mercadona" selling "milk" at 1.10
+    When I compare the basket "milk x3"
+    Then "milk" costs 3.30 at "Mercadona"
+
+  Scenario: A product a store does not sell has no price there
+    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
+    And a store "Maskom" selling "milk" at 1.00
+    When I compare the basket "milk, bread"
+    Then "bread" has no price at "Maskom"

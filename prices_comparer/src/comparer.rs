@@ -46,11 +46,23 @@ pub enum StoreReport {
     Unavailable,
 }
 
+/// What one basket product costs at each store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemPrices {
+    pub name: String,
+    pub quantity: u64,
+    /// `(store name, line price in cents)` per store, in store order.
+    /// `None` means the store does not sell it or could not be reached.
+    pub per_store: Vec<(String, Option<u64>)>,
+}
+
 /// The full result of comparing a basket across stores.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comparison {
     /// One report per store, in the order the stores were given.
     pub stores: Vec<(String, StoreReport)>,
+    /// One entry per basket product, with its price at each store.
+    pub items: Vec<ItemPrices>,
     /// Products that no responsive store sells.
     pub missing_everywhere: Vec<String>,
     /// The complete store with the lowest total, if any store is complete.
@@ -97,32 +109,60 @@ pub async fn compare(
 /// from an external order rather than typed).
 pub async fn compare_items(stores: &[Box<dyn StoreSource>], items: &[BasketItem]) -> Comparison {
     let mut reports = Vec::with_capacity(stores.len());
+    // Per store, the line price of each basket item (None = not sold / unreachable).
+    let mut grid: Vec<(String, Vec<Option<u64>>)> = Vec::with_capacity(stores.len());
     for store in stores {
-        let report = price_basket(store.as_ref(), items).await;
-        reports.push((store.name().to_string(), report));
+        let name = store.name().to_string();
+        let (report, line_prices) = price_basket(store.as_ref(), items).await;
+        reports.push((name.clone(), report));
+        grid.push((name, line_prices));
     }
+
+    // Transpose the grid into a per-item view.
+    let item_prices = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| ItemPrices {
+            name: item.name.clone(),
+            quantity: item.quantity,
+            per_store: grid.iter().map(|(store, prices)| (store.clone(), prices[i])).collect(),
+        })
+        .collect();
 
     let missing_everywhere = missing_in_every_responsive_store(items, &reports);
     let cheapest = cheapest_complete_store(&reports);
 
-    Comparison { stores: reports, missing_everywhere, cheapest }
+    Comparison { stores: reports, items: item_prices, missing_everywhere, cheapest }
 }
 
-async fn price_basket(store: &dyn StoreSource, items: &[BasketItem]) -> StoreReport {
-    let mut total_cents = 0u64;
-    let mut missing = Vec::new();
+/// Price every item at one store, returning the per-store report and the line
+/// price of each item (None = not sold). A store that errors on any item is
+/// `Unavailable` with no prices.
+async fn price_basket(
+    store: &dyn StoreSource,
+    items: &[BasketItem],
+) -> (StoreReport, Vec<Option<u64>>) {
+    let mut line_prices = Vec::with_capacity(items.len());
     for item in items {
         match store.price_cents(&item.name).await {
-            Err(_) => return StoreReport::Unavailable,
-            Ok(None) => missing.push(item.name.clone()),
-            Ok(Some(cents)) => total_cents += cents * item.quantity,
+            Err(_) => return (StoreReport::Unavailable, vec![None; items.len()]),
+            Ok(None) => line_prices.push(None),
+            Ok(Some(cents)) => line_prices.push(Some(cents * item.quantity)),
         }
     }
-    if missing.is_empty() {
+    let total_cents = line_prices.iter().flatten().sum();
+    let missing: Vec<String> = items
+        .iter()
+        .zip(&line_prices)
+        .filter(|(_, price)| price.is_none())
+        .map(|(item, _)| item.name.clone())
+        .collect();
+    let report = if missing.is_empty() {
         StoreReport::Complete { total_cents }
     } else {
         StoreReport::Incomplete { total_cents, missing }
-    }
+    };
+    (report, line_prices)
 }
 
 fn missing_in_every_responsive_store(

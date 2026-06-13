@@ -49,6 +49,14 @@ Feature: Basket reply
     Then the reply says "Eroski" is not a known store
     And the reply lists "Mercadona" and "Dia" as the known stores
 
+  Scenario: The reply breaks down each product's price at each store
+    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
+    And a store "Dia" selling "milk" at 1.05
+    When I message "milk, bread"
+    Then the reply shows "milk" priced 1.10 at "Mercadona"
+    And the reply shows "milk" priced 1.05 at "Dia"
+    And the reply shows "bread" as not sold at "Dia"
+
   Scenario: An empty message is answered with usage help
     Given a store "Mercadona" selling "milk" at 1.10
     When I message ""
