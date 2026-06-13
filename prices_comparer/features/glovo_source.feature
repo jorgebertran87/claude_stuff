@@ -12,6 +12,12 @@ Feature: Glovo source
     And the basket was bought at "Dia"
     And the basket was paid 3.50
 
+  Scenario: Per-item prices are captured from the order detail
+    Given a mock Glovo API with an order from "Dia" of "milk" paid 1.50
+    And a Glovo source pointed at the mock
+    When I fetch the last order
+    Then the item "milk" is priced 1.50
+
   Scenario: Fetching by a store word returns the latest order from that store
     Given a mock Glovo API with order "1001" from "McDonald's" of "fries" paid 8.50 and order "1002" from "Supermercados El Jamón" of "milk" paid 1.20
     And a Glovo source pointed at the mock

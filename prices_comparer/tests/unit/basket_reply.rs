@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use cucumber::{given, then, when, World};
+use prices_comparer::basket::IdentityNormalizer;
 use prices_comparer::bot::reply_to;
 use prices_comparer::comparer::StoreSource;
 
@@ -103,7 +104,7 @@ fn given_store_failing(world: &mut ReplyWorld, store: String) {
 
 #[when(regex = r#"^I message "(.*)"$"#)]
 async fn when_message(world: &mut ReplyWorld, message: String) {
-    world.reply = Some(reply_to(&world.stores, &[], &message).await);
+    world.reply = Some(reply_to(&world.stores, &[], &IdentityNormalizer, &message).await);
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────

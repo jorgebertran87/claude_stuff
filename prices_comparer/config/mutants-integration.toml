@@ -5,4 +5,5 @@ exclude_globs = [
     "src/comparer.rs",
     "src/bot.rs",
     "src/basket.rs",
+    "src/normalizer.rs",
 ]

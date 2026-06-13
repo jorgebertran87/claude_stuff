@@ -1,8 +1,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::basket::{BasketSource, FetchError, PurchasedBasket};
-use crate::comparer::BasketItem;
+use crate::basket::{BasketSource, FetchError, PurchasedBasket, PurchasedItem};
 use crate::token_store::TokenStore;
 
 /// Glovo API version the web client sends; required alongside the other
@@ -97,6 +96,9 @@ struct BoughtProduct {
     name: String,
     /// A display string like `"1x"`.
     quantity: String,
+    /// A display amount like `"1,95 €"`, when present.
+    #[serde(default)]
+    price: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -117,7 +119,11 @@ impl OrderDetail {
         let items = self
             .bought_products
             .into_iter()
-            .map(|p| BasketItem { name: p.name, quantity: parse_quantity(&p.quantity) })
+            .map(|p| PurchasedItem {
+                name: p.name,
+                quantity: parse_quantity(&p.quantity),
+                price_cents: p.price.as_deref().and_then(parse_euros),
+            })
             .collect();
         let paid_cents = self
             .pricing_breakdown

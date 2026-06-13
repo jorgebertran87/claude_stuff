@@ -1,4 +1,4 @@
-use crate::basket::{BasketSource, FetchError};
+use crate::basket::{BasketSource, FetchError, OrderNormalizer, PurchasedItem};
 use crate::comparer::{compare, compare_items, BasketItem, Comparison, StoreSource, StoreReport};
 
 /// Build the bot's reply to a message.
@@ -6,10 +6,14 @@ use crate::comparer::{compare, compare_items, BasketItem, Comparison, StoreSourc
 /// A plain message is a typed basket: `milk x2, bread`, with an optional
 /// `@ Store` suffix naming the store where it was bought. A `/command`
 /// names a basket source instead: `/glovo` compares the latest order from
-/// the source called "Glovo", `/glovo 1002` a specific one.
+/// the source called "Glovo", `/glovo jamon` the latest from a matching store.
+///
+/// Orders from a source are normalized (store-brand names cleaned up) before
+/// the comparison; typed baskets are compared as written.
 pub async fn reply_to(
     stores: &[Box<dyn StoreSource>],
     baskets: &[Box<dyn BasketSource>],
+    normalizer: &dyn OrderNormalizer,
     message: &str,
 ) -> String {
     let trimmed = message.trim();
@@ -27,7 +31,7 @@ pub async fn reply_to(
         }
         // "/<source> [reference]" compares an order from that source.
         return match find_source(baskets, word) {
-            Some(source) => order_reply(stores, source.as_ref(), argument).await,
+            Some(source) => order_reply(stores, normalizer, source.as_ref(), argument).await,
             None => usage(),
         };
     }
@@ -83,6 +87,7 @@ async fn typed_reply(stores: &[Box<dyn StoreSource>], message: &str) -> String {
 
 async fn order_reply(
     stores: &[Box<dyn StoreSource>],
+    normalizer: &dyn OrderNormalizer,
     source: &dyn BasketSource,
     reference: Option<&str>,
 ) -> String {
@@ -108,10 +113,22 @@ async fn order_reply(
         return format!("The {} order has no products.", source.name());
     }
 
-    let comparison = compare_items(stores, &basket.items).await;
-    let listing = basket.items.iter().map(item_label).collect::<Vec<_>>().join(", ");
+    // Clean the store-brand names so they match supermarket search; fall back
+    // to the raw items if normalization fails so the order still gets compared.
+    let items = match normalizer.normalize(&basket).await {
+        Ok(clean) if !clean.is_empty() => clean,
+        _ => basket.items.clone(),
+    };
 
-    let mut lines = vec![format!("🛒 {} order: {listing}", source.name()), String::new()];
+    let comparison_items: Vec<BasketItem> = items.iter().map(|i| i.to_basket_item()).collect();
+    let comparison = compare_items(stores, &comparison_items).await;
+    let listing = items
+        .iter()
+        .map(|i| format!("  • {}", item_label(i)))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut lines = vec![format!("🛒 {} order:", source.name()), listing, String::new()];
     for (store, report) in &comparison.stores {
         lines.push(store_line(store, report, comparison.cheapest.as_deref()));
     }
@@ -131,11 +148,15 @@ async fn order_reply(
     lines.join("\n")
 }
 
-fn item_label(item: &BasketItem) -> String {
-    if item.quantity > 1 {
+fn item_label(item: &PurchasedItem) -> String {
+    let qty = if item.quantity > 1 {
         format!("{} x{}", item.name, item.quantity)
     } else {
         item.name.clone()
+    };
+    match item.price_cents {
+        Some(cents) => format!("{qty} — {}", euros(cents)),
+        None => qty,
     }
 }
 

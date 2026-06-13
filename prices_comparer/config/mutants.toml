@@ -5,4 +5,5 @@ exclude_globs = [
     "src/source/**",
     "src/telegram.rs",
     "src/token_store.rs",
+    "src/normalizer.rs",
 ]

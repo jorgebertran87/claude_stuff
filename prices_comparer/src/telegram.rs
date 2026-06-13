@@ -3,7 +3,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::basket::BasketSource;
+use crate::basket::{BasketSource, OrderNormalizer};
 use crate::bot::reply_to;
 use crate::comparer::StoreSource;
 
@@ -16,6 +16,7 @@ pub struct TelegramBot {
     chat_id: i64,
     stores: Vec<Box<dyn StoreSource>>,
     baskets: Vec<Box<dyn BasketSource>>,
+    normalizer: Box<dyn OrderNormalizer>,
     offset: i64,
 }
 
@@ -45,6 +46,7 @@ impl TelegramBot {
         chat_id: i64,
         stores: Vec<Box<dyn StoreSource>>,
         baskets: Vec<Box<dyn BasketSource>>,
+        normalizer: Box<dyn OrderNormalizer>,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -53,6 +55,7 @@ impl TelegramBot {
             chat_id,
             stores,
             baskets,
+            normalizer,
             offset: 0,
         }
     }
@@ -76,7 +79,7 @@ impl TelegramBot {
                 continue;
             }
             let text = msg.text.unwrap_or_default();
-            let reply = reply_to(&self.stores, &self.baskets, &text).await;
+            let reply = reply_to(&self.stores, &self.baskets, self.normalizer.as_ref(), &text).await;
             self.send_message(&reply).await?;
         }
         Ok(())

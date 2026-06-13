@@ -62,16 +62,19 @@ fn euro_str(price: &str) -> String {
     format!("{euros},{cents} €")
 }
 
-/// Turn "milk x2, bread" into Glovo's boughtProducts (quantity as "Nx").
-fn bought_products(basket: &str) -> serde_json::Value {
+/// Turn "milk x2, bread" into Glovo's boughtProducts (quantity as "Nx"),
+/// stamping each line with the order's amount as its per-item price.
+fn bought_products(basket: &str, paid: &str) -> serde_json::Value {
+    let price = euro_str(paid);
     let items: Vec<serde_json::Value> = basket
         .split(',')
         .map(str::trim)
-        .map(|raw| match raw.rsplit_once(" x") {
-            Some((name, qty)) if qty.parse::<u64>().is_ok() => {
-                json!({ "name": name, "quantity": format!("{qty}x") })
-            }
-            _ => json!({ "name": raw, "quantity": "1x" }),
+        .map(|raw| {
+            let (name, qty) = match raw.rsplit_once(" x") {
+                Some((name, qty)) if qty.parse::<u64>().is_ok() => (name, format!("{qty}x")),
+                _ => (raw, "1x".to_string()),
+            };
+            json!({ "name": name, "quantity": qty, "price": price })
         })
         .collect();
     json!(items)
@@ -81,7 +84,7 @@ fn bought_products(basket: &str) -> serde_json::Value {
 fn order_detail(store: &str, basket: &str, paid: &str) -> serde_json::Value {
     json!({
         "storeName": store,
-        "boughtProducts": bought_products(basket),
+        "boughtProducts": bought_products(basket, paid),
         "pricingBreakdown": { "lines": [
             { "type": "PRODUCTS", "amount": euro_str(paid) },
             { "type": "TOTAL",    "amount": euro_str(paid) }
@@ -237,6 +240,17 @@ fn then_bought_at(world: &mut GlovoWorld, store: String) {
 #[then(regex = r#"^the basket was paid (\d+\.\d+)$"#)]
 fn then_paid(world: &mut GlovoWorld, paid: String) {
     assert_eq!(world.basket().paid_cents, Some(cents(&paid)), "paid total mismatch");
+}
+
+#[then(regex = r#"^the item "([^"]+)" is priced (\d+\.\d+)$"#)]
+fn then_item_priced(world: &mut GlovoWorld, name: String, price: String) {
+    let item = world
+        .basket()
+        .items
+        .iter()
+        .find(|i| i.name == name)
+        .unwrap_or_else(|| panic!("no item named {name:?}"));
+    assert_eq!(item.price_cents, Some(cents(&price)), "item price mismatch for {name}");
 }
 
 #[then("no order is found")]

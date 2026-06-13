@@ -25,6 +25,7 @@ RUN cat Cargo-test.toml >> Cargo.toml \
          tests/unit/price_comparison.rs \
          tests/unit/basket_reply.rs \
          tests/unit/order_reply.rs \
+         tests/unit/order_normalization.rs \
          tests/integration/mercadona_source.rs \
          tests/integration/dia_source.rs \
          tests/integration/lidl_source.rs \
@@ -54,14 +55,24 @@ COPY config/mutants.toml config/mutants-integration.toml config/
 # ─── Stage 4: runtime ────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 
+# Node + the Claude Code CLI: the bot shells out to `claude` to normalize
+# Glovo orders. Auth is mounted at runtime (see docker-compose).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
+    ca-certificates curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/prices_comparer /usr/local/bin/prices_comparer
 
-# Run as a non-root user. /data holds the Glovo token file, shared with the
-# mitmproxy capturer via a named volume — own it so the bot can write it.
+# /app is the working dir (the claude subprocess runs here; the normalizer
+# skill is mounted at /app/.claude). /data holds the Glovo token file shared
+# with the mitmproxy capturer.
+WORKDIR /app
+
+# Run as a non-root user by default. /data is owned by appuser so the bot can
+# write it; production overrides to root in docker-compose for Claude auth.
 RUN useradd -r -M -s /bin/false appuser \
     && mkdir -p /data \
     && chown appuser /data

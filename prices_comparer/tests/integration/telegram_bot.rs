@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use cucumber::{given, then, when, World};
+use prices_comparer::basket::IdentityNormalizer;
 use prices_comparer::comparer::StoreSource;
 use prices_comparer::telegram::TelegramBot;
 use serde_json::json;
@@ -128,7 +129,14 @@ fn given_store_one_product(world: &mut BotWorld, store: String, product: String,
 fn given_bot(world: &mut BotWorld) {
     let uri = world.server.as_ref().expect("mock server not started").uri();
     let stores = std::mem::take(&mut world.stores);
-    world.bot = Some(TelegramBot::new(uri, BOT_TOKEN.into(), CONFIGURED_CHAT, stores, vec![]));
+    world.bot = Some(TelegramBot::new(
+        uri,
+        BOT_TOKEN.into(),
+        CONFIGURED_CHAT,
+        stores,
+        vec![],
+        Box::new(IdentityNormalizer),
+    ));
 }
 
 // ── When ──────────────────────────────────────────────────────────────────────

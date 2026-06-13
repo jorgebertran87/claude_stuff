@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use cucumber::{given, then, when, World};
-use prices_comparer::basket::{BasketSource, FetchError, PurchasedBasket};
+use prices_comparer::basket::{
+    BasketSource, FetchError, IdentityNormalizer, PurchasedBasket, PurchasedItem,
+};
 use prices_comparer::bot::reply_to;
 use prices_comparer::comparer::{parse_basket, StoreSource};
 
@@ -103,11 +105,12 @@ fn euros(cents: u64) -> String {
 }
 
 fn purchased(basket: &str, store: Option<String>, paid_cents: Option<u64>) -> PurchasedBasket {
-    PurchasedBasket {
-        items: parse_basket(basket).expect("valid basket in feature file"),
-        store,
-        paid_cents,
-    }
+    let items = parse_basket(basket)
+        .expect("valid basket in feature file")
+        .into_iter()
+        .map(|i| PurchasedItem { name: i.name, quantity: i.quantity, price_cents: None })
+        .collect();
+    PurchasedBasket { items, store, paid_cents }
 }
 
 impl OrderWorld {
@@ -186,7 +189,7 @@ fn given_glovo_expired(world: &mut OrderWorld) {
 #[when(regex = r#"^I message "(.*)"$"#)]
 async fn when_message(world: &mut OrderWorld, message: String) {
     let baskets: Vec<Box<dyn BasketSource>> = vec![Box::new(std::mem::take(&mut world.glovo))];
-    world.reply = Some(reply_to(&world.stores, &baskets, &message).await);
+    world.reply = Some(reply_to(&world.stores, &baskets, &IdentityNormalizer, &message).await);
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────

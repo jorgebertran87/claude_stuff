@@ -3,12 +3,19 @@ services:
   prices_comparer:
     image: ${RUN_IMAGE:-prices-comparer}
     restart: unless-stopped
+    # root so the bot can read the mounted Claude credentials (HOME=/root) and
+    # the world-writable /data shared volume.
+    user: root
     env_file:
       - .env           # copy .env.example → .env and fill in your values
     volumes:
       # Shared with mitmproxy: the capturer writes the Glovo token here and
       # the bot reads it back (see GLOVO_TOKEN_FILE, default /data/glovo_token).
       - glovo_state:/data
+      # Claude Code CLI: auth from the host login, plus the order-normalizer skill.
+      - ${HOME}/.claude.json:/root/.claude.json
+      - ${HOME}/.claude:/root/.claude
+      - ./.claude:/app/.claude:ro
     depends_on:
       init_perms:
         condition: service_completed_successfully

@@ -21,6 +21,11 @@ path    = "tests/unit/order_reply.rs"
 harness = false
 
 [[test]]
+name    = "order_normalization"
+path    = "tests/unit/order_normalization.rs"
+harness = false
+
+[[test]]
 name    = "mercadona_source"
 path    = "tests/integration/mercadona_source.rs"
 harness = false
