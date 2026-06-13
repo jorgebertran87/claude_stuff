@@ -56,37 +56,56 @@ fn cents(price: &str) -> u64 {
     euros * 100 + cents
 }
 
-/// Turn "milk x2, bread" into the products array of a Glovo order.
-fn products(basket: &str) -> serde_json::Value {
+/// Format "3.50" as Glovo's display amount "3,50 €".
+fn euro_str(price: &str) -> String {
+    let (euros, cents) = price.split_once('.').unwrap_or((price, "00"));
+    format!("{euros},{cents} €")
+}
+
+/// Turn "milk x2, bread" into Glovo's boughtProducts (quantity as "Nx").
+fn bought_products(basket: &str) -> serde_json::Value {
     let items: Vec<serde_json::Value> = basket
         .split(',')
         .map(str::trim)
         .map(|raw| match raw.rsplit_once(" x") {
             Some((name, qty)) if qty.parse::<u64>().is_ok() => {
-                json!({ "name": name, "quantity": qty.parse::<u64>().unwrap() })
+                json!({ "name": name, "quantity": format!("{qty}x") })
             }
-            _ => json!({ "name": raw, "quantity": 1 }),
+            _ => json!({ "name": raw, "quantity": "1x" }),
         })
         .collect();
     json!(items)
 }
 
-fn order(id: u64, store: &str, basket: &str, paid: &str) -> serde_json::Value {
+/// The order-detail response for `GET /v3/customer/orders/{id}`.
+fn order_detail(store: &str, basket: &str, paid: &str) -> serde_json::Value {
     json!({
-        "id": id,
-        "store_name": store,
-        "paid": paid.parse::<f64>().unwrap(),
-        "products": products(basket)
+        "storeName": store,
+        "boughtProducts": bought_products(basket),
+        "pricingBreakdown": { "lines": [
+            { "type": "PRODUCTS", "amount": euro_str(paid) },
+            { "type": "TOTAL",    "amount": euro_str(paid) }
+        ]}
     })
 }
 
-async fn mount_orders(world: &mut GlovoWorld, orders: serde_json::Value) {
+/// Mount the orders-list (returning the given ids, newest first) plus a
+/// detail endpoint per (id, detail-body) on one server.
+async fn mount(world: &mut GlovoWorld, ids: &[i64], details: Vec<(i64, serde_json::Value)>) {
     let server = MockServer::start().await;
+    let orders: Vec<serde_json::Value> = ids.iter().map(|id| json!({ "orderId": id })).collect();
     Mock::given(method("GET"))
-        .and(path("/v3/customer/orders"))
+        .and(path("/v3/customer/orders-list"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "orders": orders })))
         .mount(&server)
         .await;
+    for (id, detail) in details {
+        Mock::given(method("GET"))
+            .and(path(format!("/v3/customer/orders/{id}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(detail))
+            .mount(&server)
+            .await;
+    }
     world.server = Some(server);
 }
 
@@ -103,7 +122,7 @@ impl GlovoWorld {
 
 #[given(regex = r#"^a mock Glovo API with an order from "([^"]+)" of "([^"]+)" paid (\d+\.\d+)$"#)]
 async fn given_one_order(world: &mut GlovoWorld, store: String, basket: String, paid: String) {
-    mount_orders(world, json!([order(1, &store, &basket, &paid)])).await;
+    mount(world, &[1], vec![(1, order_detail(&store, &basket, &paid))]).await;
 }
 
 #[given(regex = r#"^a mock Glovo API with order "([^"]+)" from "([^"]+)" of "([^"]+)" paid (\d+\.\d+) and order "([^"]+)" from "([^"]+)" of "([^"]+)" paid (\d+\.\d+)$"#)]
@@ -119,19 +138,22 @@ async fn given_two_orders(
     basket_b: String,
     paid_b: String,
 ) {
-    mount_orders(
+    let id_a: i64 = id_a.parse().unwrap();
+    let id_b: i64 = id_b.parse().unwrap();
+    mount(
         world,
-        json!([
-            order(id_a.parse().unwrap(), &store_a, &basket_a, &paid_a),
-            order(id_b.parse().unwrap(), &store_b, &basket_b, &paid_b)
-        ]),
+        &[id_a, id_b],
+        vec![
+            (id_a, order_detail(&store_a, &basket_a, &paid_a)),
+            (id_b, order_detail(&store_b, &basket_b, &paid_b)),
+        ],
     )
     .await;
 }
 
 #[given("a mock Glovo API with no orders")]
 async fn given_no_orders(world: &mut GlovoWorld) {
-    mount_orders(world, json!([])).await;
+    mount(world, &[], vec![]).await;
 }
 
 #[given("a mock Glovo API that returns HTTP 500")]
