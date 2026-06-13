@@ -13,8 +13,9 @@ const APP_VERSION: &str = "v1.2329.0";
 /// API, so this talks to the endpoints its web client uses, authenticated
 /// with the user's own bearer token (sent raw, without a `Bearer` prefix).
 ///
-/// A basket needs two calls: the orders list gives the latest order's id,
-/// and the order detail gives the structured line items, store and total.
+/// A basket needs two calls: the orders list resolves an order id (the most
+/// recent, or the most recent whose store name matches a search word), and
+/// the order detail gives the structured line items, store and total.
 ///
 /// The token is read from a shared [`TokenStore`] on every request, so a
 /// token captured from live traffic (or set with `/glovo_token`) takes
@@ -66,6 +67,19 @@ struct OrdersList {
 struct OrderSummary {
     #[serde(rename = "orderId")]
     order_id: i64,
+    content: Option<OrderContent>,
+}
+
+#[derive(Deserialize)]
+struct OrderContent {
+    title: Option<String>,
+}
+
+impl OrderSummary {
+    /// The store name as shown on the order card.
+    fn store_title(&self) -> &str {
+        self.content.as_ref().and_then(|c| c.title.as_deref()).unwrap_or("")
+    }
 }
 
 #[derive(Deserialize)]
@@ -115,6 +129,23 @@ impl OrderDetail {
     }
 }
 
+/// Lowercase and strip common Spanish accents, for accent-insensitive
+/// store-name matching ("jamon" matches "Jamón").
+fn fold(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'á' | 'à' | 'ä' | 'â' | 'Á' | 'À' | 'Ä' | 'Â' => 'a',
+            'é' | 'è' | 'ë' | 'ê' | 'É' | 'È' | 'Ë' | 'Ê' => 'e',
+            'í' | 'ì' | 'ï' | 'î' | 'Í' | 'Ì' | 'Ï' | 'Î' => 'i',
+            'ó' | 'ò' | 'ö' | 'ô' | 'Ó' | 'Ò' | 'Ö' | 'Ô' => 'o',
+            'ú' | 'ù' | 'ü' | 'û' | 'Ú' | 'Ù' | 'Ü' | 'Û' => 'u',
+            'ñ' | 'Ñ' => 'n',
+            'ç' | 'Ç' => 'c',
+            other => other.to_ascii_lowercase(),
+        })
+        .collect()
+}
+
 /// Leading integer of a `"1x"`-style quantity; at least 1.
 fn parse_quantity(raw: &str) -> u64 {
     raw.chars()
@@ -160,23 +191,26 @@ impl BasketSource for GlovoSource {
     ) -> Result<Option<PurchasedBasket>, FetchError> {
         let token = self.tokens.current().ok_or(FetchError::NotConfigured)?;
 
-        // Resolve the order id: a given reference, or the latest from the list.
-        let order_id = match reference {
-            Some(id) => id.to_string(),
-            None => {
-                let url = format!("{}/v3/customer/orders-list?offset=0&limit=1", self.base_url);
-                let response = self
-                    .get(&url, &token)
-                    .await?
-                    .error_for_status()
-                    .map_err(|_| FetchError::Unavailable)?;
-                let list: OrdersList =
-                    response.json().await.map_err(|_| FetchError::Unavailable)?;
-                match list.orders.first() {
-                    Some(o) => o.order_id.to_string(),
-                    None => return Ok(None),
-                }
+        // Fetch recent orders and pick one: the latest, or — when a word is
+        // given — the latest whose store name matches it (accent-insensitive).
+        let url = format!("{}/v3/customer/orders-list?offset=0&limit=20", self.base_url);
+        let response = self
+            .get(&url, &token)
+            .await?
+            .error_for_status()
+            .map_err(|_| FetchError::Unavailable)?;
+        let list: OrdersList = response.json().await.map_err(|_| FetchError::Unavailable)?;
+
+        let order = match reference {
+            None => list.orders.into_iter().next(),
+            Some(word) => {
+                let needle = fold(word);
+                list.orders.into_iter().find(|o| fold(o.store_title()).contains(&needle))
             }
+        };
+        let order_id = match order {
+            Some(o) => o.order_id,
+            None => return Ok(None),
         };
 
         // Fetch the structured detail for that order.

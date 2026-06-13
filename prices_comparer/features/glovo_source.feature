@@ -12,17 +12,17 @@ Feature: Glovo source
     And the basket was bought at "Dia"
     And the basket was paid 3.50
 
-  Scenario: Fetching a specific order by id returns that order
-    Given a mock Glovo API with order "1001" from "Dia" of "milk" paid 1.20 and order "1002" from "Lidl" of "bread" paid 0.95
+  Scenario: Fetching by a store word returns the latest order from that store
+    Given a mock Glovo API with order "1001" from "McDonald's" of "fries" paid 8.50 and order "1002" from "Supermercados El Jamón" of "milk" paid 1.20
     And a Glovo source pointed at the mock
-    When I fetch order "1002"
-    Then the basket has "bread" with quantity 1
-    And the basket was bought at "Lidl"
+    When I fetch the order matching "jamon"
+    Then the basket has "milk" with quantity 1
+    And the basket was bought at "Supermercados El Jamón"
 
-  Scenario: An unknown order id is reported as no order found
+  Scenario: A word matching no store is reported as no order found
     Given a mock Glovo API with an order from "Dia" of "milk" paid 1.20
     And a Glovo source pointed at the mock
-    When I fetch order "9999"
+    When I fetch the order matching "carrefour"
     Then no order is found
 
   Scenario: An empty order history is reported as no order found

@@ -89,11 +89,19 @@ fn order_detail(store: &str, basket: &str, paid: &str) -> serde_json::Value {
     })
 }
 
-/// Mount the orders-list (returning the given ids, newest first) plus a
-/// detail endpoint per (id, detail-body) on one server.
-async fn mount(world: &mut GlovoWorld, ids: &[i64], details: Vec<(i64, serde_json::Value)>) {
+/// Mount the orders-list (returning the given (id, store-title) pairs, newest
+/// first — the store title is what word search matches on) plus a detail
+/// endpoint per (id, detail-body) on one server.
+async fn mount(
+    world: &mut GlovoWorld,
+    list: &[(i64, &str)],
+    details: Vec<(i64, serde_json::Value)>,
+) {
     let server = MockServer::start().await;
-    let orders: Vec<serde_json::Value> = ids.iter().map(|id| json!({ "orderId": id })).collect();
+    let orders: Vec<serde_json::Value> = list
+        .iter()
+        .map(|(id, title)| json!({ "orderId": id, "content": { "title": title } }))
+        .collect();
     Mock::given(method("GET"))
         .and(path("/v3/customer/orders-list"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "orders": orders })))
@@ -122,7 +130,7 @@ impl GlovoWorld {
 
 #[given(regex = r#"^a mock Glovo API with an order from "([^"]+)" of "([^"]+)" paid (\d+\.\d+)$"#)]
 async fn given_one_order(world: &mut GlovoWorld, store: String, basket: String, paid: String) {
-    mount(world, &[1], vec![(1, order_detail(&store, &basket, &paid))]).await;
+    mount(world, &[(1, store.as_str())], vec![(1, order_detail(&store, &basket, &paid))]).await;
 }
 
 #[given(regex = r#"^a mock Glovo API with order "([^"]+)" from "([^"]+)" of "([^"]+)" paid (\d+\.\d+) and order "([^"]+)" from "([^"]+)" of "([^"]+)" paid (\d+\.\d+)$"#)]
@@ -142,7 +150,7 @@ async fn given_two_orders(
     let id_b: i64 = id_b.parse().unwrap();
     mount(
         world,
-        &[id_a, id_b],
+        &[(id_a, store_a.as_str()), (id_b, store_b.as_str())],
         vec![
             (id_a, order_detail(&store_a, &basket_a, &paid_a)),
             (id_b, order_detail(&store_b, &basket_b, &paid_b)),
@@ -204,10 +212,10 @@ async fn when_fetch_last(world: &mut GlovoWorld) {
     world.result = Some(source.fetch_basket(None).await);
 }
 
-#[when(regex = r#"^I fetch order "([^"]+)"$"#)]
-async fn when_fetch_by_id(world: &mut GlovoWorld, id: String) {
+#[when(regex = r#"^I fetch the order matching "([^"]+)"$"#)]
+async fn when_fetch_by_word(world: &mut GlovoWorld, word: String) {
     let source = world.source.as_ref().expect("source not built");
-    world.result = Some(source.fetch_basket(Some(&id)).await);
+    world.result = Some(source.fetch_basket(Some(&word)).await);
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────
