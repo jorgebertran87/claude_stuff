@@ -29,7 +29,8 @@ RUN cat Cargo-test.toml >> Cargo.toml \
          tests/integration/dia_source.rs \
          tests/integration/lidl_source.rs \
          tests/integration/telegram_bot.rs \
-         tests/integration/glovo_source.rs > /dev/null \
+         tests/integration/glovo_source.rs \
+         tests/integration/token_store.rs > /dev/null \
     && cargo test --no-run \
     && rm -rf tests
 
@@ -59,8 +60,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /build/target/release/prices_comparer /usr/local/bin/prices_comparer
 
-# Run as a non-root user.
-RUN useradd -r -M -s /bin/false appuser
+# Run as a non-root user. /data holds the Glovo token file, shared with the
+# mitmproxy capturer via a named volume — own it so the bot can write it.
+RUN useradd -r -M -s /bin/false appuser \
+    && mkdir -p /data \
+    && chown appuser /data
 USER appuser
 
 ENTRYPOINT ["/usr/local/bin/prices_comparer"]

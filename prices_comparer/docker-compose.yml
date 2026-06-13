@@ -5,6 +5,10 @@ services:
     restart: unless-stopped
     env_file:
       - .env           # copy .env.example → .env and fill in your values
+    volumes:
+      # Shared with mitmproxy: the capturer writes the Glovo token here and
+      # the bot reads it back (see GLOVO_TOKEN_FILE, default /data/glovo_token).
+      - glovo_state:/data
     depends_on:
       flaresolverr:
         condition: service_healthy
@@ -21,3 +25,24 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
+
+  # mitmproxy — proxy your phone through this; the addon watches Glovo
+  # traffic and writes the captured bearer token to the shared volume.
+  # Point your device's HTTP proxy at <pequenin-tailscale-ip>:8080 and
+  # install the mitmproxy CA. See capture/README.md (cert pinning caveat).
+  glovo_capture:
+    image: mitmproxy/mitmproxy:latest
+    restart: unless-stopped
+    # root so it can write the token into the appuser-owned shared volume.
+    user: root
+    command: >
+      mitmdump --set confdir=/data/mitmproxy
+      -s /addon/glovo_token.py
+    ports:
+      - "8080:8080"      # HTTP/S proxy the phone connects to
+    volumes:
+      - ./capture/glovo_token.py:/addon/glovo_token.py:ro
+      - glovo_state:/data
+
+volumes:
+  glovo_state:

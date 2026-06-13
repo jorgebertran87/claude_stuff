@@ -1,4 +1,4 @@
-use crate::basket::BasketSource;
+use crate::basket::{BasketSource, FetchError};
 use crate::comparer::{compare, compare_items, BasketItem, Comparison, StoreSource, StoreReport};
 
 /// Build the bot's reply to a message.
@@ -14,16 +14,41 @@ pub async fn reply_to(
 ) -> String {
     let trimmed = message.trim();
     if let Some(command) = trimmed.strip_prefix('/') {
-        let (name, reference) = match command.split_once(' ') {
-            Some((name, reference)) => (name.trim(), Some(reference.trim())),
+        let (word, argument) = match command.split_once(' ') {
+            Some((word, argument)) => (word.trim(), Some(argument.trim())),
             None => (command.trim(), None),
         };
-        return match baskets.iter().find(|b| b.name().eq_ignore_ascii_case(name)) {
-            Some(source) => order_reply(stores, source.as_ref(), reference).await,
+        // "/<source>_token <value>" sets that source's credential.
+        if let Some(name) = word.strip_suffix("_token") {
+            return match find_source(baskets, name) {
+                Some(source) => set_token_reply(source.as_ref(), argument).await,
+                None => usage(),
+            };
+        }
+        // "/<source> [reference]" compares an order from that source.
+        return match find_source(baskets, word) {
+            Some(source) => order_reply(stores, source.as_ref(), argument).await,
             None => usage(),
         };
     }
     typed_reply(stores, trimmed).await
+}
+
+fn find_source<'a>(
+    baskets: &'a [Box<dyn BasketSource>],
+    name: &str,
+) -> Option<&'a Box<dyn BasketSource>> {
+    baskets.iter().find(|b| b.name().eq_ignore_ascii_case(name))
+}
+
+async fn set_token_reply(source: &dyn BasketSource, token: Option<&str>) -> String {
+    let Some(token) = token.filter(|t| !t.is_empty()) else {
+        return format!("Send the token after the command:\n  /{}_token <token>", source.name().to_lowercase());
+    };
+    match source.set_token(token).await {
+        Ok(()) => format!("{} token saved. ✅", source.name()),
+        Err(e) => format!("Could not save the {} token: {e}", source.name()),
+    }
 }
 
 async fn typed_reply(stores: &[Box<dyn StoreSource>], message: &str) -> String {
@@ -61,9 +86,22 @@ async fn order_reply(
     source: &dyn BasketSource,
     reference: Option<&str>,
 ) -> String {
+    let name = source.name();
     let basket = match source.fetch_basket(reference).await {
-        Err(_) => return format!("{} could not be reached. Try again later.", source.name()),
-        Ok(None) => return format!("No {} order was found.", source.name()),
+        Err(FetchError::NotConfigured) => return format!(
+            "{name} is not configured. Send the bearer token with:\n  /{}_token <token>\n\
+             or set up automatic capture so it stays fresh.",
+            name.to_lowercase(),
+        ),
+        Err(FetchError::Unauthorized) => return format!(
+            "The {name} token has expired. Open the {name} app to refresh it \
+             (automatic capture will pick it up), or send a new one with /{}_token <token>.",
+            name.to_lowercase(),
+        ),
+        Err(FetchError::Unavailable) => {
+            return format!("{name} could not be reached. Try again later.")
+        }
+        Ok(None) => return format!("No {name} order was found."),
         Ok(Some(basket)) => basket,
     };
     if basket.items.is_empty() {

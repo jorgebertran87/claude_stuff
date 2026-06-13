@@ -4,6 +4,7 @@ use prices_comparer::source::{
     dia::DiaSource, glovo::GlovoSource, lidl::LidlSource, mercadona::MercadonaSource,
 };
 use prices_comparer::telegram::TelegramBot;
+use prices_comparer::token_store::TokenStore;
 
 fn env(name: &str) -> anyhow::Result<String> {
     std::env::var(name).map_err(|_| anyhow::anyhow!("{name} must be set"))
@@ -35,17 +36,21 @@ async fn main() -> anyhow::Result<()> {
         Box::new(LidlSource::new("https://www.lidl.es".to_string())),
     ];
 
-    // Basket sources are optional — without a token, /glovo simply
-    // is not recognised.
-    let mut baskets: Vec<Box<dyn BasketSource>> = Vec::new();
+    // Glovo's token lives in a file the bot shares with the mitmproxy
+    // capturer, so a freshly captured token takes effect without a restart.
+    // A GLOVO_TOKEN in the environment seeds the file on first boot.
+    let token_path = std::env::var("GLOVO_TOKEN_FILE")
+        .unwrap_or_else(|_| "/data/glovo_token".to_string());
+    let glovo_tokens = TokenStore::new(token_path.into());
     if let Ok(token) = std::env::var("GLOVO_TOKEN") {
-        if !token.trim().is_empty() {
-            baskets.push(Box::new(GlovoSource::new(
-                "https://api.glovoapp.com".to_string(),
-                token,
-            )));
+        if !token.trim().is_empty() && glovo_tokens.current().is_none() {
+            glovo_tokens.set(&token)?;
         }
     }
+    let baskets: Vec<Box<dyn BasketSource>> = vec![Box::new(GlovoSource::new(
+        "https://api.glovoapp.com".to_string(),
+        glovo_tokens,
+    ))];
 
     TelegramBot::new("https://api.telegram.org".to_string(), bot_token, chat_id, stores, baskets)
         .run()

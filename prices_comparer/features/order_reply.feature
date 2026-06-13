@@ -46,6 +46,23 @@ Feature: Order reply
     When I message "/glovo"
     Then the reply says Glovo could not be reached
 
+  Scenario: Setting the Glovo token is acknowledged
+    Given a store "Mercadona" selling "milk" at 1.10
+    When I message "/glovo_token fresh-token-123"
+    Then the reply confirms the Glovo token was saved
+
+  Scenario: Asking for an order with no token explains how to set it
+    Given a store "Mercadona" selling "milk" at 1.10
+    And Glovo has no token configured
+    When I message "/glovo"
+    Then the reply says Glovo is not configured
+
+  Scenario: An expired token tells the user to capture a fresh one
+    Given a store "Mercadona" selling "milk" at 1.10
+    And the Glovo token has expired
+    When I message "/glovo"
+    Then the reply says the Glovo token has expired
+
   Scenario: A typed basket still works as before
     Given a store "Mercadona" selling "milk" at 1.10
     And an empty Glovo order history

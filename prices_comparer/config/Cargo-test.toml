@@ -1,6 +1,7 @@
 [dev-dependencies]
 cucumber  = "0.21"
 futures   = "0.3"
+tempfile  = "3"
 tokio     = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 wiremock  = "0.6"
 
@@ -42,4 +43,9 @@ harness = false
 [[test]]
 name    = "glovo_source"
 path    = "tests/integration/glovo_source.rs"
+harness = false
+
+[[test]]
+name    = "token_store"
+path    = "tests/integration/token_store.rs"
 harness = false

@@ -52,6 +52,8 @@ run-prod:
 deploy:
 	$(MAKE) test
 	$(MAKE) build-prod
+	ssh pequenin 'mkdir -p ~/prices_comparer/capture'
 	scp Makefile docker-compose.yml pequenin:~/prices_comparer
+	scp capture/glovo_token.py pequenin:~/prices_comparer/capture
 
 .PHONY: build build-prod test test-integration test-all mutants mutants-integration run run-prod deploy

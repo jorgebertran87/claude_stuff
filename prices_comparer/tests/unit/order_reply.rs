@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use cucumber::{given, then, when, World};
-use prices_comparer::basket::{BasketSource, PurchasedBasket};
+use prices_comparer::basket::{BasketSource, FetchError, PurchasedBasket};
 use prices_comparer::bot::reply_to;
 use prices_comparer::comparer::{parse_basket, StoreSource};
 
@@ -26,11 +26,20 @@ impl StoreSource for FakeStore {
 
 // ── Fake basket source ────────────────────────────────────────────────────────
 
+#[derive(Default, PartialEq)]
+enum Mode {
+    #[default]
+    Orders,
+    Unavailable,
+    NotConfigured,
+    Unauthorized,
+}
+
 #[derive(Default)]
 struct FakeGlovo {
     /// (order id, basket) — newest first; `None` id means "only the latest".
     orders: Vec<(Option<String>, PurchasedBasket)>,
-    fails: bool,
+    mode: Mode,
 }
 
 #[async_trait]
@@ -42,9 +51,12 @@ impl BasketSource for FakeGlovo {
     async fn fetch_basket(
         &self,
         reference: Option<&str>,
-    ) -> anyhow::Result<Option<PurchasedBasket>> {
-        if self.fails {
-            anyhow::bail!("glovo unreachable");
+    ) -> Result<Option<PurchasedBasket>, FetchError> {
+        match self.mode {
+            Mode::Unavailable => return Err(FetchError::Unavailable),
+            Mode::NotConfigured => return Err(FetchError::NotConfigured),
+            Mode::Unauthorized => return Err(FetchError::Unauthorized),
+            Mode::Orders => {}
         }
         Ok(match reference {
             None => self.orders.first().map(|(_, basket)| basket.clone()),
@@ -54,6 +66,10 @@ impl BasketSource for FakeGlovo {
                 .find(|(order_id, _)| order_id.as_deref() == Some(id))
                 .map(|(_, basket)| basket.clone()),
         })
+    }
+
+    async fn set_token(&self, _token: &str) -> anyhow::Result<()> {
+        Ok(())
     }
 }
 
@@ -152,7 +168,17 @@ fn given_empty_history(_world: &mut OrderWorld) {}
 
 #[given("a Glovo source that fails to respond")]
 fn given_glovo_failing(world: &mut OrderWorld) {
-    world.glovo.fails = true;
+    world.glovo.mode = Mode::Unavailable;
+}
+
+#[given("Glovo has no token configured")]
+fn given_glovo_not_configured(world: &mut OrderWorld) {
+    world.glovo.mode = Mode::NotConfigured;
+}
+
+#[given("the Glovo token has expired")]
+fn given_glovo_expired(world: &mut OrderWorld) {
+    world.glovo.mode = Mode::Unauthorized;
 }
 
 // ── When ──────────────────────────────────────────────────────────────────────
@@ -201,6 +227,21 @@ fn then_no_order(world: &mut OrderWorld) {
 #[then("the reply says Glovo could not be reached")]
 fn then_unreachable(world: &mut OrderWorld) {
     world.assert_reply_contains("Glovo could not be reached");
+}
+
+#[then("the reply confirms the Glovo token was saved")]
+fn then_token_saved(world: &mut OrderWorld) {
+    world.assert_reply_contains("Glovo token saved");
+}
+
+#[then("the reply says Glovo is not configured")]
+fn then_not_configured(world: &mut OrderWorld) {
+    world.assert_reply_contains("Glovo is not configured");
+}
+
+#[then("the reply says the Glovo token has expired")]
+fn then_token_expired(world: &mut OrderWorld) {
+    world.assert_reply_contains("Glovo token has expired");
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────

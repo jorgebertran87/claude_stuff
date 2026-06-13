@@ -1,6 +1,7 @@
 use cucumber::{given, then, when, World};
-use prices_comparer::basket::{BasketSource, PurchasedBasket};
+use prices_comparer::basket::{BasketSource, FetchError, PurchasedBasket};
 use prices_comparer::source::glovo::GlovoSource;
+use prices_comparer::token_store::TokenStore;
 use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -9,10 +10,11 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[derive(World)]
 pub struct GlovoWorld {
-    // MockServer must be kept alive so the mock remains mounted during the test.
+    // MockServer and TempDir must be kept alive for the duration of the test.
     server: Option<MockServer>,
+    dir: tempfile::TempDir,
     source: Option<GlovoSource>,
-    result: Option<Result<Option<PurchasedBasket>, String>>,
+    result: Option<Result<Option<PurchasedBasket>, FetchError>>,
 }
 
 impl std::fmt::Debug for GlovoWorld {
@@ -25,7 +27,24 @@ impl std::fmt::Debug for GlovoWorld {
 
 impl Default for GlovoWorld {
     fn default() -> Self {
-        Self { server: None, source: None, result: None }
+        Self {
+            server: None,
+            dir: tempfile::tempdir().unwrap(),
+            source: None,
+            result: None,
+        }
+    }
+}
+
+impl GlovoWorld {
+    /// Build a source against the mock, optionally seeding a token.
+    fn build_source(&mut self, token: Option<&str>) {
+        let uri = self.server.as_ref().expect("mock server not started").uri();
+        let tokens = TokenStore::new(self.dir.path().join("glovo_token"));
+        if let Some(token) = token {
+            tokens.set(token).unwrap();
+        }
+        self.source = Some(GlovoSource::new(uri, tokens));
     }
 }
 
@@ -135,10 +154,24 @@ async fn given_invalid_json(world: &mut GlovoWorld) {
     world.server = Some(server);
 }
 
+#[given("a mock Glovo API that rejects the token as unauthorized")]
+async fn given_unauthorized(world: &mut GlovoWorld) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(401).set_body_string("Unauthorized"))
+        .mount(&server)
+        .await;
+    world.server = Some(server);
+}
+
 #[given("a Glovo source pointed at the mock")]
 fn given_source(world: &mut GlovoWorld) {
-    let uri = world.server.as_ref().expect("mock server not started").uri();
-    world.source = Some(GlovoSource::new(uri, "test-token".into()));
+    world.build_source(Some("test-token"));
+}
+
+#[given("a Glovo source with no token")]
+fn given_source_no_token(world: &mut GlovoWorld) {
+    world.build_source(None);
 }
 
 // ── When ──────────────────────────────────────────────────────────────────────
@@ -146,13 +179,13 @@ fn given_source(world: &mut GlovoWorld) {
 #[when("I fetch the last order")]
 async fn when_fetch_last(world: &mut GlovoWorld) {
     let source = world.source.as_ref().expect("source not built");
-    world.result = Some(source.fetch_basket(None).await.map_err(|e| e.to_string()));
+    world.result = Some(source.fetch_basket(None).await);
 }
 
 #[when(regex = r#"^I fetch order "([^"]+)"$"#)]
 async fn when_fetch_by_id(world: &mut GlovoWorld, id: String) {
     let source = world.source.as_ref().expect("source not built");
-    world.result = Some(source.fetch_basket(Some(&id)).await.map_err(|e| e.to_string()));
+    world.result = Some(source.fetch_basket(Some(&id)).await);
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────
@@ -185,13 +218,19 @@ fn then_no_order(world: &mut GlovoWorld) {
     );
 }
 
-#[then("the fetch fails")]
-fn then_fetch_fails(world: &mut GlovoWorld) {
-    assert!(
-        matches!(&world.result, Some(Err(_))),
-        "expected the fetch to fail, got: {:?}",
-        world.result
-    );
+#[then("the fetch reports Glovo is unavailable")]
+fn then_unavailable(world: &mut GlovoWorld) {
+    assert_eq!(world.result, Some(Err(FetchError::Unavailable)), "expected unavailable");
+}
+
+#[then("the fetch reports the token is not configured")]
+fn then_not_configured(world: &mut GlovoWorld) {
+    assert_eq!(world.result, Some(Err(FetchError::NotConfigured)), "expected not configured");
+}
+
+#[then("the fetch reports the token has expired")]
+fn then_expired(world: &mut GlovoWorld) {
+    assert_eq!(world.result, Some(Err(FetchError::Unauthorized)), "expected unauthorized");
 }
 
 #[then(regex = r#"^the basket source name is "([^"]+)"$"#)]

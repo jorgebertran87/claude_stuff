@@ -31,17 +31,29 @@ Feature: Glovo source
     When I fetch the last order
     Then no order is found
 
-  Scenario: An HTTP error makes the fetch fail
+  Scenario: An HTTP error reports Glovo as unavailable
     Given a mock Glovo API that returns HTTP 500
     And a Glovo source pointed at the mock
     When I fetch the last order
-    Then the fetch fails
+    Then the fetch reports Glovo is unavailable
 
-  Scenario: A malformed response makes the fetch fail
+  Scenario: A malformed response reports Glovo as unavailable
     Given a mock Glovo API that returns invalid JSON
     And a Glovo source pointed at the mock
     When I fetch the last order
-    Then the fetch fails
+    Then the fetch reports Glovo is unavailable
+
+  Scenario: With no token configured the fetch reports it is not configured
+    Given a mock Glovo API with an order from "Dia" of "milk" paid 1.20
+    And a Glovo source with no token
+    When I fetch the last order
+    Then the fetch reports the token is not configured
+
+  Scenario: A rejected token reports it has expired
+    Given a mock Glovo API that rejects the token as unauthorized
+    And a Glovo source pointed at the mock
+    When I fetch the last order
+    Then the fetch reports the token has expired
 
   Scenario: The source identifies itself as Glovo
     Given a mock Glovo API with no orders
