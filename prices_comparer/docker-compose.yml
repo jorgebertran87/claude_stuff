@@ -10,8 +10,19 @@ services:
       # the bot reads it back (see GLOVO_TOKEN_FILE, default /data/glovo_token).
       - glovo_state:/data
     depends_on:
+      init_perms:
+        condition: service_completed_successfully
       flaresolverr:
         condition: service_healthy
+
+  # A fresh named volume is created root:root 0755, but neither the bot
+  # (appuser) nor mitmproxy (its entrypoint drops to the mitmproxy user) runs
+  # as root — so make the shared /data group/other-writable before they start.
+  init_perms:
+    image: busybox
+    command: chmod 0777 /data
+    volumes:
+      - glovo_state:/data
 
   # FlareSolverr — bypasses Cloudflare for the Dia source.
   flaresolverr:
@@ -33,8 +44,6 @@ services:
   glovo_capture:
     image: mitmproxy/mitmproxy:latest
     restart: unless-stopped
-    # root so it can write the token into the appuser-owned shared volume.
-    user: root
     command: >
       mitmdump --set confdir=/data/mitmproxy
       -s /addon/glovo_token.py
@@ -43,6 +52,9 @@ services:
     volumes:
       - ./capture/glovo_token.py:/addon/glovo_token.py:ro
       - glovo_state:/data
+    depends_on:
+      init_perms:
+        condition: service_completed_successfully
 
 volumes:
   glovo_state:
