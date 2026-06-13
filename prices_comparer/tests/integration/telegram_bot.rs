@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use cucumber::{given, then, when, World};
 use prices_comparer::basket::IdentityNormalizer;
-use prices_comparer::comparer::StoreSource;
+use prices_comparer::comparer::{StoreSource, Unit, UnitPrice};
 use prices_comparer::telegram::TelegramBot;
 use serde_json::json;
 use wiremock::matchers::{method, path_regex};
@@ -26,8 +26,11 @@ impl StoreSource for FakeStore {
         &self.name
     }
 
-    async fn price_cents(&self, product: &str) -> anyhow::Result<Option<u64>> {
-        Ok(self.prices.get(product).copied())
+    async fn unit_price(&self, product: &str) -> anyhow::Result<Option<UnitPrice>> {
+        Ok(self
+            .prices
+            .get(product)
+            .map(|c| UnitPrice { cents_per_unit: *c, unit: Unit::Litre }))
     }
 }
 

@@ -1,5 +1,5 @@
 use cucumber::{given, then, when, World};
-use prices_comparer::comparer::StoreSource;
+use prices_comparer::comparer::{StoreSource, Unit, UnitPrice};
 use prices_comparer::source::lidl::LidlSource;
 use serde_json::json;
 use wiremock::matchers::{method, path, query_param};
@@ -12,7 +12,7 @@ pub struct LidlWorld {
     // MockServer must be kept alive so the mock remains mounted during the test.
     server: Option<MockServer>,
     source: Option<LidlSource>,
-    result: Option<Result<Option<u64>, String>>,
+    result: Option<Result<Option<UnitPrice>, String>>,
 }
 
 impl std::fmt::Debug for LidlWorld {
@@ -114,17 +114,17 @@ fn given_source(world: &mut LidlWorld) {
 #[when(regex = r#"^I ask the price of "([^"]+)"$"#)]
 async fn when_ask_price(world: &mut LidlWorld, product: String) {
     let source = world.source.as_ref().expect("source not built");
-    world.result = Some(source.price_cents(&product).await.map_err(|e| e.to_string()));
+    world.result = Some(source.unit_price(&product).await.map_err(|e| e.to_string()));
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────
 
-#[then(regex = r#"^the price is (\d+\.\d+)$"#)]
+#[then(regex = r#"^the per-unit price is (\d+\.\d+) per litre$"#)]
 fn then_price(world: &mut LidlWorld, expected: String) {
     assert_eq!(
         world.result,
-        Some(Ok(Some(cents(&expected)))),
-        "price mismatch"
+        Some(Ok(Some(UnitPrice { cents_per_unit: cents(&expected), unit: Unit::Litre }))),
+        "per-unit price mismatch"
     );
 }
 

@@ -1,70 +1,41 @@
 Feature: Price comparison
   As a shopper
-  I want the total price of my product list computed for each supermarket
-  So that I can see which store is cheapest for my whole basket
+  I want each product priced per unit at every supermarket
+  So that I can see which store is cheapest per litre, kilo or unit
 
-  Scenario: Every store has every product so all totals are complete
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Dia" selling "milk" at 1.05 and "bread" at 1.00
-    When I compare the basket "milk, bread"
-    Then the total for "Mercadona" is 2.00
-    And the total for "Dia" is 2.05
-    And the cheapest store is "Mercadona"
+  Scenario: A product is priced per unit at each store
+    Given a store "Mercadona" pricing "milk" at 0.96 per litre
+    And a store "Dia" pricing "milk" at 1.10 per litre
+    When I compare the basket "milk"
+    Then "milk" costs 0.96 per litre at "Mercadona"
+    And "milk" costs 1.10 per litre at "Dia"
 
-  Scenario: Quantities multiply the unit price
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    When I compare the basket "milk x3, bread"
-    Then the total for "Mercadona" is 4.20
+  Scenario: The cheapest store is marked for each product
+    Given a store "Mercadona" pricing "milk" at 0.96 per litre
+    And a store "Dia" pricing "milk" at 1.10 per litre
+    When I compare the basket "milk"
+    Then the cheapest store for "milk" is "Mercadona"
 
-  Scenario: A store missing a product reports an incomplete total
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Maskom" selling "milk" at 1.00
-    When I compare the basket "milk, bread"
-    Then the total for "Mercadona" is 2.00
-    And the total for "Maskom" is incomplete, missing "bread"
-    And the cheapest store is "Mercadona"
+  Scenario: A store that does not sell a product shows no price
+    Given a store "Mercadona" pricing "milk" at 0.96 per litre
+    And a store "Lidl" that does not sell "milk"
+    When I compare the basket "milk"
+    Then "milk" has no price at "Lidl"
 
-  Scenario: Incomplete stores never win the cheapest comparison
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Maskom" selling "milk" at 0.10
-    When I compare the basket "milk, bread"
-    Then the cheapest store is "Mercadona"
-
-  Scenario: A store that fails to respond is reported as unavailable
-    Given a store "Mercadona" selling "milk" at 1.10
+  Scenario: A store that fails to respond shows no price
+    Given a store "Mercadona" pricing "milk" at 0.96 per litre
     And a store "Carrefour" that fails to respond
     When I compare the basket "milk"
-    Then the total for "Mercadona" is 1.10
-    And the store "Carrefour" is reported as unavailable
-    And the cheapest store is "Mercadona"
+    Then "milk" costs 0.96 per litre at "Mercadona"
+    And "milk" has no price at "Carrefour"
+
+  Scenario: A price in a different unit cannot win on a lower number
+    Given a store "Mercadona" pricing "milk" at 0.96 per litre
+    And a store "Dia" pricing "milk" at 0.50 per kilo
+    When I compare the basket "milk"
+    Then the cheapest store for "milk" is "Mercadona"
 
   Scenario: Comparing an empty basket is rejected
-    Given a store "Mercadona" selling "milk" at 1.10
+    Given a store "Mercadona" pricing "milk" at 0.96 per litre
     When I compare the basket ""
     Then the comparison fails with an empty basket error
-
-  Scenario: A product found in no store is reported as missing everywhere
-    Given a store "Mercadona" selling "milk" at 1.10
-    And a store "Dia" selling "milk" at 1.05
-    When I compare the basket "milk, caviar"
-    Then the product "caviar" is reported as missing in every store
-    And the total for "Mercadona" is incomplete, missing "caviar"
-
-  Scenario: Each product is priced at every store that sells it
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Dia" selling "milk" at 1.05 and "bread" at 1.00
-    When I compare the basket "milk, bread"
-    Then "milk" costs 1.10 at "Mercadona"
-    And "milk" costs 1.05 at "Dia"
-    And "bread" costs 0.90 at "Mercadona"
-
-  Scenario: A product's price reflects the quantity
-    Given a store "Mercadona" selling "milk" at 1.10
-    When I compare the basket "milk x3"
-    Then "milk" costs 3.30 at "Mercadona"
-
-  Scenario: A product a store does not sell has no price there
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Maskom" selling "milk" at 1.00
-    When I compare the basket "milk, bread"
-    Then "bread" has no price at "Maskom"

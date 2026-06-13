@@ -1,17 +1,17 @@
-use crate::basket::{BasketSource, FetchError, OrderNormalizer};
+use crate::basket::{BasketSource, FetchError, OrderNormalizer, PurchasedItem};
 use crate::comparer::{
-    compare, compare_items, BasketItem, Comparison, ItemPrices, StoreSource, StoreReport,
+    compare, compare_items, BasketItem, ItemComparison, ItemSize, StoreSource, UnitPrice,
 };
 
 /// Build the bot's reply to a message.
 ///
-/// A plain message is a typed basket: `milk x2, bread`, with an optional
-/// `@ Store` suffix naming the store where it was bought. A `/command`
-/// names a basket source instead: `/glovo` compares the latest order from
-/// the source called "Glovo", `/glovo jamon` the latest from a matching store.
+/// A plain message is a typed basket (`milk, bread`). A `/command` names a
+/// basket source instead: `/glovo` compares the latest order from the source
+/// called "Glovo", `/glovo jamon` the latest from a matching store.
 ///
 /// Orders from a source are normalized (store-brand names cleaned up) before
-/// the comparison; typed baskets are compared as written.
+/// the comparison; typed baskets are compared as written. Every product is
+/// priced per unit (€/L, €/kg, €/each) and the cheapest store is marked.
 pub async fn reply_to(
     stores: &[Box<dyn StoreSource>],
     baskets: &[Box<dyn BasketSource>],
@@ -58,19 +58,7 @@ async fn set_token_reply(source: &dyn BasketSource, token: Option<&str>) -> Stri
 }
 
 async fn typed_reply(stores: &[Box<dyn StoreSource>], message: &str) -> String {
-    let (basket, bought_at) = match message.split_once('@') {
-        Some((basket, store)) => (basket.trim(), Some(store.trim())),
-        None => (message, None),
-    };
-
-    // Validate the bought store before spending time querying prices.
-    if let Some(bought) = bought_at {
-        if !stores.iter().any(|s| s.name().eq_ignore_ascii_case(bought)) {
-            let known = stores.iter().map(|s| s.name()).collect::<Vec<_>>().join(", ");
-            return format!("{bought} is not a known store. Known stores: {known}.");
-        }
-    }
-
+    let basket = message.split('@').next().unwrap_or(message).trim();
     let comparison = match compare(stores, basket).await {
         Ok(comparison) => comparison,
         Err(_) => return usage(),
@@ -78,15 +66,7 @@ async fn typed_reply(stores: &[Box<dyn StoreSource>], message: &str) -> String {
 
     let mut lines = vec![format!("🛒 {basket}"), String::new()];
     for item in &comparison.items {
-        lines.push(item_breakdown_line(item, None));
-    }
-    lines.push(String::new());
-    for (store, report) in &comparison.stores {
-        lines.push(store_line(store, report, comparison.cheapest.as_deref()));
-    }
-    if let Some(bought) = bought_at {
-        lines.push(String::new());
-        lines.push(bought_lines(&comparison, bought));
+        lines.push(typed_item_line(item));
     }
     lines.join("\n")
 }
@@ -131,103 +111,82 @@ async fn order_reply(
 
     let mut lines = vec![format!("🛒 {} order:", source.name()), String::new()];
     for (i, item) in comparison.items.iter().enumerate() {
-        lines.push(item_breakdown_line(item, Some((source.name(), items[i].price_cents))));
-    }
-    lines.push(String::new());
-    for (store, report) in &comparison.stores {
-        lines.push(store_line(store, report, comparison.cheapest.as_deref()));
-    }
-    if let Some(bought) = &basket.store {
-        lines.push(String::new());
-        // Unlike a typed basket, the order is already bought — an unknown
-        // store is reported, not rejected.
-        if comparison.stores.iter().any(|(store, _)| store.eq_ignore_ascii_case(bought)) {
-            lines.push(bought_lines(&comparison, bought));
-        } else {
-            lines.push(format!("{bought} is not a compared store."));
-        }
+        lines.push(order_item_line(item, &items[i], source.name()));
     }
     if let Some(paid) = basket.paid_cents {
+        lines.push(String::new());
         lines.push(format!("You paid {} on {}.", euros(paid), source.name()));
     }
     lines.join("\n")
 }
 
-/// One product's line in the breakdown: each store's price (— if not sold),
-/// optionally prefixed with the price paid at the source (e.g. Glovo).
-fn item_breakdown_line(item: &ItemPrices, source: Option<(&str, Option<u64>)>) -> String {
+// ── Rendering ──────────────────────────────────────────────────────────────
+
+fn typed_item_line(item: &ItemComparison) -> String {
     let qty = if item.quantity > 1 { format!(" x{}", item.quantity) } else { String::new() };
-    let stores = item
-        .per_store
+    format!("{}{qty} — {}", item.name, store_cells(item))
+}
+
+fn order_item_line(item: &ItemComparison, purchased: &PurchasedItem, label: &str) -> String {
+    let size = purchased
+        .size
+        .map(|s| format!(" ({})", size_label(s)))
+        .unwrap_or_default();
+    let head = match glovo_unit_price(purchased) {
+        Some(up) => format!("{}{size} — {label} {} | ", item.name, unit_price_str(&up)),
+        None => format!("{}{size} — ", item.name),
+    };
+    format!("{head}{}", store_cells(item))
+}
+
+/// Each store's per-unit price, with the cheapest marked and a dash for
+/// stores that gave no comparable price.
+fn store_cells(item: &ItemComparison) -> String {
+    item.per_store
         .iter()
         .map(|(store, price)| match price {
-            Some(cents) => format!("{store} {}", euros(*cents)),
+            Some(p) => {
+                let mark = if item.cheapest.as_deref() == Some(store.as_str()) {
+                    " ← cheapest"
+                } else {
+                    ""
+                };
+                format!("{store} {}{mark}", unit_price_str(p))
+            }
             None => format!("{store} —"),
         })
         .collect::<Vec<_>>()
-        .join(", ");
-    match source {
-        Some((label, Some(cents))) => format!("{}{qty} — {label} {} | {stores}", item.name, euros(cents)),
-        Some((label, None)) => format!("{}{qty} — {label} — | {stores}", item.name),
-        None => format!("{}{qty} — {stores}", item.name),
+        .join(", ")
+}
+
+/// The source price per unit (line price / size), when both are known.
+fn glovo_unit_price(p: &PurchasedItem) -> Option<UnitPrice> {
+    match (p.price_cents, p.size) {
+        (Some(cents), Some(size)) if size.amount > 0.0 => Some(UnitPrice {
+            cents_per_unit: (cents as f64 / size.amount).round() as u64,
+            unit: size.unit,
+        }),
+        _ => None,
     }
 }
 
+fn unit_price_str(p: &UnitPrice) -> String {
+    format!("{}/{}", euros(p.cents_per_unit), p.unit.label())
+}
+
+fn size_label(s: ItemSize) -> String {
+    let amount = if s.amount.fract() == 0.0 {
+        format!("{}", s.amount as u64)
+    } else {
+        format!("{}", s.amount)
+    };
+    format!("{amount} {}", s.unit.label())
+}
+
 fn usage() -> String {
-    "Send your basket as a comma-separated list, optionally with the store \
-     where you bought it:\n  milk x2, bread @ Dia"
-        .to_string()
+    "Send your basket as a comma-separated list:\n  milk, bread, eggs".to_string()
 }
 
 fn euros(cents: u64) -> String {
     format!("{}.{:02} €", cents / 100, cents % 100)
-}
-
-fn store_line(store: &str, report: &StoreReport, cheapest: Option<&str>) -> String {
-    match report {
-        StoreReport::Complete { total_cents } => {
-            let marker = if cheapest == Some(store) { "  ← cheapest" } else { "" };
-            format!("{store}: {}{marker}", euros(*total_cents))
-        }
-        StoreReport::Incomplete { missing, .. } => {
-            format!("{store}: incomplete (missing: {})", missing.join(", "))
-        }
-        StoreReport::Unavailable => format!("{store}: unavailable"),
-    }
-}
-
-fn bought_lines(comparison: &Comparison, bought: &str) -> String {
-    let report = comparison
-        .stores
-        .iter()
-        .find(|(store, _)| store.eq_ignore_ascii_case(bought))
-        .map(|(_, report)| report);
-
-    let Some(StoreReport::Complete { total_cents: bought_total }) = report else {
-        return format!(
-            "Bought at {bought}: the total could not be compared \
-             ({bought} did not price the full basket)."
-        );
-    };
-
-    let cheapest_total = comparison.cheapest.as_deref().and_then(|cheapest| {
-        comparison.stores.iter().find_map(|(store, report)| match report {
-            StoreReport::Complete { total_cents } if store == cheapest => {
-                Some((store.clone(), *total_cents))
-            }
-            _ => None,
-        })
-    });
-
-    match cheapest_total {
-        Some((cheapest, total)) if total < *bought_total => format!(
-            "Bought at {bought}: {}\nYou could have saved {} buying at {cheapest}.",
-            euros(*bought_total),
-            euros(bought_total - total),
-        ),
-        _ => format!(
-            "Bought at {bought}: {}\nYou bought at the cheapest store. 🎉",
-            euros(*bought_total),
-        ),
-    }
 }

@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use cucumber::{given, then, when, World};
-use prices_comparer::comparer::{compare, CompareError, Comparison, StoreReport, StoreSource};
+use prices_comparer::comparer::{compare, CompareError, Comparison, StoreSource, Unit, UnitPrice};
 
 // ── Fake store ────────────────────────────────────────────────────────────────
 
 struct FakeStore {
     name: String,
-    prices: HashMap<String, u64>,
+    prices: HashMap<String, UnitPrice>,
     fails: bool,
 }
 
@@ -18,7 +18,7 @@ impl StoreSource for FakeStore {
         &self.name
     }
 
-    async fn price_cents(&self, product: &str) -> anyhow::Result<Option<u64>> {
+    async fn unit_price(&self, product: &str) -> anyhow::Result<Option<UnitPrice>> {
         if self.fails {
             anyhow::bail!("store unreachable");
         }
@@ -36,13 +36,10 @@ pub struct ComparerWorld {
 
 impl std::fmt::Debug for ComparerWorld {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ComparerWorld")
-            .field("result", &self.result)
-            .finish()
+        f.debug_struct("ComparerWorld").field("result", &self.result).finish()
     }
 }
 
-/// Parse a price like "1.10" into cents without going through floats.
 fn cents(price: &str) -> u64 {
     let (euros, cents) = price.split_once('.').unwrap_or((price, "0"));
     let euros: u64 = euros.parse().expect("euros");
@@ -50,67 +47,72 @@ fn cents(price: &str) -> u64 {
     euros * 100 + cents
 }
 
+fn unit(name: &str) -> Unit {
+    match name {
+        "litre" | "litres" | "l" => Unit::Litre,
+        "kilo" | "kilogram" | "kg" => Unit::Kilogram,
+        "each" | "unit" => Unit::Each,
+        other => panic!("unknown unit {other:?}"),
+    }
+}
+
 impl ComparerWorld {
-    fn add_store(&mut self, name: String, prices: HashMap<String, u64>, fails: bool) {
-        self.stores.push(Box::new(FakeStore { name, prices, fails }));
+    fn comparison(&self) -> &Comparison {
+        match &self.result {
+            Some(Ok(c)) => c,
+            other => panic!("expected a successful comparison, got: {other:?}"),
+        }
     }
 
-    fn report_for(&self, store: &str) -> &StoreReport {
-        let comparison = match &self.result {
-            Some(Ok(comparison)) => comparison,
-            other => panic!("expected a successful comparison, got: {other:?}"),
-        };
-        comparison
-            .stores
-            .iter()
-            .find(|(name, _)| name == store)
-            .map(|(_, report)| report)
-            .unwrap_or_else(|| panic!("no report for store {store:?}"))
-    }
-
-    /// The recorded line price of `product` at `store` (None = not sold).
-    fn price_for(&self, product: &str, store: &str) -> Option<u64> {
-        let comparison = match &self.result {
-            Some(Ok(comparison)) => comparison,
-            other => panic!("expected a successful comparison, got: {other:?}"),
-        };
-        let item = comparison
+    fn price_for(&self, product: &str, store: &str) -> Option<UnitPrice> {
+        let item = self
+            .comparison()
             .items
             .iter()
             .find(|i| i.name == product)
-            .unwrap_or_else(|| panic!("no item {product:?} in comparison"));
+            .unwrap_or_else(|| panic!("no item {product:?}"));
         item.per_store
             .iter()
             .find(|(name, _)| name == store)
-            .unwrap_or_else(|| panic!("no store {store:?} for item {product:?}"))
+            .unwrap_or_else(|| panic!("no store {store:?} for {product:?}"))
             .1
     }
 }
 
 // ── Given ─────────────────────────────────────────────────────────────────────
 
-#[given(regex = r#"^a store "([^"]+)" selling "([^"]+)" at (\d+\.\d+) and "([^"]+)" at (\d+\.\d+)$"#)]
-fn given_store_two_products(
+#[given(regex = r#"^a store "([^"]+)" pricing "([^"]+)" at (\d+\.\d+) per (\w+)$"#)]
+fn given_store_pricing(
     world: &mut ComparerWorld,
     store: String,
-    product_a: String,
-    price_a: String,
-    product_b: String,
-    price_b: String,
+    product: String,
+    price: String,
+    unit_name: String,
 ) {
-    let prices = HashMap::from([(product_a, cents(&price_a)), (product_b, cents(&price_b))]);
-    world.add_store(store, prices, false);
+    let up = UnitPrice { cents_per_unit: cents(&price), unit: unit(&unit_name) };
+    world.stores.push(Box::new(FakeStore {
+        name: store,
+        prices: HashMap::from([(product, up)]),
+        fails: false,
+    }));
 }
 
-#[given(regex = r#"^a store "([^"]+)" selling "([^"]+)" at (\d+\.\d+)$"#)]
-fn given_store_one_product(world: &mut ComparerWorld, store: String, product: String, price: String) {
-    let prices = HashMap::from([(product, cents(&price))]);
-    world.add_store(store, prices, false);
+#[given(regex = r#"^a store "([^"]+)" that does not sell "([^"]+)"$"#)]
+fn given_store_not_selling(world: &mut ComparerWorld, store: String, _product: String) {
+    world.stores.push(Box::new(FakeStore {
+        name: store,
+        prices: HashMap::new(),
+        fails: false,
+    }));
 }
 
 #[given(regex = r#"^a store "([^"]+)" that fails to respond$"#)]
 fn given_store_failing(world: &mut ComparerWorld, store: String) {
-    world.add_store(store, HashMap::new(), true);
+    world.stores.push(Box::new(FakeStore {
+        name: store,
+        prices: HashMap::new(),
+        fails: true,
+    }));
 }
 
 // ── When ──────────────────────────────────────────────────────────────────────
@@ -122,81 +124,36 @@ async fn when_compare(world: &mut ComparerWorld, basket: String) {
 
 // ── Then ──────────────────────────────────────────────────────────────────────
 
-#[then(regex = r#"^the total for "([^"]+)" is (\d+\.\d+)$"#)]
-fn then_total(world: &mut ComparerWorld, store: String, expected: String) {
-    let report = world.report_for(&store);
-    assert_eq!(
-        report,
-        &StoreReport::Complete { total_cents: cents(&expected) },
-        "total mismatch for {store}"
-    );
-}
-
-#[then(regex = r#"^the total for "([^"]+)" is incomplete, missing "([^"]+)"$"#)]
-fn then_total_incomplete(world: &mut ComparerWorld, store: String, product: String) {
-    let report = world.report_for(&store);
-    match report {
-        StoreReport::Incomplete { missing, .. } => assert!(
-            missing.contains(&product),
-            "expected {store} to be missing {product:?}, got: {missing:?}"
-        ),
-        other => panic!("expected an incomplete total for {store}, got: {other:?}"),
-    }
-}
-
-#[then(regex = r#"^the store "([^"]+)" is reported as unavailable$"#)]
-fn then_unavailable(world: &mut ComparerWorld, store: String) {
-    let report = world.report_for(&store);
-    assert_eq!(report, &StoreReport::Unavailable, "expected {store} to be unavailable");
-}
-
-#[then(regex = r#"^the cheapest store is "([^"]+)"$"#)]
-fn then_cheapest(world: &mut ComparerWorld, store: String) {
-    match &world.result {
-        Some(Ok(comparison)) => assert_eq!(
-            comparison.cheapest.as_deref(),
-            Some(store.as_str()),
-            "cheapest store mismatch"
-        ),
-        other => panic!("expected a successful comparison, got: {other:?}"),
-    }
-}
-
-#[then(regex = r#"^"([^"]+)" costs (\d+\.\d+) at "([^"]+)"$"#)]
-fn then_item_costs(world: &mut ComparerWorld, product: String, price: String, store: String) {
+#[then(regex = r#"^"([^"]+)" costs (\d+\.\d+) per (\w+) at "([^"]+)"$"#)]
+fn then_costs(world: &mut ComparerWorld, product: String, price: String, unit_name: String, store: String) {
     assert_eq!(
         world.price_for(&product, &store),
-        Some(cents(&price)),
-        "expected {product} to cost {price} at {store}"
+        Some(UnitPrice { cents_per_unit: cents(&price), unit: unit(&unit_name) }),
+        "per-unit price mismatch for {product} at {store}"
     );
 }
 
 #[then(regex = r#"^"([^"]+)" has no price at "([^"]+)"$"#)]
-fn then_item_no_price(world: &mut ComparerWorld, product: String, store: String) {
-    assert_eq!(
-        world.price_for(&product, &store),
-        None,
-        "expected {product} to have no price at {store}"
-    );
+fn then_no_price(world: &mut ComparerWorld, product: String, store: String) {
+    assert_eq!(world.price_for(&product, &store), None, "expected no price for {product} at {store}");
 }
 
-#[then(regex = r#"^the product "([^"]+)" is reported as missing in every store$"#)]
-fn then_missing_everywhere(world: &mut ComparerWorld, product: String) {
-    match &world.result {
-        Some(Ok(comparison)) => assert!(
-            comparison.missing_everywhere.contains(&product),
-            "expected {product:?} in missing_everywhere, got: {:?}",
-            comparison.missing_everywhere
-        ),
-        other => panic!("expected a successful comparison, got: {other:?}"),
-    }
+#[then(regex = r#"^the cheapest store for "([^"]+)" is "([^"]+)"$"#)]
+fn then_cheapest(world: &mut ComparerWorld, product: String, store: String) {
+    let item = world
+        .comparison()
+        .items
+        .iter()
+        .find(|i| i.name == product)
+        .unwrap_or_else(|| panic!("no item {product:?}"));
+    assert_eq!(item.cheapest.as_deref(), Some(store.as_str()), "cheapest store mismatch");
 }
 
 #[then("the comparison fails with an empty basket error")]
-fn then_empty_basket_error(world: &mut ComparerWorld) {
+fn then_empty(world: &mut ComparerWorld) {
     assert!(
         matches!(&world.result, Some(Err(CompareError::EmptyBasket))),
-        "expected EmptyBasket error, got: {:?}",
+        "expected EmptyBasket, got: {:?}",
         world.result
     );
 }

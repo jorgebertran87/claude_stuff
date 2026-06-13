@@ -1,16 +1,18 @@
 use async_trait::async_trait;
 
-use crate::comparer::BasketItem;
+use crate::comparer::{BasketItem, ItemSize};
 
 /// One line of a purchased basket: what it was called and what it cost at the
 /// source. The name may be a store-brand label that needs cleaning up before
 /// it can be searched on the supermarkets (see [`OrderNormalizer`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PurchasedItem {
     pub name: String,
     pub quantity: u64,
     /// What this line cost at the source (e.g. the Glovo price), when known.
     pub price_cents: Option<u64>,
+    /// The product's size parsed from its name, for per-unit pricing.
+    pub size: Option<ItemSize>,
 }
 
 impl PurchasedItem {
@@ -22,7 +24,7 @@ impl PurchasedItem {
 
 /// A basket that was actually bought somewhere, as recovered from an
 /// external source (a Glovo order, a receipt, ...).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PurchasedBasket {
     pub items: Vec<PurchasedItem>,
     /// The store it was bought at, when the source knows it.

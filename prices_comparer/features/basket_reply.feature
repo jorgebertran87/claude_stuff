@@ -1,63 +1,23 @@
 Feature: Basket reply
   As a shopper messaging the bot
-  I want to send my product list, optionally with the store where I bought it
-  So that I get the totals everywhere and know if I overpaid
+  I want my product list priced per unit at each store
+  So that I can see where each item is cheapest
 
-  Scenario: A basket message is answered with every store's total and the cheapest
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Dia" selling "milk" at 1.05 and "bread" at 1.00
-    When I message "milk, bread"
-    Then the reply shows "Mercadona" with total 2.00
-    And the reply shows "Dia" with total 2.05
-    And the reply marks "Mercadona" as the cheapest
-
-  Scenario: Naming the store where I bought shows what I could have saved
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Dia" selling "milk" at 1.05 and "bread" at 1.00
-    When I message "milk, bread @ Dia"
-    Then the reply shows "Dia" as where I bought, with total 2.05
-    And the reply says I could have saved 0.05 buying at "Mercadona"
-
-  Scenario: Buying at the cheapest store is acknowledged
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Dia" selling "milk" at 1.05 and "bread" at 1.00
-    When I message "milk, bread @ Mercadona"
-    Then the reply says I bought at the cheapest store
-
-  Scenario: A store missing a product is shown as incomplete in the reply
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Lidl" selling "milk" at 0.99
-    When I message "milk, bread"
-    Then the reply shows "Lidl" as incomplete, missing "bread"
-
-  Scenario: An unreachable store is shown as unavailable in the reply
-    Given a store "Mercadona" selling "milk" at 1.10
-    And a store "Dia" that fails to respond
+  Scenario: Each product shows each store's per-unit price
+    Given a store "Mercadona" pricing "milk" at 0.96 per litre
+    And a store "Dia" pricing "milk" at 1.10 per litre
     When I message "milk"
-    Then the reply shows "Dia" as unavailable
+    Then the reply shows "milk" at 0.96 per litre for "Mercadona"
+    And the reply shows "milk" at 1.10 per litre for "Dia"
+    And the reply marks "Mercadona" cheapest for "milk"
 
-  Scenario: Buying at a store that does not sell everything cannot be compared
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Lidl" selling "milk" at 0.99
-    When I message "milk, bread @ Lidl"
-    Then the reply says the bought total could not be compared
-
-  Scenario: Naming an unknown store explains which stores are known
-    Given a store "Mercadona" selling "milk" at 1.10
-    And a store "Dia" selling "milk" at 1.05
-    When I message "milk @ Eroski"
-    Then the reply says "Eroski" is not a known store
-    And the reply lists "Mercadona" and "Dia" as the known stores
-
-  Scenario: The reply breaks down each product's price at each store
-    Given a store "Mercadona" selling "milk" at 1.10 and "bread" at 0.90
-    And a store "Dia" selling "milk" at 1.05
-    When I message "milk, bread"
-    Then the reply shows "milk" priced 1.10 at "Mercadona"
-    And the reply shows "milk" priced 1.05 at "Dia"
-    And the reply shows "bread" as not sold at "Dia"
+  Scenario: A store that does not sell a product shows a dash
+    Given a store "Mercadona" pricing "milk" at 0.96 per litre
+    And a store "Lidl" that does not sell "milk"
+    When I message "milk"
+    Then the reply shows "Lidl" with no price
 
   Scenario: An empty message is answered with usage help
-    Given a store "Mercadona" selling "milk" at 1.10
+    Given a store "Mercadona" pricing "milk" at 0.96 per litre
     When I message ""
     Then the reply explains how to send a basket

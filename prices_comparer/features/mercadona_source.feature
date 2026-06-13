@@ -1,19 +1,19 @@
 Feature: Mercadona source
   As the prices comparer
-  I want to look up product prices on Mercadona's online shop
-  So that Mercadona can take part in basket comparisons
+  I want the per-unit price of products on Mercadona's online shop
+  So that Mercadona can take part in per-unit basket comparisons
 
-  Scenario: A matched product returns its unit price
-    Given a mock Mercadona API where searching "milk" finds "Leche entera Hacendado" at 1.15
+  Scenario: A matched product returns its per-unit price
+    Given a mock Mercadona API where searching "milk" finds "Leche entera" at 0.96 per litre
     And a Mercadona source pointed at the mock
     When I ask the price of "milk"
-    Then the price is 1.15
+    Then the per-unit price is 0.96 per litre
 
   Scenario: The first match wins when several products match
-    Given a mock Mercadona API where searching "milk" finds "Leche entera" at 1.15 and "Leche desnatada" at 0.99
+    Given a mock Mercadona API where searching "milk" finds "Leche entera" at 0.96 per litre and "Leche desnatada" at 0.89 per litre
     And a Mercadona source pointed at the mock
     When I ask the price of "milk"
-    Then the price is 1.15
+    Then the per-unit price is 0.96 per litre
 
   Scenario: A product with no matches is reported as not sold
     Given a mock Mercadona API where searching "caviar" finds nothing
@@ -34,6 +34,6 @@ Feature: Mercadona source
     Then the lookup fails
 
   Scenario: The source identifies itself as Mercadona
-    Given a mock Mercadona API where searching "milk" finds "Leche entera Hacendado" at 1.15
+    Given a mock Mercadona API where searching "milk" finds "Leche entera" at 0.96 per litre
     And a Mercadona source pointed at the mock
     Then the store name is "Mercadona"

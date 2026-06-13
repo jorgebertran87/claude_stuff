@@ -2,15 +2,17 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use cucumber::{given, then, when, World};
-use prices_comparer::basket::{BasketSource, FetchError, OrderNormalizer, PurchasedBasket, PurchasedItem};
+use prices_comparer::basket::{
+    BasketSource, FetchError, OrderNormalizer, PurchasedBasket, PurchasedItem,
+};
 use prices_comparer::bot::reply_to;
-use prices_comparer::comparer::StoreSource;
+use prices_comparer::comparer::{parse_size, StoreSource, Unit, UnitPrice};
 
-// ── Fake store ────────────────────────────────────────────────────────────────
+// ── Fakes ──────────────────────────────────────────────────────────────────────
 
 struct FakeStore {
     name: String,
-    prices: HashMap<String, u64>,
+    prices: HashMap<String, UnitPrice>,
 }
 
 #[async_trait]
@@ -19,12 +21,10 @@ impl StoreSource for FakeStore {
         &self.name
     }
 
-    async fn price_cents(&self, product: &str) -> anyhow::Result<Option<u64>> {
+    async fn unit_price(&self, product: &str) -> anyhow::Result<Option<UnitPrice>> {
         Ok(self.prices.get(product).copied())
     }
 }
-
-// ── Fake Glovo basket source ────────────────────────────────────────────────
 
 struct FakeGlovo {
     order: Option<PurchasedBasket>,
@@ -44,8 +44,6 @@ impl BasketSource for FakeGlovo {
     }
 }
 
-// ── Fake normalizer ──────────────────────────────────────────────────────────
-
 struct FakeNormalizer {
     clean: HashMap<String, String>,
     fails: bool,
@@ -64,6 +62,7 @@ impl OrderNormalizer for FakeNormalizer {
                 name: self.clean.get(&i.name).cloned().unwrap_or_else(|| i.name.clone()),
                 quantity: i.quantity,
                 price_cents: i.price_cents,
+                size: i.size,
             })
             .collect())
     }
@@ -93,20 +92,38 @@ fn cents(price: &str) -> u64 {
     euros * 100 + cents
 }
 
-fn euros(cents: u64) -> String {
-    format!("{}.{:02} €", cents / 100, cents % 100)
+fn euros(c: u64) -> String {
+    format!("{}.{:02} €", c / 100, c % 100)
 }
 
-/// Build a single-item Glovo order; the item name may contain commas, so the
-/// whole string (minus an optional trailing " xN") is one product.
-fn single_order(store: &str, item: &str, price_cents: Option<u64>) -> PurchasedBasket {
-    let (name, quantity) = match item.rsplit_once(" x") {
-        Some((n, q)) if q.parse::<u64>().is_ok() => (n.to_string(), q.parse().unwrap()),
-        _ => (item.to_string(), 1),
+fn unit(name: &str) -> Unit {
+    match name {
+        "litre" => Unit::Litre,
+        "kilo" => Unit::Kilogram,
+        "each" => Unit::Each,
+        other => panic!("unit {other:?}"),
+    }
+}
+
+fn cell(price: &str, unit_name: &str) -> String {
+    let label = match unit_name {
+        "litre" => "L",
+        "kilo" => "kg",
+        "each" => "each",
+        other => panic!("unit {other:?}"),
     };
+    format!("{}/{label}", euros(cents(price)))
+}
+
+fn single_order(item: &str, price_cents: Option<u64>) -> PurchasedBasket {
     PurchasedBasket {
-        items: vec![PurchasedItem { name, quantity, price_cents }],
-        store: Some(store.to_string()),
+        items: vec![PurchasedItem {
+            name: item.to_string(),
+            quantity: 1,
+            price_cents,
+            size: parse_size(item),
+        }],
+        store: None,
         paid_cents: None,
     }
 }
@@ -115,24 +132,32 @@ impl NormWorld {
     fn reply(&self) -> &str {
         self.reply.as_deref().expect("no reply yet")
     }
+
+    fn assert_contains(&self, needle: &str) {
+        assert!(
+            self.reply().contains(needle),
+            "expected reply to contain {needle:?}, got:\n{}",
+            self.reply()
+        );
+    }
 }
 
 // ── Given ─────────────────────────────────────────────────────────────────────
 
-#[given(regex = r#"^a store "([^"]+)" selling "([^"]+)" at (\d+\.\d+)$"#)]
-fn given_store(world: &mut NormWorld, store: String, product: String, price: String) {
-    let prices = HashMap::from([(product, cents(&price))]);
-    world.stores.push(Box::new(FakeStore { name: store, prices }));
+#[given(regex = r#"^a store "([^"]+)" pricing "([^"]+)" at (\d+\.\d+) per (\w+)$"#)]
+fn given_store(world: &mut NormWorld, store: String, product: String, price: String, unit_name: String) {
+    let up = UnitPrice { cents_per_unit: cents(&price), unit: unit(&unit_name) };
+    world.stores.push(Box::new(FakeStore { name: store, prices: HashMap::from([(product, up)]) }));
 }
 
-#[given(regex = r#"^a Glovo order from "([^"]+)" of "(.+)" priced (\d+\.\d+)$"#)]
-fn given_order_priced(world: &mut NormWorld, store: String, item: String, price: String) {
-    world.order = Some(single_order(&store, &item, Some(cents(&price))));
+#[given(regex = r#"^a Glovo order of "(.+)" priced (\d+\.\d+)$"#)]
+fn given_order_priced(world: &mut NormWorld, item: String, price: String) {
+    world.order = Some(single_order(&item, Some(cents(&price))));
 }
 
-#[given(regex = r#"^a Glovo order from "([^"]+)" of "(.+)"$"#)]
-fn given_order(world: &mut NormWorld, store: String, item: String) {
-    world.order = Some(single_order(&store, &item, None));
+#[given(regex = r#"^a Glovo order of "(.+)"$"#)]
+fn given_order(world: &mut NormWorld, item: String) {
+    world.order = Some(single_order(&item, None));
 }
 
 #[given(regex = r#"^the normalizer cleans "(.+)" to "(.+)"$"#)]
@@ -157,24 +182,14 @@ async fn when_message(world: &mut NormWorld, message: String) {
 
 // ── Then ──────────────────────────────────────────────────────────────────────
 
-#[then(regex = r#"^the reply shows "([^"]+)" with total (\d+\.\d+)$"#)]
-fn then_total(world: &mut NormWorld, store: String, total: String) {
-    let needle = format!("{store}: {}", euros(cents(&total)));
-    assert!(
-        world.reply().contains(&needle),
-        "expected reply to contain {needle:?}, got:\n{}",
-        world.reply()
-    );
+#[then(regex = r#"^the reply shows "(.+)" at (\d+\.\d+) per (\w+) for "([^"]+)"$"#)]
+fn then_priced(world: &mut NormWorld, _product: String, price: String, unit_name: String, store: String) {
+    world.assert_contains(&format!("{store} {}", cell(&price, &unit_name)));
 }
 
-#[then(regex = r#"^the reply lists "([^"]+)" priced (\d+\.\d+)$"#)]
-fn then_lists_priced(world: &mut NormWorld, name: String, price: String) {
-    let reply = world.reply();
-    let price = euros(cents(&price));
-    assert!(
-        reply.contains(&name) && reply.contains(&price),
-        "expected reply to list {name:?} priced {price:?}, got:\n{reply}"
-    );
+#[then(regex = r#"^the reply shows the Glovo price (\d+\.\d+) per (\w+)$"#)]
+fn then_glovo_price(world: &mut NormWorld, price: String, unit_name: String) {
+    world.assert_contains(&format!("Glovo {}", cell(&price, &unit_name)));
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────

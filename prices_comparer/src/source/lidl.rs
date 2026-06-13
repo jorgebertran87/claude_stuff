@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::comparer::StoreSource;
+use crate::comparer::{per_unit_from_name, StoreSource, UnitPrice};
 
 use super::price::Price;
 
@@ -37,6 +37,8 @@ struct Gridbox {
 
 #[derive(Deserialize)]
 struct GridboxData {
+    #[serde(default, alias = "fullTitle", alias = "title")]
+    full_title: String,
     price: ItemPrice,
 }
 
@@ -51,7 +53,7 @@ impl StoreSource for LidlSource {
         "Lidl"
     }
 
-    async fn price_cents(&self, product: &str) -> anyhow::Result<Option<u64>> {
+    async fn unit_price(&self, product: &str) -> anyhow::Result<Option<UnitPrice>> {
         let mut url = reqwest::Url::parse(&format!("{}/q/api/search", self.base_url))?;
         url.query_pairs_mut()
             .append_pair("q", product)
@@ -66,7 +68,10 @@ impl StoreSource for LidlSource {
         let search: SearchResponse = response.json().await?;
         match search.items.first() {
             None => Ok(None),
-            Some(item) => Ok(Some(item.gridbox.data.price.price.to_cents()?)),
+            Some(item) => {
+                let data = &item.gridbox.data;
+                Ok(per_unit_from_name(data.price.price.to_cents()?, &data.full_title))
+            }
         }
     }
 }

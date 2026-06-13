@@ -119,10 +119,14 @@ impl OrderDetail {
         let items = self
             .bought_products
             .into_iter()
-            .map(|p| PurchasedItem {
-                name: p.name,
-                quantity: parse_quantity(&p.quantity),
-                price_cents: p.price.as_deref().and_then(parse_euros),
+            .map(|p| {
+                let size = crate::comparer::parse_size(&p.name);
+                PurchasedItem {
+                    name: p.name,
+                    quantity: parse_quantity(&p.quantity),
+                    price_cents: p.price.as_deref().and_then(parse_euros),
+                    size,
+                }
             })
             .collect();
         let paid_cents = self

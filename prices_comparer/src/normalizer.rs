@@ -92,12 +92,16 @@ impl OrderNormalizer for ClaudeCliNormalizer {
         let array = extract_json_array(&envelope.result)
             .ok_or_else(|| anyhow::anyhow!("no JSON array in claude result"))?;
         let clean: Vec<CleanItem> = serde_json::from_str(array)?;
+        // Carry each line's size over from the input (Claude returns the items
+        // in order); the cleaned name has the size stripped out.
         Ok(clean
             .into_iter()
-            .map(|c| PurchasedItem {
+            .enumerate()
+            .map(|(i, c)| PurchasedItem {
                 name: c.name,
                 quantity: c.quantity.max(1),
                 price_cents: c.price_cents,
+                size: basket.items.get(i).and_then(|it| it.size),
             })
             .collect())
     }

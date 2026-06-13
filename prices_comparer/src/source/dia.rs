@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::comparer::StoreSource;
+use crate::comparer::{per_unit_from_name, StoreSource, UnitPrice};
 
 use super::price::Price;
 
@@ -42,6 +42,8 @@ struct SearchResponse {
 
 #[derive(Deserialize)]
 struct Item {
+    #[serde(default, alias = "display_name")]
+    name: String,
     prices: Prices,
 }
 
@@ -72,7 +74,7 @@ impl StoreSource for DiaSource {
         "Dia"
     }
 
-    async fn price_cents(&self, product: &str) -> anyhow::Result<Option<u64>> {
+    async fn unit_price(&self, product: &str) -> anyhow::Result<Option<UnitPrice>> {
         let mut search_url = reqwest::Url::parse(SEARCH_URL)?;
         search_url.query_pairs_mut().append_pair("q", product);
 
@@ -95,7 +97,7 @@ impl StoreSource for DiaSource {
 
         match search.search_items.first() {
             None => Ok(None),
-            Some(item) => Ok(Some(item.prices.price.to_cents()?)),
+            Some(item) => Ok(per_unit_from_name(item.prices.price.to_cents()?, &item.name)),
         }
     }
 }

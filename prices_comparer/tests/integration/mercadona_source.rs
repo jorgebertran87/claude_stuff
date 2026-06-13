@@ -1,5 +1,5 @@
 use cucumber::{given, then, when, World};
-use prices_comparer::comparer::StoreSource;
+use prices_comparer::comparer::{StoreSource, Unit, UnitPrice};
 use prices_comparer::source::mercadona::MercadonaSource;
 use serde_json::json;
 use wiremock::matchers::{body_string_contains, method};
@@ -12,7 +12,7 @@ pub struct MercadonaWorld {
     // MockServer must be kept alive so the mock remains mounted during the test.
     server: Option<MockServer>,
     source: Option<MercadonaSource>,
-    result: Option<Result<Option<u64>, String>>,
+    result: Option<Result<Option<UnitPrice>, String>>,
 }
 
 impl std::fmt::Debug for MercadonaWorld {
@@ -37,6 +37,15 @@ fn cents(price: &str) -> u64 {
     euros * 100 + cents
 }
 
+fn unit(name: &str) -> (Unit, &'static str) {
+    match name {
+        "litre" => (Unit::Litre, "L"),
+        "kilo" => (Unit::Kilogram, "kg"),
+        "each" => (Unit::Each, "ud"),
+        other => panic!("unknown unit {other:?}"),
+    }
+}
+
 async fn mount_search(world: &mut MercadonaWorld, term: &str, hits: serde_json::Value) {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -49,28 +58,30 @@ async fn mount_search(world: &mut MercadonaWorld, term: &str, hits: serde_json::
 
 // ── Given ─────────────────────────────────────────────────────────────────────
 
-#[given(regex = r#"^a mock Mercadona API where searching "([^"]+)" finds "([^"]+)" at (\d+\.\d+)$"#)]
-async fn given_one_hit(world: &mut MercadonaWorld, term: String, name: String, price: String) {
-    // The real product API serves unit_price as a decimal string.
+#[given(regex = r#"^a mock Mercadona API where searching "([^"]+)" finds "([^"]+)" at (\d+\.\d+) per (\w+)$"#)]
+async fn given_one_hit(world: &mut MercadonaWorld, term: String, name: String, price: String, unit_name: String) {
+    let (_, format) = unit(&unit_name);
     let hits = json!([
-        { "display_name": name, "price_instructions": { "unit_price": price } }
+        { "display_name": name, "price_instructions": { "reference_price": price, "reference_format": format } }
     ]);
     mount_search(world, &term, hits).await;
 }
 
-#[given(regex = r#"^a mock Mercadona API where searching "([^"]+)" finds "([^"]+)" at (\d+\.\d+) and "([^"]+)" at (\d+\.\d+)$"#)]
+#[given(regex = r#"^a mock Mercadona API where searching "([^"]+)" finds "([^"]+)" at (\d+\.\d+) per (\w+) and "([^"]+)" at (\d+\.\d+) per (\w+)$"#)]
+#[allow(clippy::too_many_arguments)]
 async fn given_two_hits(
     world: &mut MercadonaWorld,
     term: String,
     name_a: String,
     price_a: String,
+    unit_a: String,
     name_b: String,
     price_b: String,
+    unit_b: String,
 ) {
-    // The Algolia search index serves unit_price as a JSON number.
     let hits = json!([
-        { "display_name": name_a, "price_instructions": { "unit_price": price_a.parse::<f64>().unwrap() } },
-        { "display_name": name_b, "price_instructions": { "unit_price": price_b.parse::<f64>().unwrap() } }
+        { "display_name": name_a, "price_instructions": { "reference_price": price_a, "reference_format": unit(&unit_a).1 } },
+        { "display_name": name_b, "price_instructions": { "reference_price": price_b, "reference_format": unit(&unit_b).1 } }
     ]);
     mount_search(world, &term, hits).await;
 }
@@ -111,17 +122,17 @@ fn given_source(world: &mut MercadonaWorld) {
 #[when(regex = r#"^I ask the price of "([^"]+)"$"#)]
 async fn when_ask_price(world: &mut MercadonaWorld, product: String) {
     let source = world.source.as_ref().expect("source not built");
-    world.result = Some(source.price_cents(&product).await.map_err(|e| e.to_string()));
+    world.result = Some(source.unit_price(&product).await.map_err(|e| e.to_string()));
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────
 
-#[then(regex = r#"^the price is (\d+\.\d+)$"#)]
-fn then_price(world: &mut MercadonaWorld, expected: String) {
+#[then(regex = r#"^the per-unit price is (\d+\.\d+) per (\w+)$"#)]
+fn then_price(world: &mut MercadonaWorld, expected: String, unit_name: String) {
     assert_eq!(
         world.result,
-        Some(Ok(Some(cents(&expected)))),
-        "price mismatch"
+        Some(Ok(Some(UnitPrice { cents_per_unit: cents(&expected), unit: unit(&unit_name).0 }))),
+        "per-unit price mismatch"
     );
 }
 
