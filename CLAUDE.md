@@ -19,6 +19,14 @@ project's own targets: `make test-all` when it exists, otherwise `make test`
 
 **When multiple projects have changes, run all of their test suites in parallel** — issue all `make test` calls as parallel `Bash` tool calls in a single response, then wait for all results before proceeding.
 
+**Never re-run a suite that is already green for the same code.** A green `make test-all`
+(or `make test`) covers everything that follows until the code changes again — `/commit` and
+`make deploy` must *not* trigger another full run on top of it. So:
+- After a green `test-all`, when running `/commit` skip its test step and commit directly
+  (the suite is already green); only run tests if code changed since.
+- `make deploy` already gates on `make test`; do **not** run `test-all`/`test` yourself right
+  before or after a deploy. Re-running a green suite wastes tokens and time.
+
 ### Mutation Testing (Rust projects)
 
 Use `cargo-mutants` via the `mutants` Docker stage to verify test suite quality:
