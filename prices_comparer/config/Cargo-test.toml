@@ -54,3 +54,8 @@ harness = false
 name    = "token_store"
 path    = "tests/integration/token_store.rs"
 harness = false
+
+[[test]]
+name    = "glovo_refresh"
+path    = "tests/integration/glovo_refresh.rs"
+harness = false
