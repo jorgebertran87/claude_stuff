@@ -98,9 +98,17 @@ async fn order_reply(
 
     // Clean the store-brand names so they match supermarket search; fall back
     // to the raw items if normalization fails so the order still gets compared.
+    // Log the fallback so a misconfigured normalizer is visible, not silent.
     let items = match normalizer.normalize(&basket).await {
         Ok(clean) if !clean.is_empty() => clean,
-        _ => basket.items.clone(),
+        Ok(_) => {
+            eprintln!("[{name}] normalizer returned no items; comparing the raw order");
+            basket.items.clone()
+        }
+        Err(e) => {
+            eprintln!("[{name}] normalization failed ({e}); comparing the raw order");
+            basket.items.clone()
+        }
     };
 
     let comparison_items: Vec<BasketItem> = items.iter().map(|i| i.to_basket_item()).collect();

@@ -103,17 +103,25 @@ impl OrderNormalizer for DeepSeekNormalizer {
                 ],
             }))
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
 
-        let chat: ChatResponse = response.json().await?;
+        // Keep the raw body so errors can quote what DeepSeek actually said
+        // (e.g. "Model Not Exist" for a bad model id).
+        let status = response.status();
+        let body = response.text().await?;
+        if !status.is_success() {
+            anyhow::bail!("DeepSeek returned {status}: {body}");
+        }
+
+        let chat: ChatResponse = serde_json::from_str(&body)
+            .map_err(|e| anyhow::anyhow!("DeepSeek reply was not the expected JSON ({e}): {body}"))?;
         let content = chat
             .choices
             .first()
             .map(|c| c.message.content.as_str())
-            .ok_or_else(|| anyhow::anyhow!("DeepSeek returned no choices"))?;
+            .ok_or_else(|| anyhow::anyhow!("DeepSeek returned no choices: {body}"))?;
         let array = extract_json_array(content)
-            .ok_or_else(|| anyhow::anyhow!("no JSON array in DeepSeek reply"))?;
+            .ok_or_else(|| anyhow::anyhow!("no product list in DeepSeek reply: {content}"))?;
         let clean: Vec<CleanItem> = serde_json::from_str(array)?;
         Ok(carry_sizes_over(clean, basket))
     }
