@@ -1,6 +1,6 @@
 use prices_comparer::basket::{BasketSource, OrderNormalizer};
 use prices_comparer::comparer::StoreSource;
-use prices_comparer::normalizer::ClaudeCliNormalizer;
+use prices_comparer::normalizer::DeepSeekNormalizer;
 use prices_comparer::source::glovo_refresh::{GlovoRefresher, RefreshCreds, RefreshStore};
 use prices_comparer::source::{dia::DiaSource, glovo::GlovoSource, mercadona::MercadonaSource};
 use prices_comparer::telegram::TelegramBot;
@@ -81,9 +81,9 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // Glovo orders are normalized through Claude before comparison; the bot
+    // Glovo orders are normalized through DeepSeek before comparison; the bot
     // falls back to raw item names if it is unavailable.
-    let normalizer: Box<dyn OrderNormalizer> = Box::new(ClaudeCliNormalizer::new());
+    let normalizer: Box<dyn OrderNormalizer> = Box::new(DeepSeekNormalizer::new(env("DEEPSEEK_API_KEY")?));
 
     TelegramBot::new(
         "https://api.telegram.org".to_string(),

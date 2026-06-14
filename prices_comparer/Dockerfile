@@ -28,11 +28,11 @@ RUN cat Cargo-test.toml >> Cargo.toml \
          tests/unit/order_normalization.rs \
          tests/integration/mercadona_source.rs \
          tests/integration/dia_source.rs \
-         tests/integration/lidl_source.rs \
          tests/integration/telegram_bot.rs \
          tests/integration/glovo_source.rs \
          tests/integration/token_store.rs \
-         tests/integration/glovo_refresh.rs > /dev/null \
+         tests/integration/glovo_refresh.rs \
+         tests/integration/deepseek_normalizer.rs > /dev/null \
     && cargo test --no-run \
     && rm -rf tests
 

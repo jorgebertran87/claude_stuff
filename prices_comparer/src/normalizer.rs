@@ -92,18 +92,114 @@ impl OrderNormalizer for ClaudeCliNormalizer {
         let array = extract_json_array(&envelope.result)
             .ok_or_else(|| anyhow::anyhow!("no JSON array in claude result"))?;
         let clean: Vec<CleanItem> = serde_json::from_str(array)?;
-        // Carry each line's size over from the input (Claude returns the items
-        // in order); the cleaned name has the size stripped out.
-        Ok(clean
-            .into_iter()
-            .enumerate()
-            .map(|(i, c)| PurchasedItem {
-                name: c.name,
-                quantity: c.quantity.max(1),
-                price_cents: c.price_cents,
-                size: basket.items.get(i).and_then(|it| it.size),
-            })
-            .collect())
+        Ok(carry_sizes_over(clean, basket))
+    }
+}
+
+/// Combine the model's cleaned lines with the input basket: take the new name,
+/// quantity and price from the model, and carry each line's size over from the
+/// input by position (the cleaned name has the size stripped out).
+fn carry_sizes_over(clean: Vec<CleanItem>, basket: &PurchasedBasket) -> Vec<PurchasedItem> {
+    clean
+        .into_iter()
+        .enumerate()
+        .map(|(i, c)| PurchasedItem {
+            name: c.name,
+            quantity: c.quantity.max(1),
+            price_cents: c.price_cents,
+            size: basket.items.get(i).and_then(|it| it.size),
+        })
+        .collect()
+}
+
+/// Normalizes a purchased basket by asking DeepSeek (OpenAI-compatible chat
+/// completions) to rewrite store-brand line names into generic, searchable
+/// product names, keeping each line's quantity and price. The `normalize_order`
+/// skill is the system prompt. On any HTTP error or unusable reply it returns
+/// an error, so callers fall back to the raw items.
+pub struct DeepSeekNormalizer {
+    client: reqwest::Client,
+    base_url: String,
+    api_key: String,
+    model: String,
+}
+
+impl DeepSeekNormalizer {
+    /// Talk to DeepSeek's public API with the given key.
+    pub fn new(api_key: String) -> Self {
+        Self::with_base_url("https://api.deepseek.com".to_string(), api_key)
+    }
+
+    /// `base_url` is the DeepSeek host in production or a mock server in tests.
+    pub fn with_base_url(base_url: String, api_key: String) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            base_url,
+            api_key,
+            model: "deepseek-chat".to_string(),
+        }
+    }
+}
+
+/// The OpenAI-compatible chat completions envelope DeepSeek returns.
+#[derive(Deserialize)]
+struct ChatResponse {
+    choices: Vec<Choice>,
+}
+
+#[derive(Deserialize)]
+struct Choice {
+    message: ChatMessage,
+}
+
+#[derive(Deserialize)]
+struct ChatMessage {
+    content: String,
+}
+
+#[async_trait]
+impl OrderNormalizer for DeepSeekNormalizer {
+    async fn normalize(&self, basket: &PurchasedBasket) -> anyhow::Result<Vec<PurchasedItem>> {
+        let input = serde_json::json!({
+            "store": basket.store,
+            "items": basket
+                .items
+                .iter()
+                .map(|i| serde_json::json!({
+                    "name": i.name,
+                    "quantity": i.quantity,
+                    "price_cents": i.price_cents,
+                }))
+                .collect::<Vec<_>>(),
+        })
+        .to_string();
+        let prompt = load_skill("normalize_order");
+
+        let response = self
+            .client
+            .post(format!("{}/chat/completions", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&serde_json::json!({
+                "model": self.model,
+                "messages": [
+                    { "role": "system", "content": prompt },
+                    { "role": "user", "content": input },
+                ],
+            }))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let chat: ChatResponse = response.json().await?;
+        let content = chat
+            .choices
+            .first()
+            .map(|c| c.message.content.as_str())
+            .ok_or_else(|| anyhow::anyhow!("DeepSeek returned no choices"))?;
+        let array = extract_json_array(content)
+            .ok_or_else(|| anyhow::anyhow!("no JSON array in DeepSeek reply"))?;
+        let clean: Vec<CleanItem> = serde_json::from_str(array)?;
+        Ok(carry_sizes_over(clean, basket))
     }
 }
 
