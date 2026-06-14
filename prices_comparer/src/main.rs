@@ -2,9 +2,7 @@ use prices_comparer::basket::{BasketSource, OrderNormalizer};
 use prices_comparer::comparer::StoreSource;
 use prices_comparer::normalizer::ClaudeCliNormalizer;
 use prices_comparer::source::glovo_refresh::{GlovoRefresher, RefreshCreds, RefreshStore};
-use prices_comparer::source::{
-    dia::DiaSource, glovo::GlovoSource, lidl::LidlSource, mercadona::MercadonaSource,
-};
+use prices_comparer::source::{dia::DiaSource, glovo::GlovoSource, mercadona::MercadonaSource};
 use prices_comparer::telegram::TelegramBot;
 use prices_comparer::token_store::TokenStore;
 
@@ -35,7 +33,6 @@ async fn main() -> anyhow::Result<()> {
             mercadona_api_key,
         )),
         Box::new(DiaSource::new(flare_url)),
-        Box::new(LidlSource::new("https://www.lidl.es".to_string())),
     ];
 
     // Glovo's token lives in a file the bot shares with the mitmproxy
