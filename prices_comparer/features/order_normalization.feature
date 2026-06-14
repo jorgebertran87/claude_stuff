@@ -29,3 +29,10 @@ Feature: Order normalization
     And the normalizer cleans "IFA ELIGES Leche Entera, 1L" to "leche"
     When I message "/glovo"
     Then the reply shows the Glovo price 1.49 per litre
+
+  Scenario: A multipack with a unit size is priced by its total volume
+    Given a store "Mercadona" pricing "mayonesa" at 2.00 per litre
+    And a Glovo order of "IFA ELIGES Mayonesa Sobre 20ML, Pk-12" priced 2.40
+    And the normalizer cleans "IFA ELIGES Mayonesa Sobre 20ML, Pk-12" to "mayonesa"
+    When I message "/glovo"
+    Then the reply shows the Glovo price 10.00 per litre

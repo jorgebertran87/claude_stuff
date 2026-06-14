@@ -120,19 +120,10 @@ fn parse_item(raw: &str) -> BasketItem {
 pub fn parse_size(name: &str) -> Option<ItemSize> {
     let lower = name.to_lowercase().replace(',', ".");
 
-    // Pack count: "pk-12" / "pack-12".
-    if let Some(idx) = lower.find("pk-").or_else(|| lower.find("pack-")) {
-        let rest: String = lower[idx..]
-            .chars()
-            .skip_while(|c| !c.is_ascii_digit())
-            .take_while(|c| c.is_ascii_digit())
-            .collect();
-        if let Ok(n) = rest.parse::<f64>() {
-            if n > 0.0 {
-                return Some(ItemSize { amount: n, unit: Unit::Each });
-            }
-        }
-    }
+    // Pack count: "pk-12" / "pack-12". A pack of a sized product
+    // ("20ML, Pk-12") holds pack × size, so we fold it into the measured size
+    // below; on its own a pack count is just a number of pieces.
+    let pack = parse_pack_count(&lower);
 
     // A number directly followed by a unit suffix, scanning right to left so
     // the size token (usually last) wins over other digits in the name.
@@ -145,10 +136,27 @@ pub fn parse_size(name: &str) -> Option<ItemSize> {
         ("ud", Unit::Each, 1.0),
     ] {
         if let Some(amount) = number_before(&bytes, suffix) {
-            return Some(ItemSize { amount: amount / divisor, unit });
+            let amount = amount / divisor;
+            // A measured size in a pack is held once per piece, so the pack
+            // holds pack × size in total.
+            let amount = if unit == Unit::Each { amount } else { amount * pack.unwrap_or(1.0) };
+            return Some(ItemSize { amount, unit });
         }
     }
-    None
+
+    // No measured size: a bare pack count is a plain piece count.
+    pack.map(|amount| ItemSize { amount, unit: Unit::Each })
+}
+
+/// The positive pack count in a "pk-12" / "pack-12" token, if present.
+fn parse_pack_count(lower: &str) -> Option<f64> {
+    let idx = lower.find("pk-").or_else(|| lower.find("pack-"))?;
+    let digits: String = lower[idx..]
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse::<f64>().ok().filter(|n| *n > 0.0)
 }
 
 /// Find a number immediately before `suffix` (optionally separated by a space).
