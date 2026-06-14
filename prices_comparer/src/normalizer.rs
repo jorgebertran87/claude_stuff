@@ -1,42 +1,9 @@
-use std::io::Write;
-use std::process::{Command, Stdio};
-
 use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::basket::{OrderNormalizer, PurchasedBasket, PurchasedItem};
 
-/// Normalizes a purchased basket by asking Claude (via the `claude` CLI) to
-/// rewrite store-brand line names into generic, searchable product names,
-/// keeping each line's quantity and price.
-///
-/// Auth comes from the mounted Claude Code credentials; the prompt is the
-/// `.claude/commands/normalize_order.md` skill. The CLI is blocking, so it
-/// runs on a blocking task. Not exercised by the test suite — callers fall
-/// back to the raw items when it errors.
-pub struct ClaudeCliNormalizer {
-    model: String,
-}
-
-impl ClaudeCliNormalizer {
-    pub fn new() -> Self {
-        Self { model: "claude-haiku-4-5".to_string() }
-    }
-}
-
-impl Default for ClaudeCliNormalizer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The `claude --output-format json` envelope.
-#[derive(Deserialize)]
-struct CliResult {
-    result: String,
-}
-
-/// One cleaned line as Claude returns it.
+/// One cleaned line as the model returns it.
 #[derive(Deserialize)]
 struct CleanItem {
     name: String,
@@ -48,52 +15,6 @@ struct CleanItem {
 
 fn one() -> u64 {
     1
-}
-
-#[async_trait]
-impl OrderNormalizer for ClaudeCliNormalizer {
-    async fn normalize(&self, basket: &PurchasedBasket) -> anyhow::Result<Vec<PurchasedItem>> {
-        let input = serde_json::json!({
-            "store": basket.store,
-            "items": basket
-                .items
-                .iter()
-                .map(|i| serde_json::json!({
-                    "name": i.name,
-                    "quantity": i.quantity,
-                    "price_cents": i.price_cents,
-                }))
-                .collect::<Vec<_>>(),
-        })
-        .to_string();
-        let prompt = load_skill("normalize_order");
-        let model = self.model.clone();
-
-        let output = tokio::task::spawn_blocking(move || {
-            let mut child = Command::new("claude")
-                .args(["--print", "--output-format", "json", "--model", &model])
-                .args(["--system-prompt", &prompt])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()?;
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(input.as_bytes())?;
-            }
-            child.wait_with_output()
-        })
-        .await??;
-
-        if !output.status.success() {
-            anyhow::bail!("claude exited: {}", String::from_utf8_lossy(&output.stderr));
-        }
-
-        let envelope: CliResult = serde_json::from_slice(&output.stdout)?;
-        let array = extract_json_array(&envelope.result)
-            .ok_or_else(|| anyhow::anyhow!("no JSON array in claude result"))?;
-        let clean: Vec<CleanItem> = serde_json::from_str(array)?;
-        Ok(carry_sizes_over(clean, basket))
-    }
 }
 
 /// Combine the model's cleaned lines with the input basket: take the new name,
