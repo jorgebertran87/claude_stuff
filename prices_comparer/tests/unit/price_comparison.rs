@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use cucumber::{given, then, when, World};
-use prices_comparer::comparer::{compare, CompareError, Comparison, StoreSource, Unit, UnitPrice};
+use prices_comparer::comparer::{
+    compare, CompareError, Comparison, StoreMatch, StoreSource, Unit, UnitPrice,
+};
 
 // ── Fake store ────────────────────────────────────────────────────────────────
 
@@ -18,11 +20,14 @@ impl StoreSource for FakeStore {
         &self.name
     }
 
-    async fn unit_price(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<UnitPrice>> {
+    async fn lookup(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<StoreMatch>> {
         if self.fails {
             anyhow::bail!("store unreachable");
         }
-        Ok(self.prices.get(product).copied())
+        Ok(self
+            .prices
+            .get(product)
+            .map(|&price| StoreMatch { name: product.to_string(), price }))
     }
 }
 
@@ -76,6 +81,8 @@ impl ComparerWorld {
             .find(|(name, _)| name == store)
             .unwrap_or_else(|| panic!("no store {store:?} for {product:?}"))
             .1
+            .as_ref()
+            .map(|m| m.price)
     }
 }
 

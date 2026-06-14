@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use cucumber::{given, then, when, World};
 use prices_comparer::basket::IdentityNormalizer;
 use prices_comparer::bot::reply_to;
-use prices_comparer::comparer::{StoreSource, Unit, UnitPrice};
+use prices_comparer::comparer::{StoreMatch, StoreSource, Unit, UnitPrice};
 
 // ── Fake store ────────────────────────────────────────────────────────────────
 
@@ -19,8 +19,11 @@ impl StoreSource for FakeStore {
         &self.name
     }
 
-    async fn unit_price(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<UnitPrice>> {
-        Ok(self.prices.get(product).copied())
+    async fn lookup(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<StoreMatch>> {
+        Ok(self
+            .prices
+            .get(product)
+            .map(|&price| StoreMatch { name: product.to_string(), price }))
     }
 }
 
@@ -103,8 +106,8 @@ async fn when_message(world: &mut ReplyWorld, message: String) {
 // ── Then ──────────────────────────────────────────────────────────────────────
 
 #[then(regex = r#"^the reply shows "([^"]+)" at (\d+\.\d+) per (\w+) for "([^"]+)"$"#)]
-fn then_priced(world: &mut ReplyWorld, _product: String, price: String, unit_name: String, store: String) {
-    world.assert_contains(&format!("{store} {}", cell(&price, &unit_name)));
+fn then_priced(world: &mut ReplyWorld, product: String, price: String, unit_name: String, store: String) {
+    world.assert_contains(&format!("{store}: {product} | {unit_name} | {}", cell(&price, &unit_name)));
 }
 
 #[then(regex = r#"^the reply marks "([^"]+)" cheapest for "([^"]+)"$"#)]
@@ -115,7 +118,7 @@ fn then_cheapest(world: &mut ReplyWorld, store: String, _product: String) {
 
 #[then(regex = r#"^the reply shows "([^"]+)" with no price$"#)]
 fn then_no_price(world: &mut ReplyWorld, store: String) {
-    world.assert_contains(&format!("{store} —"));
+    world.assert_contains(&format!("{store}: —"));
 }
 
 #[then("the reply explains how to send a basket")]

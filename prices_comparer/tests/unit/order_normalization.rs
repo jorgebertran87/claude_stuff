@@ -6,7 +6,7 @@ use prices_comparer::basket::{
     BasketSource, FetchError, OrderNormalizer, PurchasedBasket, PurchasedItem,
 };
 use prices_comparer::bot::reply_to;
-use prices_comparer::comparer::{parse_size, StoreSource, Unit, UnitPrice};
+use prices_comparer::comparer::{parse_size, StoreMatch, StoreSource, Unit, UnitPrice};
 
 // ── Fakes ──────────────────────────────────────────────────────────────────────
 
@@ -21,8 +21,11 @@ impl StoreSource for FakeStore {
         &self.name
     }
 
-    async fn unit_price(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<UnitPrice>> {
-        Ok(self.prices.get(product).copied())
+    async fn lookup(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<StoreMatch>> {
+        Ok(self
+            .prices
+            .get(product)
+            .map(|&price| StoreMatch { name: product.to_string(), price }))
     }
 }
 
@@ -183,31 +186,30 @@ async fn when_message(world: &mut NormWorld, message: String) {
 // ── Then ──────────────────────────────────────────────────────────────────────
 
 #[then(regex = r#"^the reply shows "(.+)" at (\d+\.\d+) per (\w+) for "([^"]+)"$"#)]
-fn then_priced(world: &mut NormWorld, _product: String, price: String, unit_name: String, store: String) {
-    world.assert_contains(&format!("{store} {}", cell(&price, &unit_name)));
+fn then_priced(world: &mut NormWorld, product: String, price: String, unit_name: String, store: String) {
+    world.assert_contains(&format!("{store}: {product} | {unit_name} | {}", cell(&price, &unit_name)));
 }
 
 #[then(regex = r#"^the reply shows the Glovo price (\d+\.\d+) per (\w+)$"#)]
 fn then_glovo_price(world: &mut NormWorld, price: String, unit_name: String) {
-    world.assert_contains(&format!("Glovo {}", cell(&price, &unit_name)));
+    let cell = cell(&price, &unit_name);
+    let row = store_row(world.reply(), "Glovo");
+    assert!(row.contains(&cell), "expected Glovo row to show {cell:?}, got: {row:?}");
 }
 
 #[then(regex = r#"^the reply marks "([^"]+)" as the cheapest$"#)]
 fn then_marks_cheapest(world: &mut NormWorld, store: String) {
-    let reply = world.reply();
-    // An item line reads "<name> — <cell>, <cell>, ...", each cell rendering as
-    // "<store> <price>[ ← cheapest]".
-    let prefix = format!("{store} ");
-    let cell = reply
+    let row = store_row(world.reply(), &store);
+    assert!(row.contains("← cheapest"), "expected {store:?} marked cheapest, got: {row:?}");
+}
+
+/// The reply row for a source, e.g. the line starting "Mercadona: ".
+fn store_row<'a>(reply: &'a str, store: &str) -> &'a str {
+    let prefix = format!("{store}: ");
+    reply
         .lines()
-        .filter_map(|line| line.split_once(" — "))
-        .flat_map(|(_, cells)| cells.split(", "))
-        .find(|cell| cell.starts_with(&prefix))
-        .unwrap_or_else(|| panic!("no cell for {store:?} in:\n{reply}"));
-    assert!(
-        cell.contains("← cheapest"),
-        "expected {store:?} marked cheapest, got cell {cell:?} in:\n{reply}"
-    );
+        .find(|line| line.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("no row for {store:?} in:\n{reply}"))
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────

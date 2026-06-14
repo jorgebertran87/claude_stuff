@@ -17,6 +17,15 @@ impl Unit {
             Unit::Each => "each",
         }
     }
+
+    /// Long-form measure name: "litre", "kilo", "each".
+    pub fn measure(&self) -> &'static str {
+        match self {
+            Unit::Litre => "litre",
+            Unit::Kilogram => "kilo",
+            Unit::Each => "each",
+        }
+    }
 }
 
 /// A price normalized to one standard unit (e.g. 0.96 €/L).
@@ -24,6 +33,14 @@ impl Unit {
 pub struct UnitPrice {
     pub cents_per_unit: u64,
     pub unit: Unit,
+}
+
+/// A store's matched product: the name it returned for a query and its
+/// per-unit price.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoreMatch {
+    pub name: String,
+    pub price: UnitPrice,
 }
 
 /// A product amount in a canonical unit (litres, kilograms, or pieces),
@@ -39,16 +56,17 @@ pub struct ItemSize {
 pub trait StoreSource: Send + Sync {
     fn name(&self) -> &str;
 
-    /// The product's price per standard unit. `want` is the measure to compare
-    /// in (from the order being priced): when set, the store picks the cheapest
-    /// matching option among its search results; when `None`, it takes the first
-    /// result. `Ok(None)` means the store does not sell it (or gives no
-    /// comparable per-unit price); `Err` means the store could not be reached.
-    async fn unit_price(
+    /// The matched product and its price per standard unit. `want` is the
+    /// measure to compare in (from the order being priced): when set, the store
+    /// picks the cheapest matching option among its search results; when `None`,
+    /// it takes the first result. `Ok(None)` means the store does not sell it
+    /// (or gives no comparable per-unit price); `Err` means the store could not
+    /// be reached.
+    async fn lookup(
         &self,
         product: &str,
         want: Option<Unit>,
-    ) -> anyhow::Result<Option<UnitPrice>>;
+    ) -> anyhow::Result<Option<StoreMatch>>;
 }
 
 /// One line of the shopper's basket: a product name and how many units.
@@ -81,9 +99,9 @@ pub struct ItemComparison {
     /// The unit the cheapest comparison is made in (the unit most stores
     /// report; ties go to the first store). `None` when no store priced it.
     pub unit: Option<Unit>,
-    /// `(store name, per-unit price)` per store, in store order. `None` means
+    /// `(store name, matched product)` per store, in store order. `None` means
     /// the store gave no comparable price.
-    pub per_store: Vec<(String, Option<UnitPrice>)>,
+    pub per_store: Vec<(String, Option<StoreMatch>)>,
     /// The cheapest store among those priced in `unit`.
     pub cheapest: Option<String>,
 }
@@ -235,18 +253,18 @@ pub fn brand_allows(query: &str, name: &str) -> bool {
     }
 }
 
-/// Pick the per-unit price a store should report from its search results
-/// (`candidates`, in result order). With a wanted measure, the cheapest option
+/// Pick the product a store should report from its search results
+/// (`candidates`, in result order). With a wanted measure, the cheapest match
 /// in that unit wins; without one, the first result wins.
-pub fn choose_unit_price(
-    candidates: impl IntoIterator<Item = UnitPrice>,
+pub fn choose_match(
+    candidates: impl IntoIterator<Item = StoreMatch>,
     want: Option<Unit>,
-) -> Option<UnitPrice> {
+) -> Option<StoreMatch> {
     match want {
         Some(unit) => candidates
             .into_iter()
-            .filter(|p| p.unit == unit)
-            .min_by_key(|p| p.cents_per_unit),
+            .filter(|m| m.price.unit == unit)
+            .min_by_key(|m| m.price.cents_per_unit),
         None => candidates.into_iter().next(),
     }
 }
@@ -274,26 +292,26 @@ pub async fn compare_with_anchors(
     stores: &[Box<dyn StoreSource>],
     items: &[BasketItem],
     anchor_label: &str,
-    anchors: &[Option<UnitPrice>],
+    anchors: &[Option<StoreMatch>],
 ) -> Comparison {
     let mut item_comparisons = Vec::with_capacity(items.len());
     for (i, item) in items.iter().enumerate() {
-        let anchor = anchors.get(i).copied().flatten();
+        let anchor = anchors.get(i).cloned().flatten();
         // Match each store's option to the way the item was bought, so the
         // cheapest comparable size is chosen rather than the first search hit.
-        let want = anchor.map(|a| a.unit);
+        let want = anchor.as_ref().map(|a| a.price.unit);
         let mut per_store = Vec::with_capacity(stores.len() + 1);
-        if let Some(price) = anchor {
-            per_store.push((anchor_label.to_string(), Some(price)));
+        if let Some(matched) = &anchor {
+            per_store.push((anchor_label.to_string(), Some(matched.clone())));
         }
         for store in stores {
-            let price = store.unit_price(&item.name, want).await.ok().flatten();
-            per_store.push((store.name().to_string(), price));
+            let matched = store.lookup(&item.name, want).await.ok().flatten();
+            per_store.push((store.name().to_string(), matched));
         }
         // The order's own measurement wins when it has one, so the stores are
         // compared the way the item was actually bought; otherwise fall back to
         // the unit most stores report.
-        let unit = anchor.map(|a| a.unit).or_else(|| comparison_unit(&per_store));
+        let unit = want.or_else(|| comparison_unit(&per_store));
         let cheapest = cheapest_in_unit(&per_store, unit);
         item_comparisons.push(ItemComparison {
             name: item.name.clone(),
@@ -311,23 +329,24 @@ pub async fn compare_with_anchors(
 /// and falls back to `Each` only when no store gives a volume/weight price.
 /// Within the chosen tier the unit reported by the most stores wins, ties
 /// broken by store order.
-fn comparison_unit(per_store: &[(String, Option<UnitPrice>)]) -> Option<Unit> {
+fn comparison_unit(per_store: &[(String, Option<StoreMatch>)]) -> Option<Unit> {
     let is_measured = |u: Unit| matches!(u, Unit::Litre | Unit::Kilogram);
     let has_measured = per_store
         .iter()
-        .any(|(_, price)| price.is_some_and(|p| is_measured(p.unit)));
+        .any(|(_, matched)| matched.as_ref().is_some_and(|m| is_measured(m.price.unit)));
 
     let mut counts: Vec<(Unit, usize)> = Vec::new();
-    for (_, price) in per_store {
-        if let Some(p) = price {
+    for (_, matched) in per_store {
+        if let Some(m) = matched {
+            let unit = m.price.unit;
             // Once any store prices by volume/weight, per-piece prices no
             // longer get a say in which unit we compare in.
-            if has_measured && !is_measured(p.unit) {
+            if has_measured && !is_measured(unit) {
                 continue;
             }
-            match counts.iter_mut().find(|(u, _)| *u == p.unit) {
+            match counts.iter_mut().find(|(u, _)| *u == unit) {
                 Some((_, n)) => *n += 1,
-                None => counts.push((p.unit, 1)),
+                None => counts.push((unit, 1)),
             }
         }
     }
@@ -342,14 +361,15 @@ fn comparison_unit(per_store: &[(String, Option<UnitPrice>)]) -> Option<Unit> {
 }
 
 /// The cheapest store among those priced in `unit`.
-fn cheapest_in_unit(per_store: &[(String, Option<UnitPrice>)], unit: Option<Unit>) -> Option<String> {
+fn cheapest_in_unit(per_store: &[(String, Option<StoreMatch>)], unit: Option<Unit>) -> Option<String> {
     let unit = unit?;
     per_store
         .iter()
-        .filter_map(|(name, price)| {
-            price
-                .filter(|p| p.unit == unit)
-                .map(|p| (name, p.cents_per_unit))
+        .filter_map(|(name, matched)| {
+            matched
+                .as_ref()
+                .filter(|m| m.price.unit == unit)
+                .map(|m| (name, m.price.cents_per_unit))
         })
         .min_by_key(|(_, cents)| *cents)
         .map(|(name, _)| name.clone())

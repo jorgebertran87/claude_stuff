@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::comparer::{brand_allows, choose_unit_price, StoreSource, Unit, UnitPrice};
+use crate::comparer::{brand_allows, choose_match, StoreMatch, StoreSource, Unit, UnitPrice};
 
 use super::price::Price;
 
@@ -63,11 +63,11 @@ impl StoreSource for MercadonaSource {
         "Mercadona"
     }
 
-    async fn unit_price(
+    async fn lookup(
         &self,
         product: &str,
         want: Option<Unit>,
-    ) -> anyhow::Result<Option<UnitPrice>> {
+    ) -> anyhow::Result<Option<StoreMatch>> {
         let url = format!("{}/1/indexes/{}/query", self.base_url, SEARCH_INDEX);
         let response = self
             .client
@@ -88,10 +88,13 @@ impl StoreSource for MercadonaSource {
             let pi = &hit.price_instructions;
             if let (Some(price), Some(format)) = (&pi.reference_price, &pi.reference_format) {
                 if let Some(unit) = unit_of(format) {
-                    candidates.push(UnitPrice { cents_per_unit: price.to_cents()?, unit });
+                    candidates.push(StoreMatch {
+                        name: hit.display_name.clone(),
+                        price: UnitPrice { cents_per_unit: price.to_cents()?, unit },
+                    });
                 }
             }
         }
-        Ok(choose_unit_price(candidates, want))
+        Ok(choose_match(candidates, want))
     }
 }

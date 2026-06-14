@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::comparer::{
-    brand_allows, choose_unit_price, per_unit_from_name, StoreSource, Unit, UnitPrice,
+    brand_allows, choose_match, per_unit_from_name, StoreMatch, StoreSource, Unit,
 };
 
 use super::price::Price;
@@ -76,11 +76,11 @@ impl StoreSource for DiaSource {
         "Dia"
     }
 
-    async fn unit_price(
+    async fn lookup(
         &self,
         product: &str,
         want: Option<Unit>,
-    ) -> anyhow::Result<Option<UnitPrice>> {
+    ) -> anyhow::Result<Option<StoreMatch>> {
         let mut search_url = reqwest::Url::parse(SEARCH_URL)?;
         search_url.query_pairs_mut().append_pair("q", product);
 
@@ -107,9 +107,9 @@ impl StoreSource for DiaSource {
                 continue;
             }
             if let Some(price) = per_unit_from_name(item.prices.price.to_cents()?, &item.name) {
-                candidates.push(price);
+                candidates.push(StoreMatch { name: item.name.clone(), price });
             }
         }
-        Ok(choose_unit_price(candidates, want))
+        Ok(choose_match(candidates, want))
     }
 }

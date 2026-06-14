@@ -1,6 +1,6 @@
 use crate::basket::{BasketSource, FetchError, OrderNormalizer, PurchasedItem};
 use crate::comparer::{
-    compare, compare_with_anchors, BasketItem, ItemComparison, ItemSize, StoreSource, UnitPrice,
+    compare, compare_with_anchors, BasketItem, ItemComparison, StoreMatch, StoreSource, UnitPrice,
 };
 
 /// Build the bot's reply to a message.
@@ -65,12 +65,7 @@ async fn typed_reply(stores: &[Box<dyn StoreSource>], message: &str) -> String {
         Ok(comparison) => comparison,
         Err(_) => return usage(),
     };
-
-    let mut lines = vec![format!("🛒 {basket}"), String::new()];
-    for item in &comparison.items {
-        lines.push(typed_item_line(item));
-    }
-    lines.join("\n")
+    comparison.items.iter().map(item_block).collect::<Vec<_>>().join("\n\n")
 }
 
 async fn order_reply(
@@ -109,54 +104,61 @@ async fn order_reply(
     };
 
     let comparison_items: Vec<BasketItem> = items.iter().map(|i| i.to_basket_item()).collect();
-    // The price paid on the source competes in the comparison as its own column.
-    let anchors: Vec<Option<UnitPrice>> = items.iter().map(glovo_unit_price).collect();
+    // The price paid on the source competes in the comparison as its own
+    // column, labelled with the original (pre-normalization) order line.
+    let anchors: Vec<Option<StoreMatch>> = items
+        .iter()
+        .enumerate()
+        .map(|(i, it)| {
+            glovo_unit_price(it).map(|price| StoreMatch {
+                name: basket
+                    .items
+                    .get(i)
+                    .map(|raw| raw.name.clone())
+                    .unwrap_or_else(|| it.name.clone()),
+                price,
+            })
+        })
+        .collect();
     let comparison = compare_with_anchors(stores, &comparison_items, source.name(), &anchors).await;
 
-    let mut lines = vec![format!("🛒 {} order:", source.name()), String::new()];
-    for (i, item) in comparison.items.iter().enumerate() {
-        lines.push(order_item_line(item, &items[i]));
-    }
+    let mut blocks: Vec<String> = comparison.items.iter().map(item_block).collect();
     if let Some(paid) = basket.paid_cents {
-        lines.push(String::new());
-        lines.push(format!("You paid {} on {}.", euros(paid), source.name()));
+        blocks.push(format!("You paid {} on {}.", euros(paid), source.name()));
     }
-    lines.join("\n")
+    blocks.join("\n\n")
 }
 
 // ── Rendering ──────────────────────────────────────────────────────────────
 
-fn typed_item_line(item: &ItemComparison) -> String {
-    let qty = if item.quantity > 1 { format!(" x{}", item.quantity) } else { String::new() };
-    format!("{}{qty} — {}", item.name, store_cells(item))
+/// Horizontal rule under each item's name.
+const RULE: &str = "------------------------------------------";
+
+/// A block for one item: its name, a rule, then one row per source —
+/// `Source: matched product | measure | per-unit price` — with the cheapest
+/// marked. For an order the first row is the order source (e.g. Glovo).
+fn item_block(item: &ItemComparison) -> String {
+    let mut lines = vec![item.name.clone(), RULE.to_string()];
+    for (store, matched) in &item.per_store {
+        let cheapest = item.cheapest.as_deref() == Some(store.as_str());
+        lines.push(store_row(store, matched, cheapest));
+    }
+    lines.join("\n")
 }
 
-fn order_item_line(item: &ItemComparison, purchased: &PurchasedItem) -> String {
-    let size = purchased
-        .size
-        .map(|s| format!(" ({})", size_label(s)))
-        .unwrap_or_default();
-    format!("{}{size} — {}", item.name, store_cells(item))
-}
-
-/// Each store's per-unit price, with the cheapest marked and a dash for
-/// stores that gave no comparable price.
-fn store_cells(item: &ItemComparison) -> String {
-    item.per_store
-        .iter()
-        .map(|(store, price)| match price {
-            Some(p) => {
-                let mark = if item.cheapest.as_deref() == Some(store.as_str()) {
-                    " ← cheapest"
-                } else {
-                    ""
-                };
-                format!("{store} {}{mark}", unit_price_str(p))
-            }
-            None => format!("{store} —"),
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
+fn store_row(store: &str, matched: &Option<StoreMatch>, cheapest: bool) -> String {
+    match matched {
+        Some(m) => {
+            let mark = if cheapest { " ← cheapest" } else { "" };
+            format!(
+                "{store}: {} | {} | {}{mark}",
+                m.name,
+                m.price.unit.measure(),
+                unit_price_str(&m.price),
+            )
+        }
+        None => format!("{store}: —"),
+    }
 }
 
 /// The source price per unit (line price / size), when both are known.
@@ -172,15 +174,6 @@ fn glovo_unit_price(p: &PurchasedItem) -> Option<UnitPrice> {
 
 fn unit_price_str(p: &UnitPrice) -> String {
     format!("{}/{}", euros(p.cents_per_unit), p.unit.label())
-}
-
-fn size_label(s: ItemSize) -> String {
-    let amount = if s.amount.fract() == 0.0 {
-        format!("{}", s.amount as u64)
-    } else {
-        format!("{}", s.amount)
-    };
-    format!("{amount} {}", s.unit.label())
 }
 
 fn usage() -> String {

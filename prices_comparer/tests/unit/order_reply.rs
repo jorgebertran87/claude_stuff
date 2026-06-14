@@ -6,7 +6,7 @@ use prices_comparer::basket::{
     BasketSource, FetchError, IdentityNormalizer, PurchasedBasket, PurchasedItem,
 };
 use prices_comparer::bot::reply_to;
-use prices_comparer::comparer::{parse_basket, StoreSource, Unit, UnitPrice};
+use prices_comparer::comparer::{parse_basket, StoreMatch, StoreSource, Unit, UnitPrice};
 
 // ── Fake store ────────────────────────────────────────────────────────────────
 
@@ -21,8 +21,11 @@ impl StoreSource for FakeStore {
         &self.name
     }
 
-    async fn unit_price(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<UnitPrice>> {
-        Ok(self.prices.get(product).copied())
+    async fn lookup(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<StoreMatch>> {
+        Ok(self
+            .prices
+            .get(product)
+            .map(|&price| StoreMatch { name: product.to_string(), price }))
     }
 }
 
@@ -181,8 +184,8 @@ async fn when_message(world: &mut OrderWorld, message: String) {
 // ── Then ──────────────────────────────────────────────────────────────────────
 
 #[then(regex = r#"^the reply shows "([^"]+)" at (\d+\.\d+) per (\w+) for "([^"]+)"$"#)]
-fn then_priced(world: &mut OrderWorld, _product: String, price: String, unit_name: String, store: String) {
-    world.assert_contains(&format!("{store} {}", cell(&price, &unit_name)));
+fn then_priced(world: &mut OrderWorld, product: String, price: String, unit_name: String, store: String) {
+    world.assert_contains(&format!("{store}: {product} | {unit_name} | {}", cell(&price, &unit_name)));
 }
 
 #[then(regex = r#"^the reply says I paid (\d+\.\d+) on Glovo$"#)]

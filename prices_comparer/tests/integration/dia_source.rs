@@ -1,5 +1,5 @@
 use cucumber::{given, then, when, World};
-use prices_comparer::comparer::{StoreSource, Unit, UnitPrice};
+use prices_comparer::comparer::{StoreMatch, StoreSource, Unit, UnitPrice};
 use prices_comparer::source::dia::DiaSource;
 use serde_json::json;
 use wiremock::matchers::{body_string_contains, method, path};
@@ -12,7 +12,7 @@ pub struct DiaWorld {
     // MockServer must be kept alive so the mock remains mounted during the test.
     server: Option<MockServer>,
     source: Option<DiaSource>,
-    result: Option<Result<Option<UnitPrice>, String>>,
+    result: Option<Result<Option<StoreMatch>, String>>,
 }
 
 impl std::fmt::Debug for DiaWorld {
@@ -129,23 +129,27 @@ fn given_source(world: &mut DiaWorld) {
 #[when(regex = r#"^I ask the price of "([^"]+)"$"#)]
 async fn when_ask_price(world: &mut DiaWorld, product: String) {
     let source = world.source.as_ref().expect("source not built");
-    world.result = Some(source.unit_price(&product, None).await.map_err(|e| e.to_string()));
+    world.result = Some(source.lookup(&product, None).await.map_err(|e| e.to_string()));
 }
 
 #[when(regex = r#"^I ask the price of "([^"]+)" measured in (\w+)$"#)]
 async fn when_ask_price_measured(world: &mut DiaWorld, product: String, measure: String) {
     let source = world.source.as_ref().expect("source not built");
     world.result =
-        Some(source.unit_price(&product, Some(unit(&measure))).await.map_err(|e| e.to_string()));
+        Some(source.lookup(&product, Some(unit(&measure))).await.map_err(|e| e.to_string()));
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────
 
 #[then(regex = r#"^the per-unit price is (\d+\.\d+) per litre$"#)]
 fn then_price(world: &mut DiaWorld, expected: String) {
+    let matched = match &world.result {
+        Some(Ok(Some(m))) => m,
+        other => panic!("expected a matched price, got: {other:?}"),
+    };
     assert_eq!(
-        world.result,
-        Some(Ok(Some(UnitPrice { cents_per_unit: cents(&expected), unit: Unit::Litre }))),
+        matched.price,
+        UnitPrice { cents_per_unit: cents(&expected), unit: Unit::Litre },
         "per-unit price mismatch"
     );
 }
