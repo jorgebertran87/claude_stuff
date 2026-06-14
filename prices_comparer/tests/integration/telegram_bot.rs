@@ -109,6 +109,12 @@ async fn given_message_unknown(world: &mut BotWorld, text: String) {
     mount_telegram(world, &text, 99).await;
 }
 
+#[given(regex = r#"^a mock Telegram API delivering a basket of (\d+) items from the configured chat$"#)]
+async fn given_long_basket(world: &mut BotWorld, count: usize) {
+    let basket = (1..=count).map(|i| format!("item{i:04}")).collect::<Vec<_>>().join(",");
+    mount_telegram(world, &basket, CONFIGURED_CHAT).await;
+}
+
 #[given(regex = r#"^a store "([^"]+)" selling "([^"]+)" at (\d+\.\d+) and "([^"]+)" at (\d+\.\d+)$"#)]
 fn given_store_two_products(
     world: &mut BotWorld,
@@ -163,6 +169,22 @@ async fn then_reply_sent(world: &mut BotWorld, needle: String) {
         "expected a sendMessage to chat {CONFIGURED_CHAT} containing {needle:?}; got: {:?}",
         sends.iter().map(|r| String::from_utf8_lossy(&r.body).to_string()).collect::<Vec<_>>()
     );
+}
+
+#[then("the reply is sent as several messages, each within Telegram's limit")]
+async fn then_split(world: &mut BotWorld) {
+    let sends = requests_to(world, "/sendMessage").await;
+    assert!(
+        sends.len() > 1,
+        "expected the reply split across several messages, got {} message(s)",
+        sends.len()
+    );
+    for r in &sends {
+        let body: serde_json::Value = serde_json::from_slice(&r.body).expect("json body");
+        assert_eq!(body["chat_id"], CONFIGURED_CHAT, "message sent to the wrong chat");
+        let len = body["text"].as_str().expect("text field").chars().count();
+        assert!(len <= 4096, "a message exceeds Telegram's 4096-char limit: {len} chars");
+    }
 }
 
 #[then("no reply was sent")]

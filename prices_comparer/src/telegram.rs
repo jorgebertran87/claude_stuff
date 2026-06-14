@@ -112,7 +112,15 @@ impl TelegramBot {
             .unwrap_or_default())
     }
 
+    /// Send a reply, split into Telegram-sized messages when it is too long.
     async fn send_message(&self, text: &str) -> anyhow::Result<()> {
+        for chunk in split_message(text, MAX_MESSAGE_LEN) {
+            self.send_chunk(&chunk).await?;
+        }
+        Ok(())
+    }
+
+    async fn send_chunk(&self, text: &str) -> anyhow::Result<()> {
         let url = format!("{}/bot{}/sendMessage", self.api_url, self.bot_token);
         let payload = json!({
             "chat_id": self.chat_id,
@@ -127,4 +135,50 @@ impl TelegramBot {
         }
         Ok(())
     }
+}
+
+/// Telegram rejects messages longer than 4096 characters; stay under it with a
+/// margin so a per-character count never disagrees with Telegram's own.
+const MAX_MESSAGE_LEN: usize = 4000;
+
+/// Split a reply into chunks of at most `max` characters, breaking between item
+/// blocks (blank-line separated) so a block is never cut across messages. A
+/// block that alone exceeds `max` is hard-split by characters as a last resort.
+fn split_message(text: &str, max: usize) -> Vec<String> {
+    let mut chunks: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for block in text.split("\n\n") {
+        if block.chars().count() > max {
+            if !current.is_empty() {
+                chunks.push(std::mem::take(&mut current));
+            }
+            chunks.extend(hard_split(block, max));
+            continue;
+        }
+        let joined = current.chars().count() + 2 + block.chars().count();
+        if !current.is_empty() && joined > max {
+            chunks.push(std::mem::take(&mut current));
+        }
+        if !current.is_empty() {
+            current.push_str("\n\n");
+        }
+        current.push_str(block);
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    if chunks.is_empty() {
+        chunks.push(String::new());
+    }
+    chunks
+}
+
+/// Break `text` into pieces of at most `max` characters, on character
+/// boundaries.
+fn hard_split(text: &str, max: usize) -> Vec<String> {
+    text.chars()
+        .collect::<Vec<_>>()
+        .chunks(max)
+        .map(|c| c.iter().collect())
+        .collect()
 }

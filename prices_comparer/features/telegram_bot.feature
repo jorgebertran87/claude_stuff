@@ -17,6 +17,12 @@ Feature: Telegram bot
     When the bot processes one round of updates
     Then no reply was sent
 
+  Scenario: A reply longer than Telegram's limit is split into several messages
+    Given a mock Telegram API delivering a basket of 200 items from the configured chat
+    And a Telegram bot connected to the mock
+    When the bot processes one round of updates
+    Then the reply is sent as several messages, each within Telegram's limit
+
   Scenario: Processed updates are acknowledged so they are not handled twice
     Given a mock Telegram API delivering "milk" from the configured chat
     And a store "Mercadona" selling "milk" at 1.10
