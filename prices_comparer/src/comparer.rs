@@ -266,6 +266,57 @@ pub fn brand_allows(query: &str, name: &str) -> bool {
     }
 }
 
+/// Whether a store result is plausibly the queried product: it must share at
+/// least one significant word with the query. This drops cheap but unrelated
+/// hits the search ranks in (e.g. a ham bone for "jamón serrano", a flan for
+/// nothing). Matching is accent-insensitive and tolerant of Spanish plurals.
+pub fn relevant(query: &str, name: &str) -> bool {
+    let query_stems = significant_stems(query);
+    if query_stems.is_empty() {
+        return true; // nothing to match on — don't over-filter
+    }
+    let name_stems = significant_stems(name);
+    query_stems.iter().any(|q| name_stems.contains(q))
+}
+
+/// The "content" words of a phrase, folded to accent-free lowercase stems.
+/// Short words (≤ 2 letters) and size/quantity tokens are dropped.
+fn significant_stems(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .map(fold)
+        .filter(|w| w.chars().filter(|c| c.is_alphabetic()).count() >= 3)
+        .map(|w| stem(&w))
+        .collect()
+}
+
+/// Crude Spanish singular stem: drop a trailing "es" or "s".
+fn stem(word: &str) -> String {
+    for suffix in ["es", "s"] {
+        if let Some(base) = word.strip_suffix(suffix) {
+            if base.chars().filter(|c| c.is_alphabetic()).count() >= 3 {
+                return base.to_string();
+            }
+        }
+    }
+    word.to_string()
+}
+
+/// Lowercase and strip common Spanish accents for accent-insensitive matching.
+fn fold(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'á' | 'à' | 'ä' | 'â' => 'a',
+            'é' | 'è' | 'ë' | 'ê' => 'e',
+            'í' | 'ì' | 'ï' | 'î' => 'i',
+            'ó' | 'ò' | 'ö' | 'ô' => 'o',
+            'ú' | 'ù' | 'ü' | 'û' => 'u',
+            'ñ' => 'n',
+            'ç' => 'c',
+            other => other.to_ascii_lowercase(),
+        })
+        .collect()
+}
+
 /// Pick the product a store should report from its search results
 /// (`candidates`, in result order). With a wanted measure, the cheapest match
 /// in that unit wins; without one, the first result wins. A non-positive price

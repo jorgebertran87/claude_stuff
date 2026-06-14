@@ -4,27 +4,33 @@ Feature: Dia source
   So that Dia can take part in per-unit basket comparisons despite Cloudflare
 
   Scenario: A matched product returns its per-unit price
-    Given a mock FlareSolverr where searching Dia for "milk" finds "Leche entera 1L" at 1.05
+    Given a mock FlareSolverr where searching Dia for "leche" finds "Leche entera 1L" at 1.05
     And a Dia source pointed at the mock
-    When I ask the price of "milk"
+    When I ask the price of "leche"
     Then the per-unit price is 1.05 per litre
 
   Scenario: The first match wins when several products match
-    Given a mock FlareSolverr where searching Dia for "milk" finds "Leche entera 1L" at 1.05 and "Leche desnatada 1L" at 0.89
+    Given a mock FlareSolverr where searching Dia for "leche" finds "Leche entera 1L" at 1.05 and "Leche desnatada 1L" at 0.89
     And a Dia source pointed at the mock
-    When I ask the price of "milk"
+    When I ask the price of "leche"
     Then the per-unit price is 1.05 per litre
 
   Scenario: The cheapest match in the wanted measure wins
-    Given a mock FlareSolverr where searching Dia for "milk" finds "Leche entera 1L" at 1.05 and "Leche desnatada 1L" at 0.89
+    Given a mock FlareSolverr where searching Dia for "leche" finds "Leche entera 1L" at 1.05 and "Leche desnatada 1L" at 0.89
     And a Dia source pointed at the mock
-    When I ask the price of "milk" measured in litres
+    When I ask the price of "leche" measured in litres
     Then the per-unit price is 0.89 per litre
 
   Scenario: A cheaper match in another measure is ignored
-    Given a mock FlareSolverr where searching Dia for "milk" finds "Leche entera 1L" at 1.05 and "Leche en polvo 1kg" at 0.50
+    Given a mock FlareSolverr where searching Dia for "leche" finds "Leche entera 1L" at 1.05 and "Leche en polvo 1kg" at 0.50
     And a Dia source pointed at the mock
-    When I ask the price of "milk" measured in litres
+    When I ask the price of "leche" measured in litres
+    Then the per-unit price is 1.05 per litre
+
+  Scenario: A cheaper but unrelated result is rejected
+    Given a mock FlareSolverr where searching Dia for "leche" finds "Agua mineral 1L" at 0.30 and "Leche entera 1L" at 1.05
+    And a Dia source pointed at the mock
+    When I ask the price of "leche" measured in litres
     Then the per-unit price is 1.05 per litre
 
   Scenario: A cola search always picks Coca-Cola, even if another brand is cheaper
@@ -40,9 +46,9 @@ Feature: Dia source
     Then the product is reported as not sold
 
   Scenario: A product without a recognisable size has no per-unit price
-    Given a mock FlareSolverr where searching Dia for "milk" finds "Leche entera DIA" at 1.05
+    Given a mock FlareSolverr where searching Dia for "leche" finds "Leche entera DIA" at 1.05
     And a Dia source pointed at the mock
-    When I ask the price of "milk"
+    When I ask the price of "leche"
     Then the product is reported as not sold
 
   Scenario: An HTTP error from FlareSolverr makes the lookup fail
