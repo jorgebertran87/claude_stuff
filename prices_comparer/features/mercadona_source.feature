@@ -27,6 +27,12 @@ Feature: Mercadona source
     When I ask the price of "milk" measured in litres
     Then the per-unit price is 0.96 per litre
 
+  Scenario: A cola zero search always picks Coca-Cola, even if another brand is cheaper
+    Given a mock Mercadona API where searching "cola zero" finds "Hacendado Cola Zero" at 0.50 per litre and "Coca-Cola Zero" at 1.20 per litre
+    And a Mercadona source pointed at the mock
+    When I ask the price of "cola zero" measured in litres
+    Then the per-unit price is 1.20 per litre
+
   Scenario: A product with no matches is reported as not sold
     Given a mock Mercadona API where searching "caviar" finds nothing
     And a Mercadona source pointed at the mock

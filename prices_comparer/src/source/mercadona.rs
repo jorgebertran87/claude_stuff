@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::comparer::{choose_unit_price, StoreSource, Unit, UnitPrice};
+use crate::comparer::{brand_allows, choose_unit_price, StoreSource, Unit, UnitPrice};
 
 use super::price::Price;
 
@@ -34,6 +34,8 @@ struct SearchResponse {
 
 #[derive(Deserialize)]
 struct Hit {
+    #[serde(default)]
+    display_name: String,
     price_instructions: PriceInstructions,
 }
 
@@ -80,6 +82,9 @@ impl StoreSource for MercadonaSource {
 
         let mut candidates = Vec::with_capacity(search.hits.len());
         for hit in &search.hits {
+            if !brand_allows(product, &hit.display_name) {
+                continue;
+            }
             let pi = &hit.price_instructions;
             if let (Some(price), Some(format)) = (&pi.reference_price, &pi.reference_format) {
                 if let Some(unit) = unit_of(format) {

@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::comparer::{choose_unit_price, per_unit_from_name, StoreSource, Unit, UnitPrice};
+use crate::comparer::{
+    brand_allows, choose_unit_price, per_unit_from_name, StoreSource, Unit, UnitPrice,
+};
 
 use super::price::Price;
 
@@ -101,6 +103,9 @@ impl StoreSource for DiaSource {
 
         let mut candidates = Vec::with_capacity(search.search_items.len());
         for item in &search.search_items {
+            if !brand_allows(product, &item.name) {
+                continue;
+            }
             if let Some(price) = per_unit_from_name(item.prices.price.to_cents()?, &item.name) {
                 candidates.push(price);
             }

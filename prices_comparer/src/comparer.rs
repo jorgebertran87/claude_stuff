@@ -217,6 +217,24 @@ pub fn per_unit_from_name(price_cents: u64, name: &str) -> Option<UnitPrice> {
     })
 }
 
+/// Some generic queries must always resolve to a specific brand. The brand
+/// keyword a query's results must contain, if any.
+fn required_brand(query: &str) -> Option<&'static str> {
+    match query.trim().to_lowercase().as_str() {
+        "cola" | "cola zero" => Some("coca"),
+        _ => None,
+    }
+}
+
+/// Whether a product `name` is eligible for `query`. A generic cola query only
+/// allows the Coca-Cola brand; any other query allows every result.
+pub fn brand_allows(query: &str, name: &str) -> bool {
+    match required_brand(query) {
+        Some(brand) => name.to_lowercase().contains(brand),
+        None => true,
+    }
+}
+
 /// Pick the per-unit price a store should report from its search results
 /// (`candidates`, in result order). With a wanted measure, the cheapest option
 /// in that unit wins; without one, the first result wins.

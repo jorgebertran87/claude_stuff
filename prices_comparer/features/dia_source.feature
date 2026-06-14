@@ -27,6 +27,12 @@ Feature: Dia source
     When I ask the price of "milk" measured in litres
     Then the per-unit price is 1.05 per litre
 
+  Scenario: A cola search always picks Coca-Cola, even if another brand is cheaper
+    Given a mock FlareSolverr where searching Dia for "cola" finds "Hacendado Cola 2L" at 1.00 and "Coca-Cola 2L" at 3.00
+    And a Dia source pointed at the mock
+    When I ask the price of "cola" measured in litres
+    Then the per-unit price is 1.50 per litre
+
   Scenario: A product with no matches is reported as not sold
     Given a mock FlareSolverr where searching Dia for "caviar" finds nothing
     And a Dia source pointed at the mock
