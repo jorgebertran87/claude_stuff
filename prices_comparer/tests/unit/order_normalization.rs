@@ -21,7 +21,7 @@ impl StoreSource for FakeStore {
         &self.name
     }
 
-    async fn unit_price(&self, product: &str) -> anyhow::Result<Option<UnitPrice>> {
+    async fn unit_price(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<UnitPrice>> {
         Ok(self.prices.get(product).copied())
     }
 }

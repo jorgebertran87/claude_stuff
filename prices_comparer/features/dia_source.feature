@@ -15,6 +15,18 @@ Feature: Dia source
     When I ask the price of "milk"
     Then the per-unit price is 1.05 per litre
 
+  Scenario: The cheapest match in the wanted measure wins
+    Given a mock FlareSolverr where searching Dia for "milk" finds "Leche entera 1L" at 1.05 and "Leche desnatada 1L" at 0.89
+    And a Dia source pointed at the mock
+    When I ask the price of "milk" measured in litres
+    Then the per-unit price is 0.89 per litre
+
+  Scenario: A cheaper match in another measure is ignored
+    Given a mock FlareSolverr where searching Dia for "milk" finds "Leche entera 1L" at 1.05 and "Leche en polvo 1kg" at 0.50
+    And a Dia source pointed at the mock
+    When I ask the price of "milk" measured in litres
+    Then the per-unit price is 1.05 per litre
+
   Scenario: A product with no matches is reported as not sold
     Given a mock FlareSolverr where searching Dia for "caviar" finds nothing
     And a Dia source pointed at the mock

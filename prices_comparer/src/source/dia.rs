@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::comparer::{per_unit_from_name, StoreSource, UnitPrice};
+use crate::comparer::{choose_unit_price, per_unit_from_name, StoreSource, Unit, UnitPrice};
 
 use super::price::Price;
 
@@ -10,8 +10,8 @@ use super::price::Price;
 const SEARCH_URL: &str = "https://www.dia.es/api/v1/search-back/search/reduced";
 
 /// Looks up prices on Dia's online shop via FlareSolverr, which drives an
-/// undetected Chrome to get past Cloudflare. The first search item for a
-/// query is taken as "the product".
+/// undetected Chrome to get past Cloudflare. Among the search results it picks
+/// the cheapest priced in the wanted measure, or the first when none is asked.
 pub struct DiaSource {
     client: reqwest::Client,
     flare_url: String,
@@ -74,7 +74,11 @@ impl StoreSource for DiaSource {
         "Dia"
     }
 
-    async fn unit_price(&self, product: &str) -> anyhow::Result<Option<UnitPrice>> {
+    async fn unit_price(
+        &self,
+        product: &str,
+        want: Option<Unit>,
+    ) -> anyhow::Result<Option<UnitPrice>> {
         let mut search_url = reqwest::Url::parse(SEARCH_URL)?;
         search_url.query_pairs_mut().append_pair("q", product);
 
@@ -95,9 +99,12 @@ impl StoreSource for DiaSource {
         let search: SearchResponse = serde_json::from_str(embedded_json(&parsed.solution.response))
             .map_err(|e| anyhow::anyhow!("Dia search returned no product data: {e}"))?;
 
-        match search.search_items.first() {
-            None => Ok(None),
-            Some(item) => Ok(per_unit_from_name(item.prices.price.to_cents()?, &item.name)),
+        let mut candidates = Vec::with_capacity(search.search_items.len());
+        for item in &search.search_items {
+            if let Some(price) = per_unit_from_name(item.prices.price.to_cents()?, &item.name) {
+                candidates.push(price);
+            }
         }
+        Ok(choose_unit_price(candidates, want))
     }
 }

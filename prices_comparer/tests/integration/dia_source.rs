@@ -29,6 +29,15 @@ impl Default for DiaWorld {
     }
 }
 
+fn unit(name: &str) -> Unit {
+    match name {
+        "litres" | "litre" => Unit::Litre,
+        "kilos" | "kilo" => Unit::Kilogram,
+        "pieces" | "piece" => Unit::Each,
+        other => panic!("unknown measure {other:?}"),
+    }
+}
+
 /// Parse a price like "1.05" into cents without going through floats.
 fn cents(price: &str) -> u64 {
     let (euros, cents) = price.split_once('.').unwrap_or((price, "0"));
@@ -120,7 +129,14 @@ fn given_source(world: &mut DiaWorld) {
 #[when(regex = r#"^I ask the price of "([^"]+)"$"#)]
 async fn when_ask_price(world: &mut DiaWorld, product: String) {
     let source = world.source.as_ref().expect("source not built");
-    world.result = Some(source.unit_price(&product).await.map_err(|e| e.to_string()));
+    world.result = Some(source.unit_price(&product, None).await.map_err(|e| e.to_string()));
+}
+
+#[when(regex = r#"^I ask the price of "([^"]+)" measured in (\w+)$"#)]
+async fn when_ask_price_measured(world: &mut DiaWorld, product: String, measure: String) {
+    let source = world.source.as_ref().expect("source not built");
+    world.result =
+        Some(source.unit_price(&product, Some(unit(&measure))).await.map_err(|e| e.to_string()));
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────

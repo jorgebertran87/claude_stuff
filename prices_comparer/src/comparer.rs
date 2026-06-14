@@ -39,10 +39,16 @@ pub struct ItemSize {
 pub trait StoreSource: Send + Sync {
     fn name(&self) -> &str;
 
-    /// The product's price per standard unit. `Ok(None)` means the store does
-    /// not sell it (or gives no comparable per-unit price); `Err` means the
-    /// store could not be reached.
-    async fn unit_price(&self, product: &str) -> anyhow::Result<Option<UnitPrice>>;
+    /// The product's price per standard unit. `want` is the measure to compare
+    /// in (from the order being priced): when set, the store picks the cheapest
+    /// matching option among its search results; when `None`, it takes the first
+    /// result. `Ok(None)` means the store does not sell it (or gives no
+    /// comparable per-unit price); `Err` means the store could not be reached.
+    async fn unit_price(
+        &self,
+        product: &str,
+        want: Option<Unit>,
+    ) -> anyhow::Result<Option<UnitPrice>>;
 }
 
 /// One line of the shopper's basket: a product name and how many units.
@@ -211,6 +217,22 @@ pub fn per_unit_from_name(price_cents: u64, name: &str) -> Option<UnitPrice> {
     })
 }
 
+/// Pick the per-unit price a store should report from its search results
+/// (`candidates`, in result order). With a wanted measure, the cheapest option
+/// in that unit wins; without one, the first result wins.
+pub fn choose_unit_price(
+    candidates: impl IntoIterator<Item = UnitPrice>,
+    want: Option<Unit>,
+) -> Option<UnitPrice> {
+    match want {
+        Some(unit) => candidates
+            .into_iter()
+            .filter(|p| p.unit == unit)
+            .min_by_key(|p| p.cents_per_unit),
+        None => candidates.into_iter().next(),
+    }
+}
+
 /// Compare a typed basket string across stores, per unit.
 pub async fn compare(
     stores: &[Box<dyn StoreSource>],
@@ -239,12 +261,15 @@ pub async fn compare_with_anchors(
     let mut item_comparisons = Vec::with_capacity(items.len());
     for (i, item) in items.iter().enumerate() {
         let anchor = anchors.get(i).copied().flatten();
+        // Match each store's option to the way the item was bought, so the
+        // cheapest comparable size is chosen rather than the first search hit.
+        let want = anchor.map(|a| a.unit);
         let mut per_store = Vec::with_capacity(stores.len() + 1);
         if let Some(price) = anchor {
             per_store.push((anchor_label.to_string(), Some(price)));
         }
         for store in stores {
-            let price = store.unit_price(&item.name).await.ok().flatten();
+            let price = store.unit_price(&item.name, want).await.ok().flatten();
             per_store.push((store.name().to_string(), price));
         }
         // The order's own measurement wins when it has one, so the stores are

@@ -15,6 +15,18 @@ Feature: Mercadona source
     When I ask the price of "milk"
     Then the per-unit price is 0.96 per litre
 
+  Scenario: The cheapest match in the wanted measure wins
+    Given a mock Mercadona API where searching "milk" finds "Leche entera" at 0.96 per litre and "Leche desnatada" at 0.89 per litre
+    And a Mercadona source pointed at the mock
+    When I ask the price of "milk" measured in litres
+    Then the per-unit price is 0.89 per litre
+
+  Scenario: A cheaper match in another measure is ignored
+    Given a mock Mercadona API where searching "milk" finds "Leche entera" at 0.96 per litre and "Leche en polvo" at 0.50 per kilo
+    And a Mercadona source pointed at the mock
+    When I ask the price of "milk" measured in litres
+    Then the per-unit price is 0.96 per litre
+
   Scenario: A product with no matches is reported as not sold
     Given a mock Mercadona API where searching "caviar" finds nothing
     And a Mercadona source pointed at the mock

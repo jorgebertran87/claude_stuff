@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::comparer::{StoreSource, Unit, UnitPrice};
+use crate::comparer::{choose_unit_price, StoreSource, Unit, UnitPrice};
 
 use super::price::Price;
 
@@ -10,7 +10,8 @@ use super::price::Price;
 const SEARCH_INDEX: &str = "products_prod_4315_es";
 
 /// Looks up prices on Mercadona's online shop, which serves product search
-/// through Algolia. The first hit for a query is taken as "the product".
+/// through Algolia. Among the hits it picks the cheapest priced in the wanted
+/// measure, or the first when none is asked.
 pub struct MercadonaSource {
     client: reqwest::Client,
     base_url: String,
@@ -60,7 +61,11 @@ impl StoreSource for MercadonaSource {
         "Mercadona"
     }
 
-    async fn unit_price(&self, product: &str) -> anyhow::Result<Option<UnitPrice>> {
+    async fn unit_price(
+        &self,
+        product: &str,
+        want: Option<Unit>,
+    ) -> anyhow::Result<Option<UnitPrice>> {
         let url = format!("{}/1/indexes/{}/query", self.base_url, SEARCH_INDEX);
         let response = self
             .client
@@ -72,16 +77,16 @@ impl StoreSource for MercadonaSource {
             .await?
             .error_for_status()?;
         let search: SearchResponse = response.json().await?;
-        let Some(hit) = search.hits.first() else {
-            return Ok(None);
-        };
-        let pi = &hit.price_instructions;
-        match (&pi.reference_price, &pi.reference_format) {
-            (Some(price), Some(format)) => match unit_of(format) {
-                Some(unit) => Ok(Some(UnitPrice { cents_per_unit: price.to_cents()?, unit })),
-                None => Ok(None),
-            },
-            _ => Ok(None),
+
+        let mut candidates = Vec::with_capacity(search.hits.len());
+        for hit in &search.hits {
+            let pi = &hit.price_instructions;
+            if let (Some(price), Some(format)) = (&pi.reference_price, &pi.reference_format) {
+                if let Some(unit) = unit_of(format) {
+                    candidates.push(UnitPrice { cents_per_unit: price.to_cents()?, unit });
+                }
+            }
         }
+        Ok(choose_unit_price(candidates, want))
     }
 }
