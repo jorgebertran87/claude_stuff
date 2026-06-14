@@ -82,8 +82,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Glovo orders are normalized through DeepSeek before comparison; the bot
-    // falls back to raw item names if it is unavailable.
-    let normalizer: Box<dyn OrderNormalizer> = Box::new(DeepSeekNormalizer::new(env("DEEPSEEK_API_KEY")?));
+    // falls back to raw item names if it is unavailable. DEEPSEEK_MODEL picks
+    // the model (e.g. deepseek-chat); see DeepSeek's docs for current ids.
+    let deepseek_model =
+        std::env::var("DEEPSEEK_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string());
+    let normalizer: Box<dyn OrderNormalizer> =
+        Box::new(DeepSeekNormalizer::new(env("DEEPSEEK_API_KEY")?, deepseek_model));
 
     TelegramBot::new(
         "https://api.telegram.org".to_string(),

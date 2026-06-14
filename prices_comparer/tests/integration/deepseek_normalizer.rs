@@ -88,7 +88,8 @@ async fn given_no_array(world: &mut DeepSeekWorld, reply: String) {
 #[given("a DeepSeek normalizer pointed at the mock")]
 fn given_normalizer(world: &mut DeepSeekWorld) {
     let uri = world.server.as_ref().expect("mock server not started").uri();
-    world.normalizer = Some(DeepSeekNormalizer::with_base_url(uri, "test-key".into()));
+    world.normalizer =
+        Some(DeepSeekNormalizer::with_base_url(uri, "test-key".into(), "deepseek-chat".into()));
 }
 
 // ── When ──────────────────────────────────────────────────────────────────────

@@ -46,19 +46,14 @@ pub struct DeepSeekNormalizer {
 }
 
 impl DeepSeekNormalizer {
-    /// Talk to DeepSeek's public API with the given key.
-    pub fn new(api_key: String) -> Self {
-        Self::with_base_url("https://api.deepseek.com".to_string(), api_key)
+    /// Talk to DeepSeek's public API with the given key and model.
+    pub fn new(api_key: String, model: String) -> Self {
+        Self::with_base_url("https://api.deepseek.com".to_string(), api_key, model)
     }
 
     /// `base_url` is the DeepSeek host in production or a mock server in tests.
-    pub fn with_base_url(base_url: String, api_key: String) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            base_url,
-            api_key,
-            model: "deepseek-chat".to_string(),
-        }
+    pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
+        Self { client: reqwest::Client::new(), base_url, api_key, model }
     }
 }
 
