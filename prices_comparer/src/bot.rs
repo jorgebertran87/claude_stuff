@@ -1,6 +1,6 @@
 use crate::basket::{BasketSource, FetchError, OrderNormalizer, PurchasedItem};
 use crate::comparer::{
-    compare, compare_items, BasketItem, ItemComparison, ItemSize, StoreSource, UnitPrice,
+    compare, compare_with_anchors, BasketItem, ItemComparison, ItemSize, StoreSource, UnitPrice,
 };
 
 /// Build the bot's reply to a message.
@@ -11,7 +11,9 @@ use crate::comparer::{
 ///
 /// Orders from a source are normalized (store-brand names cleaned up) before
 /// the comparison; typed baskets are compared as written. Every product is
-/// priced per unit (€/L, €/kg, €/each) and the cheapest store is marked.
+/// priced per unit (€/L, €/kg, €/each) and the cheapest is marked. For an
+/// order, the price paid on the source competes as its own column, and its
+/// measurement decides the unit the stores are compared in.
 pub async fn reply_to(
     stores: &[Box<dyn StoreSource>],
     baskets: &[Box<dyn BasketSource>],
@@ -107,11 +109,13 @@ async fn order_reply(
     };
 
     let comparison_items: Vec<BasketItem> = items.iter().map(|i| i.to_basket_item()).collect();
-    let comparison = compare_items(stores, &comparison_items).await;
+    // The price paid on the source competes in the comparison as its own column.
+    let anchors: Vec<Option<UnitPrice>> = items.iter().map(glovo_unit_price).collect();
+    let comparison = compare_with_anchors(stores, &comparison_items, source.name(), &anchors).await;
 
     let mut lines = vec![format!("🛒 {} order:", source.name()), String::new()];
     for (i, item) in comparison.items.iter().enumerate() {
-        lines.push(order_item_line(item, &items[i], source.name()));
+        lines.push(order_item_line(item, &items[i]));
     }
     if let Some(paid) = basket.paid_cents {
         lines.push(String::new());
@@ -127,16 +131,12 @@ fn typed_item_line(item: &ItemComparison) -> String {
     format!("{}{qty} — {}", item.name, store_cells(item))
 }
 
-fn order_item_line(item: &ItemComparison, purchased: &PurchasedItem, label: &str) -> String {
+fn order_item_line(item: &ItemComparison, purchased: &PurchasedItem) -> String {
     let size = purchased
         .size
         .map(|s| format!(" ({})", size_label(s)))
         .unwrap_or_default();
-    let head = match glovo_unit_price(purchased) {
-        Some(up) => format!("{}{size} — {label} {} | ", item.name, unit_price_str(&up)),
-        None => format!("{}{size} — ", item.name),
-    };
-    format!("{head}{}", store_cells(item))
+    format!("{}{size} — {}", item.name, store_cells(item))
 }
 
 /// Each store's per-unit price, with the cheapest marked and a dash for

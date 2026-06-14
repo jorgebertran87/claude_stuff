@@ -192,6 +192,24 @@ fn then_glovo_price(world: &mut NormWorld, price: String, unit_name: String) {
     world.assert_contains(&format!("Glovo {}", cell(&price, &unit_name)));
 }
 
+#[then(regex = r#"^the reply marks "([^"]+)" as the cheapest$"#)]
+fn then_marks_cheapest(world: &mut NormWorld, store: String) {
+    let reply = world.reply();
+    // An item line reads "<name> — <cell>, <cell>, ...", each cell rendering as
+    // "<store> <price>[ ← cheapest]".
+    let prefix = format!("{store} ");
+    let cell = reply
+        .lines()
+        .filter_map(|line| line.split_once(" — "))
+        .flat_map(|(_, cells)| cells.split(", "))
+        .find(|cell| cell.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("no cell for {store:?} in:\n{reply}"));
+    assert!(
+        cell.contains("← cheapest"),
+        "expected {store:?} marked cheapest, got cell {cell:?} in:\n{reply}"
+    );
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 #[tokio::main]

@@ -222,14 +222,35 @@ pub async fn compare(
 
 /// Like [`compare`], for an already-parsed basket.
 pub async fn compare_items(stores: &[Box<dyn StoreSource>], items: &[BasketItem]) -> Comparison {
+    compare_with_anchors(stores, items, "", &[]).await
+}
+
+/// Like [`compare_items`], but each line may carry an `anchor` price from the
+/// order source itself (labelled `anchor_label`, e.g. "Glovo"), aligned with
+/// `items` by index. The anchor joins the comparison like a store — it can be
+/// the cheapest — and, when present, its unit drives the comparison so every
+/// store is judged in the same terms the item was bought in.
+pub async fn compare_with_anchors(
+    stores: &[Box<dyn StoreSource>],
+    items: &[BasketItem],
+    anchor_label: &str,
+    anchors: &[Option<UnitPrice>],
+) -> Comparison {
     let mut item_comparisons = Vec::with_capacity(items.len());
-    for item in items {
-        let mut per_store = Vec::with_capacity(stores.len());
+    for (i, item) in items.iter().enumerate() {
+        let anchor = anchors.get(i).copied().flatten();
+        let mut per_store = Vec::with_capacity(stores.len() + 1);
+        if let Some(price) = anchor {
+            per_store.push((anchor_label.to_string(), Some(price)));
+        }
         for store in stores {
             let price = store.unit_price(&item.name).await.ok().flatten();
             per_store.push((store.name().to_string(), price));
         }
-        let unit = comparison_unit(&per_store);
+        // The order's own measurement wins when it has one, so the stores are
+        // compared the way the item was actually bought; otherwise fall back to
+        // the unit most stores report.
+        let unit = anchor.map(|a| a.unit).or_else(|| comparison_unit(&per_store));
         let cheapest = cheapest_in_unit(&per_store, unit);
         item_comparisons.push(ItemComparison {
             name: item.name.clone(),
