@@ -26,7 +26,7 @@ impl StoreSource for FakeStore {
         &self.name
     }
 
-    async fn lookup(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<StoreMatch>> {
+    async fn lookup(&self, product: &str, _description: &str, _want: Option<Unit>) -> anyhow::Result<Option<StoreMatch>> {
         Ok(self.prices.get(product).map(|c| StoreMatch {
             name: product.to_string(),
             price: UnitPrice { cents_per_unit: *c, unit: Unit::Litre },

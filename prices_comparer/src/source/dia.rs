@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::comparer::{
-    brand_allows, choose_match, per_unit_from_name, relevant, StoreMatch, StoreSource, Unit,
+    brand_allows, per_unit_from_name, relevant, select_match, ProductSelector, StoreMatch,
+    StoreSource, Unit,
 };
 
 use super::price::Price;
@@ -13,17 +16,20 @@ const SEARCH_URL: &str = "https://www.dia.es/api/v1/search-back/search/reduced";
 
 /// Looks up prices on Dia's online shop via FlareSolverr, which drives an
 /// undetected Chrome to get past Cloudflare. Among the search results it picks
-/// the cheapest priced in the wanted measure, or the first when none is asked.
+/// the best match via the product selector, falling back to the cheapest in
+/// the wanted measure (or the first when none is asked).
 pub struct DiaSource {
     client: reqwest::Client,
     flare_url: String,
+    selector: Option<Arc<dyn ProductSelector>>,
 }
 
 impl DiaSource {
     /// `flare_url` is the FlareSolverr instance, e.g. `http://flaresolverr:8191`
-    /// in docker-compose or a mock server in tests.
-    pub fn new(flare_url: String) -> Self {
-        Self { client: reqwest::Client::new(), flare_url }
+    /// in docker-compose or a mock server in tests. `selector` picks the best
+    /// search result; `None` falls back to the price heuristic.
+    pub fn new(flare_url: String, selector: Option<Arc<dyn ProductSelector>>) -> Self {
+        Self { client: reqwest::Client::new(), flare_url, selector }
     }
 }
 
@@ -79,6 +85,7 @@ impl StoreSource for DiaSource {
     async fn lookup(
         &self,
         product: &str,
+        description: &str,
         want: Option<Unit>,
     ) -> anyhow::Result<Option<StoreMatch>> {
         let mut search_url = reqwest::Url::parse(SEARCH_URL)?;
@@ -110,6 +117,6 @@ impl StoreSource for DiaSource {
                 candidates.push(StoreMatch { name: item.name.clone(), price });
             }
         }
-        Ok(choose_match(candidates, want))
+        Ok(select_match(self.selector.as_deref(), description, want, candidates).await)
     }
 }

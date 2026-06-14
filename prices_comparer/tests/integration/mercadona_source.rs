@@ -1,9 +1,26 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
 use cucumber::{given, then, when, World};
-use prices_comparer::comparer::{StoreMatch, StoreSource, Unit, UnitPrice};
+use prices_comparer::comparer::{ProductSelector, StoreMatch, StoreSource, Unit, UnitPrice};
 use prices_comparer::source::mercadona::MercadonaSource;
 use serde_json::json;
 use wiremock::matchers::{body_string_contains, method};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+// ── Stub selector ───────────────────────────────────────────────────────────
+
+/// Always picks a fixed candidate index, standing in for the LLM selector.
+struct StubSelector {
+    pick: usize,
+}
+
+#[async_trait]
+impl ProductSelector for StubSelector {
+    async fn select(&self, _description: &str, candidates: &[String]) -> Option<usize> {
+        (self.pick < candidates.len()).then_some(self.pick)
+    }
+}
 
 // ── World ─────────────────────────────────────────────────────────────────────
 
@@ -11,6 +28,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 pub struct MercadonaWorld {
     // MockServer must be kept alive so the mock remains mounted during the test.
     server: Option<MockServer>,
+    selector: Option<Arc<dyn ProductSelector>>,
     source: Option<MercadonaSource>,
     result: Option<Result<Option<StoreMatch>, String>>,
 }
@@ -25,7 +43,7 @@ impl std::fmt::Debug for MercadonaWorld {
 
 impl Default for MercadonaWorld {
     fn default() -> Self {
-        Self { server: None, source: None, result: None }
+        Self { server: None, selector: None, source: None, result: None }
     }
 }
 
@@ -111,10 +129,16 @@ async fn given_invalid_json(world: &mut MercadonaWorld) {
     world.server = Some(server);
 }
 
+#[given(regex = r#"^a selector that picks candidate (\d+)$"#)]
+fn given_selector(world: &mut MercadonaWorld, pick: usize) {
+    world.selector = Some(Arc::new(StubSelector { pick }));
+}
+
 #[given("a Mercadona source pointed at the mock")]
 fn given_source(world: &mut MercadonaWorld) {
     let uri = world.server.as_ref().expect("mock server not started").uri();
-    world.source = Some(MercadonaSource::new(uri, "test-app".into(), "test-key".into()));
+    world.source =
+        Some(MercadonaSource::new(uri, "test-app".into(), "test-key".into(), world.selector.clone()));
 }
 
 // ── When ──────────────────────────────────────────────────────────────────────
@@ -122,7 +146,7 @@ fn given_source(world: &mut MercadonaWorld) {
 #[when(regex = r#"^I ask the price of "([^"]+)"$"#)]
 async fn when_ask_price(world: &mut MercadonaWorld, product: String) {
     let source = world.source.as_ref().expect("source not built");
-    world.result = Some(source.lookup(&product, None).await.map_err(|e| e.to_string()));
+    world.result = Some(source.lookup(&product, &product, None).await.map_err(|e| e.to_string()));
 }
 
 #[when(regex = r#"^I ask the price of "([^"]+)" measured in (\w+)$"#)]
@@ -130,7 +154,7 @@ async fn when_ask_price_measured(world: &mut MercadonaWorld, product: String, me
     let source = world.source.as_ref().expect("source not built");
     let want = unit(&measure).0;
     world.result =
-        Some(source.lookup(&product, Some(want)).await.map_err(|e| e.to_string()));
+        Some(source.lookup(&product, &product, Some(want)).await.map_err(|e| e.to_string()));
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────

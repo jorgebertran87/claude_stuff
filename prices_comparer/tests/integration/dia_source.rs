@@ -121,7 +121,7 @@ async fn given_no_product_data(world: &mut DiaWorld) {
 #[given("a Dia source pointed at the mock")]
 fn given_source(world: &mut DiaWorld) {
     let uri = world.server.as_ref().expect("mock server not started").uri();
-    world.source = Some(DiaSource::new(uri));
+    world.source = Some(DiaSource::new(uri, None));
 }
 
 // ── When ──────────────────────────────────────────────────────────────────────
@@ -129,14 +129,14 @@ fn given_source(world: &mut DiaWorld) {
 #[when(regex = r#"^I ask the price of "([^"]+)"$"#)]
 async fn when_ask_price(world: &mut DiaWorld, product: String) {
     let source = world.source.as_ref().expect("source not built");
-    world.result = Some(source.lookup(&product, None).await.map_err(|e| e.to_string()));
+    world.result = Some(source.lookup(&product, &product, None).await.map_err(|e| e.to_string()));
 }
 
 #[when(regex = r#"^I ask the price of "([^"]+)" measured in (\w+)$"#)]
 async fn when_ask_price_measured(world: &mut DiaWorld, product: String, measure: String) {
     let source = world.source.as_ref().expect("source not built");
     world.result =
-        Some(source.lookup(&product, Some(unit(&measure))).await.map_err(|e| e.to_string()));
+        Some(source.lookup(&product, &product, Some(unit(&measure))).await.map_err(|e| e.to_string()));
 }
 
 // ── Then ──────────────────────────────────────────────────────────────────────

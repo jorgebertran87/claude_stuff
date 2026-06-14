@@ -56,17 +56,30 @@ pub struct ItemSize {
 pub trait StoreSource: Send + Sync {
     fn name(&self) -> &str;
 
-    /// The matched product and its price per standard unit. `want` is the
-    /// measure to compare in (from the order being priced): when set, the store
-    /// picks the cheapest matching option among its search results; when `None`,
-    /// it takes the first result. `Ok(None)` means the store does not sell it
-    /// (or gives no comparable per-unit price); `Err` means the store could not
-    /// be reached.
+    /// The matched product and its price per standard unit. `product` is the
+    /// normalized search term; `description` is the original item the shopper
+    /// bought (a richer hint for picking among results). `want` is the measure
+    /// to compare in (from the order being priced). The store picks the best
+    /// matching option among its results — via a product selector when one is
+    /// wired, otherwise the cheapest in `want` (or the first when `want` is
+    /// `None`). `Ok(None)` means the store does not sell it (or gives no
+    /// comparable price); `Err` means the store could not be reached.
     async fn lookup(
         &self,
         product: &str,
+        description: &str,
         want: Option<Unit>,
     ) -> anyhow::Result<Option<StoreMatch>>;
+}
+
+/// Port: picks the best match among a store's candidate product names for the
+/// item the shopper actually bought. Implemented over an LLM in the
+/// infrastructure layer; selection failures fall back to the price heuristic.
+#[async_trait]
+pub trait ProductSelector: Send + Sync {
+    /// The index of the candidate (in order) that best matches `description`,
+    /// or `None` if none fits or the selection could not be made.
+    async fn select(&self, description: &str, candidates: &[String]) -> Option<usize>;
 }
 
 /// One line of the shopper's basket: a product name and how many units.
@@ -318,17 +331,40 @@ fn fold(s: &str) -> String {
 }
 
 /// Pick the product a store should report from its search results
-/// (`candidates`, in result order). With a wanted measure, the cheapest match
-/// in that unit wins; without one, the first result wins. A non-positive price
-/// is junk data (e.g. a 0.00 € listing) and never counts.
-pub fn choose_match(
-    candidates: impl IntoIterator<Item = StoreMatch>,
+/// (`candidates`, in result order). Junk listings (non-positive price) are
+/// dropped, and when a measure is wanted only that unit is kept. Among what's
+/// left, a `selector` picks the best match for `description`; failing that (no
+/// selector, a single candidate, or a declined/invalid choice) the price
+/// heuristic decides — cheapest when `want` is set, first otherwise.
+pub async fn select_match(
+    selector: Option<&dyn ProductSelector>,
+    description: &str,
     want: Option<Unit>,
+    candidates: Vec<StoreMatch>,
 ) -> Option<StoreMatch> {
-    let priced = candidates.into_iter().filter(|m| m.price.cents_per_unit > 0);
+    let mut eligible: Vec<StoreMatch> = candidates
+        .into_iter()
+        .filter(|m| m.price.cents_per_unit > 0)
+        .filter(|m| want.is_none_or(|u| m.price.unit == u))
+        .collect();
+    if eligible.is_empty() {
+        return None;
+    }
+
+    if eligible.len() > 1 {
+        if let Some(selector) = selector {
+            let names: Vec<String> = eligible.iter().map(|m| m.name.clone()).collect();
+            if let Some(i) = selector.select(description, &names).await {
+                if i < eligible.len() {
+                    return Some(eligible.swap_remove(i));
+                }
+            }
+        }
+    }
+
     match want {
-        Some(unit) => priced.filter(|m| m.price.unit == unit).min_by_key(|m| m.price.cents_per_unit),
-        None => priced.into_iter().next(),
+        Some(_) => eligible.into_iter().min_by_key(|m| m.price.cents_per_unit),
+        None => eligible.into_iter().next(),
     }
 }
 
@@ -363,12 +399,16 @@ pub async fn compare_with_anchors(
         // Match each store's option to the way the item was bought, so the
         // cheapest comparable size is chosen rather than the first search hit.
         let want = anchor.as_ref().map(|a| a.price.unit);
+        // The original order line (the anchor's name) describes what was bought
+        // far better than the normalized search term; fall back to the term for
+        // typed baskets that have no anchor.
+        let description = anchor.as_ref().map_or(item.name.as_str(), |a| a.name.as_str());
         let mut per_store = Vec::with_capacity(stores.len() + 1);
         if let Some(matched) = &anchor {
             per_store.push((anchor_label.to_string(), Some(matched.clone())));
         }
         for store in stores {
-            let matched = store.lookup(&item.name, want).await.ok().flatten();
+            let matched = store.lookup(&item.name, description, want).await.ok().flatten();
             per_store.push((store.name().to_string(), matched));
         }
         // The order's own measurement wins when it has one, so the stores are

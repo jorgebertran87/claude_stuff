@@ -20,7 +20,7 @@ impl StoreSource for FakeStore {
         &self.name
     }
 
-    async fn lookup(&self, product: &str, _want: Option<Unit>) -> anyhow::Result<Option<StoreMatch>> {
+    async fn lookup(&self, product: &str, _description: &str, _want: Option<Unit>) -> anyhow::Result<Option<StoreMatch>> {
         if self.fails {
             anyhow::bail!("store unreachable");
         }

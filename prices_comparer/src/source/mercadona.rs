@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::comparer::{
-    brand_allows, choose_match, relevant, StoreMatch, StoreSource, Unit, UnitPrice,
+    brand_allows, relevant, select_match, ProductSelector, StoreMatch, StoreSource, Unit, UnitPrice,
 };
 
 use super::price::Price;
@@ -12,20 +14,28 @@ use super::price::Price;
 const SEARCH_INDEX: &str = "products_prod_4315_es";
 
 /// Looks up prices on Mercadona's online shop, which serves product search
-/// through Algolia. Among the hits it picks the cheapest priced in the wanted
-/// measure, or the first when none is asked.
+/// through Algolia. Among the hits it picks the best match via the product
+/// selector, falling back to the cheapest in the wanted measure (or the first
+/// when none is asked).
 pub struct MercadonaSource {
     client: reqwest::Client,
     base_url: String,
     app_id: String,
     api_key: String,
+    selector: Option<Arc<dyn ProductSelector>>,
 }
 
 impl MercadonaSource {
     /// `base_url` is the Algolia host, e.g. `https://7uzjkl1dj0-dsn.algolia.net`
-    /// in production or a mock server in tests.
-    pub fn new(base_url: String, app_id: String, api_key: String) -> Self {
-        Self { client: reqwest::Client::new(), base_url, app_id, api_key }
+    /// in production or a mock server in tests. `selector` picks the best hit;
+    /// `None` falls back to the price heuristic.
+    pub fn new(
+        base_url: String,
+        app_id: String,
+        api_key: String,
+        selector: Option<Arc<dyn ProductSelector>>,
+    ) -> Self {
+        Self { client: reqwest::Client::new(), base_url, app_id, api_key, selector }
     }
 }
 
@@ -68,6 +78,7 @@ impl StoreSource for MercadonaSource {
     async fn lookup(
         &self,
         product: &str,
+        description: &str,
         want: Option<Unit>,
     ) -> anyhow::Result<Option<StoreMatch>> {
         let url = format!("{}/1/indexes/{}/query", self.base_url, SEARCH_INDEX);
@@ -97,6 +108,6 @@ impl StoreSource for MercadonaSource {
                 }
             }
         }
-        Ok(choose_match(candidates, want))
+        Ok(select_match(self.selector.as_deref(), description, want, candidates).await)
     }
 }

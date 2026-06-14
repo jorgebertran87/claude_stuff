@@ -63,6 +63,13 @@ Feature: Mercadona source
     When I ask the price of "manzanas" measured in kilos
     Then the per-unit price is 2.19 per kilo
 
+  Scenario: The selector's choice overrides the cheapest
+    Given a mock Mercadona API where searching "leche" finds "Leche entera" at 0.96 per litre and "Leche desnatada" at 0.89 per litre
+    And a selector that picks candidate 0
+    And a Mercadona source pointed at the mock
+    When I ask the price of "leche" measured in litres
+    Then the per-unit price is 0.96 per litre
+
   Scenario: A product with no matches is reported as not sold
     Given a mock Mercadona API where searching "caviar" finds nothing
     And a Mercadona source pointed at the mock

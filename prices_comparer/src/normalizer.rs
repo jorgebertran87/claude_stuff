@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::basket::{OrderNormalizer, PurchasedBasket, PurchasedItem};
+use crate::comparer::ProductSelector;
 
 /// One cleaned line as the model returns it.
 #[derive(Deserialize)]
@@ -91,40 +92,115 @@ impl OrderNormalizer for DeepSeekNormalizer {
         .to_string();
         let prompt = load_skill("normalize_order");
 
-        let response = self
-            .client
-            .post(format!("{}/chat/completions", self.base_url))
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .json(&serde_json::json!({
-                "model": self.model,
-                "messages": [
-                    { "role": "system", "content": prompt },
-                    { "role": "user", "content": input },
-                ],
-            }))
-            .send()
-            .await?;
-
-        // Keep the raw body so errors can quote what DeepSeek actually said
-        // (e.g. "Model Not Exist" for a bad model id).
-        let status = response.status();
-        let body = response.text().await?;
-        if !status.is_success() {
-            anyhow::bail!("DeepSeek returned {status}: {body}");
-        }
-
-        let chat: ChatResponse = serde_json::from_str(&body)
-            .map_err(|e| anyhow::anyhow!("DeepSeek reply was not the expected JSON ({e}): {body}"))?;
-        let content = chat
-            .choices
-            .first()
-            .map(|c| c.message.content.as_str())
-            .ok_or_else(|| anyhow::anyhow!("DeepSeek returned no choices: {body}"))?;
-        let array = extract_json_array(content)
+        let content =
+            deepseek_chat(&self.client, &self.base_url, &self.api_key, &self.model, &prompt, &input)
+                .await?;
+        let array = extract_json_array(&content)
             .ok_or_else(|| anyhow::anyhow!("no product list in DeepSeek reply: {content}"))?;
         let clean: Vec<CleanItem> = serde_json::from_str(array)?;
         Ok(carry_sizes_over(clean, basket))
     }
+}
+
+/// One DeepSeek chat-completion round-trip: send a system + user message and
+/// return the assistant's reply text. Errors quote DeepSeek's own body (e.g.
+/// "Model Not Exist") so misconfiguration is legible upstream.
+async fn deepseek_chat(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    system: &str,
+    user: &str,
+) -> anyhow::Result<String> {
+    let response = client
+        .post(format!("{base_url}/chat/completions"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&serde_json::json!({
+            "model": model,
+            "messages": [
+                { "role": "system", "content": system },
+                { "role": "user", "content": user },
+            ],
+        }))
+        .send()
+        .await?;
+
+    let status = response.status();
+    let body = response.text().await?;
+    if !status.is_success() {
+        anyhow::bail!("DeepSeek returned {status}: {body}");
+    }
+    let chat: ChatResponse = serde_json::from_str(&body)
+        .map_err(|e| anyhow::anyhow!("DeepSeek reply was not the expected JSON ({e}): {body}"))?;
+    chat.choices
+        .into_iter()
+        .next()
+        .map(|c| c.message.content)
+        .ok_or_else(|| anyhow::anyhow!("DeepSeek returned no choices: {body}"))
+}
+
+/// Picks the store product that best matches the bought item, over DeepSeek.
+/// Any failure (HTTP error, unparsable or out-of-range reply) yields `None` so
+/// the caller falls back to its price heuristic.
+pub struct DeepSeekProductSelector {
+    client: reqwest::Client,
+    base_url: String,
+    api_key: String,
+    model: String,
+}
+
+impl DeepSeekProductSelector {
+    /// Talk to DeepSeek's public API with the given key and model.
+    pub fn new(api_key: String, model: String) -> Self {
+        Self::with_base_url("https://api.deepseek.com".to_string(), api_key, model)
+    }
+
+    /// `base_url` is the DeepSeek host in production or a mock server in tests.
+    pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
+        Self { client: reqwest::Client::new(), base_url, api_key, model }
+    }
+}
+
+#[async_trait]
+impl ProductSelector for DeepSeekProductSelector {
+    async fn select(&self, description: &str, candidates: &[String]) -> Option<usize> {
+        if candidates.is_empty() {
+            return None;
+        }
+        let list = candidates
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!("{i}: {c}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let system = "You match a shopping item to the closest supermarket product. \
+             Reply with only the 0-based index of the best matching candidate, or -1 \
+             if none is a good match. Output just the number.";
+        let user = format!("Item: {description}\nCandidates:\n{list}");
+
+        let content =
+            deepseek_chat(&self.client, &self.base_url, &self.api_key, &self.model, system, &user)
+                .await
+                .ok()?;
+        parse_index(&content).filter(|&i| i < candidates.len())
+    }
+}
+
+/// The first non-negative integer in `text`; `None` for a negative number or
+/// no number at all (the model's "-1 / none" answer or a non-numeric reply).
+fn parse_index(text: &str) -> Option<usize> {
+    let chars: Vec<char> = text.chars().collect();
+    for (i, c) in chars.iter().enumerate() {
+        if *c == '-' && chars.get(i + 1).is_some_and(|n| n.is_ascii_digit()) {
+            return None;
+        }
+        if c.is_ascii_digit() {
+            let digits: String = chars[i..].iter().take_while(|c| c.is_ascii_digit()).collect();
+            return digits.parse().ok();
+        }
+    }
+    None
 }
 
 /// Extract the first JSON array from text — Claude may wrap it in prose or

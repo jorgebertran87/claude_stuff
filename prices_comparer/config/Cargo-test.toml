@@ -59,3 +59,8 @@ harness = false
 name    = "deepseek_normalizer"
 path    = "tests/integration/deepseek_normalizer.rs"
 harness = false
+
+[[test]]
+name    = "deepseek_selector"
+path    = "tests/integration/deepseek_selector.rs"
+harness = false

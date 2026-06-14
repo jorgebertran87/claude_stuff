@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use prices_comparer::basket::{BasketSource, OrderNormalizer};
-use prices_comparer::comparer::StoreSource;
-use prices_comparer::normalizer::DeepSeekNormalizer;
+use prices_comparer::comparer::{ProductSelector, StoreSource};
+use prices_comparer::normalizer::{DeepSeekNormalizer, DeepSeekProductSelector};
 use prices_comparer::source::glovo_refresh::{GlovoRefresher, RefreshCreds, RefreshStore};
 use prices_comparer::source::{dia::DiaSource, glovo::GlovoSource, mercadona::MercadonaSource};
 use prices_comparer::telegram::TelegramBot;
@@ -26,13 +28,23 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "7UZJKL1DJ0".to_string());
     let mercadona_api_key = env("MERCADONA_API_KEY")?;
 
+    // DeepSeek powers both the order normalizer and the per-store product
+    // selector; one client shared across the stores. DEEPSEEK_MODEL picks the
+    // model (see DeepSeek's docs for current ids).
+    let deepseek_key = env("DEEPSEEK_API_KEY")?;
+    let deepseek_model =
+        std::env::var("DEEPSEEK_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string());
+    let selector: Arc<dyn ProductSelector> =
+        Arc::new(DeepSeekProductSelector::new(deepseek_key.clone(), deepseek_model.clone()));
+
     let stores: Vec<Box<dyn StoreSource>> = vec![
         Box::new(MercadonaSource::new(
             "https://7uzjkl1dj0-dsn.algolia.net".to_string(),
             mercadona_app_id,
             mercadona_api_key,
+            Some(selector.clone()),
         )),
-        Box::new(DiaSource::new(flare_url)),
+        Box::new(DiaSource::new(flare_url, Some(selector.clone()))),
     ];
 
     // Glovo's token lives in a file the bot shares with the mitmproxy
@@ -82,12 +94,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Glovo orders are normalized through DeepSeek before comparison; the bot
-    // falls back to raw item names if it is unavailable. DEEPSEEK_MODEL picks
-    // the model (e.g. deepseek-chat); see DeepSeek's docs for current ids.
-    let deepseek_model =
-        std::env::var("DEEPSEEK_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string());
+    // falls back to raw item names if it is unavailable.
     let normalizer: Box<dyn OrderNormalizer> =
-        Box::new(DeepSeekNormalizer::new(env("DEEPSEEK_API_KEY")?, deepseek_model));
+        Box::new(DeepSeekNormalizer::new(deepseek_key, deepseek_model));
 
     TelegramBot::new(
         "https://api.telegram.org".to_string(),
