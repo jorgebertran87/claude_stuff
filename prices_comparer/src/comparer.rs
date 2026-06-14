@@ -234,12 +234,25 @@ pub async fn compare_items(stores: &[Box<dyn StoreSource>], items: &[BasketItem]
     Comparison { items: item_comparisons }
 }
 
-/// The unit to compare in: the one reported by the most stores, ties broken
-/// by store order.
+/// The unit to compare in. Volume and weight always win over per-piece: a
+/// product is compared by litre or kilo whenever any store prices it that way,
+/// and falls back to `Each` only when no store gives a volume/weight price.
+/// Within the chosen tier the unit reported by the most stores wins, ties
+/// broken by store order.
 fn comparison_unit(per_store: &[(String, Option<UnitPrice>)]) -> Option<Unit> {
+    let is_measured = |u: Unit| matches!(u, Unit::Litre | Unit::Kilogram);
+    let has_measured = per_store
+        .iter()
+        .any(|(_, price)| price.is_some_and(|p| is_measured(p.unit)));
+
     let mut counts: Vec<(Unit, usize)> = Vec::new();
     for (_, price) in per_store {
         if let Some(p) = price {
+            // Once any store prices by volume/weight, per-piece prices no
+            // longer get a say in which unit we compare in.
+            if has_measured && !is_measured(p.unit) {
+                continue;
+            }
             match counts.iter_mut().find(|(u, _)| *u == p.unit) {
                 Some((_, n)) => *n += 1,
                 None => counts.push((p.unit, 1)),

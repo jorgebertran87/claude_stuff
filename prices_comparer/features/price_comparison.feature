@@ -35,6 +35,19 @@ Feature: Price comparison
     When I compare the basket "milk"
     Then the cheapest store for "milk" is "Mercadona"
 
+  Scenario: A volume price wins over more numerous per-piece prices
+    Given a store "Mercadona" pricing "milk" at 0.96 per litre
+    And a store "Dia" pricing "milk" at 0.50 per each
+    And a store "Lidl" pricing "milk" at 0.45 per each
+    When I compare the basket "milk"
+    Then the cheapest store for "milk" is "Mercadona"
+
+  Scenario: Per-piece prices still compare when no store sells by volume or weight
+    Given a store "Dia" pricing "milk" at 0.50 per each
+    And a store "Lidl" pricing "milk" at 0.45 per each
+    When I compare the basket "milk"
+    Then the cheapest store for "milk" is "Lidl"
+
   Scenario: Comparing an empty basket is rejected
     Given a store "Mercadona" pricing "milk" at 0.96 per litre
     When I compare the basket ""
