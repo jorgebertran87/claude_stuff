@@ -33,6 +33,24 @@ Feature: Mercadona source
     When I ask the price of "cola zero" measured in litres
     Then the per-unit price is 1.20 per litre
 
+  Scenario: A zero-priced listing is ignored
+    Given a mock Mercadona API where searching "milk" finds "Muestra gratis" at 0.00 per litre and "Leche entera" at 0.96 per litre
+    And a Mercadona source pointed at the mock
+    When I ask the price of "milk" measured in litres
+    Then the per-unit price is 0.96 per litre
+
+  Scenario: A cola query with extra words still resolves to Coca-Cola
+    Given a mock Mercadona API where searching "refresco cola zero" finds "Refresco cola Hacendado Zero" at 0.40 per litre and "Coca-Cola Zero" at 1.20 per litre
+    And a Mercadona source pointed at the mock
+    When I ask the price of "refresco cola zero" measured in litres
+    Then the per-unit price is 1.20 per litre
+
+  Scenario: A chocolate query is not mistaken for cola
+    Given a mock Mercadona API where searching "batido chocolate" finds "Batido de chocolate Hacendado" at 1.29 per litre
+    And a Mercadona source pointed at the mock
+    When I ask the price of "batido chocolate" measured in litres
+    Then the per-unit price is 1.29 per litre
+
   Scenario: A product with no matches is reported as not sold
     Given a mock Mercadona API where searching "caviar" finds nothing
     And a Mercadona source pointed at the mock

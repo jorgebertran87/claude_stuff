@@ -161,10 +161,11 @@ fn store_row(store: &str, matched: &Option<StoreMatch>, cheapest: bool) -> Strin
     }
 }
 
-/// The source price per unit (line price / size), when both are known.
+/// The source price per unit (line price / size), when both are known and
+/// positive (a 0 € line is junk data, not a free product).
 fn glovo_unit_price(p: &PurchasedItem) -> Option<UnitPrice> {
     match (p.price_cents, p.size) {
-        (Some(cents), Some(size)) if size.amount > 0.0 => Some(UnitPrice {
+        (Some(cents), Some(size)) if cents > 0 && size.amount > 0.0 => Some(UnitPrice {
             cents_per_unit: (cents as f64 / size.amount).round() as u64,
             unit: size.unit,
         }),

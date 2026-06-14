@@ -238,10 +238,23 @@ pub fn per_unit_from_name(price_cents: u64, name: &str) -> Option<UnitPrice> {
 /// Some generic queries must always resolve to a specific brand. The brand
 /// keyword a query's results must contain, if any.
 fn required_brand(query: &str) -> Option<&'static str> {
-    match query.trim().to_lowercase().as_str() {
-        "cola" | "cola zero" => Some("coca"),
-        _ => None,
+    // Any query mentioning the drink "cola" (e.g. "cola zero", "refresco cola
+    // zero") must be the Coca-Cola brand. Matched as a whole word so it does
+    // not fire on "chocolate".
+    if mentions_word(&query.to_lowercase(), "cola") {
+        return Some("coca");
     }
+    None
+}
+
+/// Whether `word` appears in `haystack` as a whole word (not inside a longer
+/// run of letters). Both are expected lowercase.
+fn mentions_word(haystack: &str, word: &str) -> bool {
+    haystack.match_indices(word).any(|(i, _)| {
+        let before = haystack[..i].chars().next_back();
+        let after = haystack[i + word.len()..].chars().next();
+        before.is_none_or(|c| !c.is_alphabetic()) && after.is_none_or(|c| !c.is_alphabetic())
+    })
 }
 
 /// Whether a product `name` is eligible for `query`. A generic cola query only
@@ -255,17 +268,16 @@ pub fn brand_allows(query: &str, name: &str) -> bool {
 
 /// Pick the product a store should report from its search results
 /// (`candidates`, in result order). With a wanted measure, the cheapest match
-/// in that unit wins; without one, the first result wins.
+/// in that unit wins; without one, the first result wins. A non-positive price
+/// is junk data (e.g. a 0.00 € listing) and never counts.
 pub fn choose_match(
     candidates: impl IntoIterator<Item = StoreMatch>,
     want: Option<Unit>,
 ) -> Option<StoreMatch> {
+    let priced = candidates.into_iter().filter(|m| m.price.cents_per_unit > 0);
     match want {
-        Some(unit) => candidates
-            .into_iter()
-            .filter(|m| m.price.unit == unit)
-            .min_by_key(|m| m.price.cents_per_unit),
-        None => candidates.into_iter().next(),
+        Some(unit) => priced.filter(|m| m.price.unit == unit).min_by_key(|m| m.price.cents_per_unit),
+        None => priced.into_iter().next(),
     }
 }
 
