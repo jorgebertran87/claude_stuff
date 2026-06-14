@@ -56,24 +56,19 @@ COPY config/mutants.toml config/mutants-integration.toml config/
 # ─── Stage 4: runtime ────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 
-# Node + the Claude Code CLI: the bot shells out to `claude` to normalize
-# Glovo orders. Auth is mounted at runtime (see docker-compose).
+# TLS roots for the HTTPS calls to DeepSeek and the supermarket APIs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g @anthropic-ai/claude-code \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/prices_comparer /usr/local/bin/prices_comparer
 
-# /app is the working dir (the claude subprocess runs here; the normalizer
-# skill is mounted at /app/.claude). /data holds the Glovo token file shared
-# with the mitmproxy capturer.
+# /app is the working dir; the order-normalizer skill prompt is mounted at
+# /app/.claude. /data holds the Glovo token file shared with the mitmproxy
+# capturer.
 WORKDIR /app
 
-# Run as a non-root user by default. /data is owned by appuser so the bot can
-# write it; production overrides to root in docker-compose for Claude auth.
+# Run as a non-root user; init_perms makes the shared /data volume writable.
 RUN useradd -r -M -s /bin/false appuser \
     && mkdir -p /data \
     && chown appuser /data
