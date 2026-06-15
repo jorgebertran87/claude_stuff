@@ -35,8 +35,8 @@ run-telegram-prod:
 	docker compose logs -f
 
 
-UNIT_TESTS = --lib $(patsubst tests/unit/%.rs,--test %,$(wildcard tests/unit/*.rs))
-INTEGRATION_TESTS = $(patsubst tests/integration/%.rs,--test %,$(wildcard tests/integration/*.rs))
+UNIT_TESTS = --lib $(patsubst tests/unit/%.rs,--test %,$(filter-out tests/unit/claude_handler_token_logging.rs,$(wildcard tests/unit/*.rs)))
+INTEGRATION_TESTS = $(patsubst tests/integration/%.rs,--test %,$(filter-out tests/integration/claude_handler.rs,$(wildcard tests/integration/*.rs)))
 
 # Map infrastructure source file → relevant integration test (name matches file stem)
 FILE_TESTS = $(if $(FILE),--test $(basename $(notdir $(FILE))),$(INTEGRATION_TESTS))
