@@ -108,7 +108,7 @@ impl ClaudeBackend for ClaudeCliBackend {
 
 // ── DeepSeekBackend (orders) ──────────────────────────────────────────────────
 
-fn deepseek_chat(base_url: &str, api_key: &str, model: &str, system: &str, user: &str) -> Result<(String, u64, u64), String> {
+pub(crate) fn deepseek_chat(base_url: &str, api_key: &str, model: &str, system: &str, user: &str) -> Result<(String, u64, u64), String> {
     let response = ureq::post(&format!("{base_url}/chat/completions"))
         .set("Authorization", &format!("Bearer {api_key}"))
         .set("Content-Type", "application/json")

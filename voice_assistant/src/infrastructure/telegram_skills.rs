@@ -4,6 +4,7 @@ use std::sync::Arc;
 use shaku::Component;
 
 use crate::domain::ports::{GoogleSheetsGateway, SkillCommands};
+use crate::infrastructure::claude_handler::deepseek_chat;
 use crate::infrastructure::token_usage::parse_result_json;
 
 pub fn run_claude_skill(prompt: &str, model: &str, allowed_tools: Option<&str>, context: &str) -> String {
@@ -54,25 +55,69 @@ pub fn run_claude_skill(prompt: &str, model: &str, allowed_tools: Option<&str>, 
         .unwrap_or_else(|_| "No pude obtener una respuesta de Claude.".to_string())
 }
 
-pub fn handle_cuentas(sheets: &dyn GoogleSheetsGateway, model: &str) -> String {
+fn deepseek_config() -> (String, String, String) {
+    let base_url = std::env::var("DEEPSEEK_BASE_URL")
+        .unwrap_or_else(|_| "https://api.deepseek.com".to_string());
+    let api_key = std::env::var("DEEPSEEK_API_KEY").unwrap_or_default();
+    let model = std::env::var("DEEPSEEK_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string());
+    (base_url, api_key, model)
+}
+
+fn deepseek_skill(system: &str, user: &str, context: &str) -> String {
+    let (base_url, api_key, model) = deepseek_config();
+    eprintln!("[{context}: deepseek, model={model}]");
+    match deepseek_chat(&base_url, &api_key, &model, system, user) {
+        Ok((content, _, _)) => {
+            let preview = if content.len() > 200 { &content[..200] } else { &content };
+            eprintln!("[{context} response: {preview}]");
+            content
+        }
+        Err(e) => {
+            eprintln!("[{context}: deepseek error: {e}]");
+            "Error al obtener la respuesta.".to_string()
+        }
+    }
+}
+
+pub fn handle_cuentas(sheets: &dyn GoogleSheetsGateway, _model: &str) -> String {
     let data = match sheets.fetch_as_text() {
         Ok(d) => d,
         Err(e) => return e,
     };
     let sheet_name = std::env::var("CUENTAS_SHEET_NAME")
         .unwrap_or_else(|_| "Cuentas Personales".to_string());
-    let prompt = format!("/cuentas {sheet_name}\n\n{data}");
-    eprintln!("[cuentas: prompt {} bytes]", prompt.len());
-    run_claude_skill(&prompt, model, None, "cuentas")
+    let system = "Eres un asistente financiero que analiza datos de hojas de cálculo y genera resúmenes claros. Responde en texto plano, sin formato markdown.".to_string();
+    let user = format!("Analiza estos datos de mi hoja de cálculo \"{sheet_name}\" y dame un resumen claro y detallado.\n\nIncluye: saldo total por cuenta, ingresos y gastos del período, categorías de gasto principales, y cualquier observación relevante sobre el estado financiero.\n\n{data}");
+    eprintln!("[cuentas: prompt {} bytes]", user.len());
+    deepseek_skill(&system, &user, "cuentas")
 }
 
-pub fn handle_bus(model: &str, stop_code: &str) -> String {
-    let prompt = if stop_code.is_empty() {
-        "/bus".to_string()
-    } else {
-        format!("/bus {stop_code}")
+pub fn handle_bus(_model: &str, stop_code: &str) -> String {
+    let code = if stop_code.is_empty() { "1071" } else { stop_code };
+    let url = format!("https://navega.emtmalaga.es/api/estimaciones?codPar={code}&v=0.23");
+
+    let data = match ureq::get(&url).call() {
+        Ok(r) => match r.into_string() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[bus: read response error: {e}]");
+                return "Error al leer los datos de la EMT.".to_string();
+            }
+        }
+        Err(e) => {
+            eprintln!("[bus: curl error: {e}]");
+            return "Error al consultar la EMT.".to_string();
+        }
     };
-    run_claude_skill(&prompt, model, Some("Bash"), "bus")
+
+    let system = "Eres un asistente que muestra horarios de autobús de la EMT Málaga. Responde en texto plano, sin formato markdown.".to_string();
+    let user = if stop_code.is_empty() {
+        format!("Aquí están los datos de la parada 1071. Filtra los resultados por dirección \"Alameda Principal\". Para cada línea, muestra la próxima salida: en minutos si quedan ≤30 min, o la hora exacta si es más tarde. Responde en texto plano.\n\n{data}")
+    } else {
+        format!("Aquí están los datos de la parada {code}. Muestra todas las líneas y direcciones disponibles. Para cada línea, muestra la próxima salida: en minutos si quedan ≤30 min, o la hora exacta si es más tarde. Responde en texto plano.\n\n{data}")
+    };
+    eprintln!("[bus: fetched {} bytes from EMT]", data.len());
+    deepseek_skill(&system, &user, "bus")
 }
 
 pub fn handle_volume(arg: &str) -> String {
