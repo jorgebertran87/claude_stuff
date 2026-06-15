@@ -17,7 +17,8 @@ use crate::infrastructure::{
     audio::MicrophoneCapturer,
     audio_player::FfplayAudioPlayer,
     claude_handler::{ClaudeBackend, ClaudeCliBackend, ClaudeCodeHandler,
-                     ClaudeCodeHandlerParameters, ClaudeImageAnalyzer},
+                     ClaudeCodeHandlerParameters, ClaudeImageAnalyzer,
+                     DeepSeekBackend},
     google_sheets::GoogleSheetsGatewayImpl,
     minesweeper::MinesweeperService,
     speaker::{GTTSSpeaker, GttsTextSynthesizer},
@@ -107,19 +108,23 @@ pub fn build_telegram_bot(token: String) -> TelegramBot {
     )
 }
 
-/// Create a fresh `OrderHandler`. Used both for direct-order (CLI) mode and as
-/// a factory passed to the Telegram bot (one handler per chat session).
+/// Create a fresh `OrderHandler` backed by DeepSeek. Used both for
+/// direct-order (CLI) mode and as a factory passed to the Telegram bot
+/// (one handler per chat session).
 pub fn make_order_handler() -> Arc<dyn OrderHandler> {
-    Arc::new(ClaudeCodeHandler::new())
+    Arc::new(ClaudeCodeHandler::with_injectable(
+        Arc::new(DeepSeekBackend::new()),
+        PathBuf::from(".orders_tokens"),
+    ))
 }
 
-/// Build a ready-to-use `VoiceListenerService`.
+/// Build a ready-to-use `VoiceListenerService` with a DeepSeek-backed order handler.
 pub fn build_voice_service(wake_word: WakeWord, language: Language) -> VoiceListenerService {
     let module = build_module(String::new());
     VoiceListenerService::new(
         HasComponent::<dyn AudioCapturer>::resolve(&module),
         HasComponent::<dyn Transcriber>::resolve(&module),
-        HasComponent::<dyn OrderHandler>::resolve(&module),
+        make_order_handler(),
         HasComponent::<dyn AudioSpeaker>::resolve(&module),
         wake_word,
         language,

@@ -62,6 +62,8 @@ impl OrderHandler for ClaudeCodeHandler {
     }
 }
 
+// ── ClaudeCliBackend (kept for skills / image analysis) ───────────────────────
+
 #[derive(Component)]
 #[shaku(interface = ClaudeBackend)]
 pub struct ClaudeCliBackend;
@@ -101,6 +103,84 @@ impl ClaudeBackend for ClaudeCliBackend {
         let preview_end = json.char_indices().nth(200).map(|(i, _)| i).unwrap_or(json.len());
         eprintln!("[claude raw json: {}]", &json[..preview_end]);
         parse_result_json(&json)
+    }
+}
+
+// ── DeepSeekBackend (orders) ──────────────────────────────────────────────────
+
+fn deepseek_chat(base_url: &str, api_key: &str, model: &str, system: &str, user: &str) -> Result<(String, u64, u64), String> {
+    let response = ureq::post(&format!("{base_url}/chat/completions"))
+        .set("Authorization", &format!("Bearer {api_key}"))
+        .set("Content-Type", "application/json")
+        .send_json(ureq::json!({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }))
+        .map_err(|e| format!("DeepSeek HTTP error: {e}"))?;
+
+    let body = response.into_string().map_err(|e| e.to_string())?;
+    let json: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("DeepSeek JSON parse error ({e}): {body}"))?;
+
+    if let Some(err) = json.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
+        return Err(format!("DeepSeek API error: {err}"));
+    }
+
+    let content = json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+
+    let usage = &json["usage"];
+    let input_tokens = usage["prompt_tokens"].as_u64().unwrap_or(0);
+    let output_tokens = usage["completion_tokens"].as_u64().unwrap_or(0);
+
+    Ok((content, input_tokens, output_tokens))
+}
+
+pub struct DeepSeekBackend {
+    base_url: String,
+    api_key:  String,
+    model:    String,
+}
+
+impl DeepSeekBackend {
+    pub fn new() -> Self {
+        Self {
+            base_url: std::env::var("DEEPSEEK_BASE_URL")
+                .unwrap_or_else(|_| "https://api.deepseek.com".to_string()),
+            api_key: std::env::var("DEEPSEEK_API_KEY").unwrap_or_default(),
+            model:   std::env::var("DEEPSEEK_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string()),
+        }
+    }
+
+    pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
+        Self { base_url, api_key, model }
+    }
+}
+
+impl ClaudeBackend for DeepSeekBackend {
+    fn query(&self, order: &str, _session_id: Option<&str>) -> Result<TokenUsage, String> {
+        let prompt = load_prompt(order);
+
+        let (content, input_tokens, output_tokens) =
+            deepseek_chat(&self.base_url, &self.api_key, &self.model, &prompt, order)?;
+
+        let preview = if content.len() > 200 { &content[..200] } else { &content };
+        eprintln!("[deepseek response: {preview}]");
+
+        Ok(TokenUsage {
+            input_tokens,
+            output_tokens,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+            total_cost_usd: 0.0,
+            session_id: None,
+            result: content,
+        })
     }
 }
 
