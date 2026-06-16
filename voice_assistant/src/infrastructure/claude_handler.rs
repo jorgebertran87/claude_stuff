@@ -108,17 +108,21 @@ impl ClaudeBackend for ClaudeCliBackend {
 
 // ── DeepSeekBackend (orders) ──────────────────────────────────────────────────
 
-pub(crate) fn deepseek_chat(base_url: &str, api_key: &str, model: &str, system: &str, user: &str) -> Result<(String, u64, u64), String> {
+pub(crate) fn deepseek_chat(base_url: &str, api_key: &str, model: &str, system: &str, user: &str, reasoning_effort: Option<&str>) -> Result<(String, u64, u64), String> {
+    let mut body = ureq::json!({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = ureq::json!(effort);
+    }
     let response = ureq::post(&format!("{base_url}/chat/completions"))
         .set("Authorization", &format!("Bearer {api_key}"))
         .set("Content-Type", "application/json")
-        .send_json(ureq::json!({
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        }))
+        .send_json(body)
         .map_err(|e| format!("DeepSeek HTTP error: {e}"))?;
 
     let body = response.into_string().map_err(|e| e.to_string())?;
@@ -142,9 +146,10 @@ pub(crate) fn deepseek_chat(base_url: &str, api_key: &str, model: &str, system: 
 }
 
 pub struct DeepSeekBackend {
-    base_url: String,
-    api_key:  String,
-    model:    String,
+    base_url:          String,
+    api_key:           String,
+    model:             String,
+    reasoning_effort:  Option<String>,
 }
 
 impl DeepSeekBackend {
@@ -154,11 +159,12 @@ impl DeepSeekBackend {
                 .unwrap_or_else(|_| "https://api.deepseek.com".to_string()),
             api_key: std::env::var("DEEPSEEK_API_KEY").unwrap_or_default(),
             model:   std::env::var("DEEPSEEK_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string()),
+            reasoning_effort: std::env::var("DEEPSEEK_REASONING_EFFORT").ok(),
         }
     }
 
     pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
-        Self { base_url, api_key, model }
+        Self { base_url, api_key, model, reasoning_effort: None }
     }
 }
 
@@ -167,7 +173,7 @@ impl ClaudeBackend for DeepSeekBackend {
         let prompt = load_prompt(order);
 
         let (content, input_tokens, output_tokens) =
-            deepseek_chat(&self.base_url, &self.api_key, &self.model, &prompt, order)?;
+            deepseek_chat(&self.base_url, &self.api_key, &self.model, &prompt, order, self.reasoning_effort.as_deref())?;
 
         let preview = if content.len() > 200 { &content[..200] } else { &content };
         eprintln!("[deepseek response: {preview}]");

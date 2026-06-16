@@ -55,18 +55,19 @@ pub fn run_claude_skill(prompt: &str, model: &str, allowed_tools: Option<&str>, 
         .unwrap_or_else(|_| "No pude obtener una respuesta de Claude.".to_string())
 }
 
-fn deepseek_config() -> (String, String, String) {
+fn deepseek_config() -> (String, String, String, Option<String>) {
     let base_url = std::env::var("DEEPSEEK_BASE_URL")
         .unwrap_or_else(|_| "https://api.deepseek.com".to_string());
     let api_key = std::env::var("DEEPSEEK_API_KEY").unwrap_or_default();
     let model = std::env::var("DEEPSEEK_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string());
-    (base_url, api_key, model)
+    let reasoning_effort = std::env::var("DEEPSEEK_REASONING_EFFORT").ok();
+    (base_url, api_key, model, reasoning_effort)
 }
 
 fn deepseek_skill(system: &str, user: &str, context: &str) -> String {
-    let (base_url, api_key, model) = deepseek_config();
+    let (base_url, api_key, model, reasoning_effort) = deepseek_config();
     eprintln!("[{context}: deepseek, model={model}]");
-    match deepseek_chat(&base_url, &api_key, &model, system, user) {
+    match deepseek_chat(&base_url, &api_key, &model, system, user, reasoning_effort.as_deref()) {
         Ok((content, _, _)) => {
             let preview = if content.len() > 200 { &content[..200] } else { &content };
             eprintln!("[{context} response: {preview}]");
