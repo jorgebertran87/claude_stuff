@@ -92,5 +92,6 @@ deploy:
 	$(MAKE) build-prod
 	scp Makefile run.sh docker-compose.yml pequenin:~/pequenin
 	scp -r .claude pequenin:~/pequenin/
+	ssh pequenin 'cd ~/pequenin && docker compose down --rmi all'
 
 .PHONY: build build-local run run-prod run-telegram run-telegram-prod test test-integration mutants mutants-integration debug deploy

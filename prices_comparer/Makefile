@@ -60,5 +60,6 @@ deploy:
 	scp Makefile docker-compose.yml pequenin:~/prices_comparer
 	scp capture/glovo_token.py pequenin:~/prices_comparer/capture
 	scp -r .claude pequenin:~/prices_comparer/
+	ssh pequenin 'cd ~/prices_comparer && docker compose down --rmi all'
 
 .PHONY: build build-prod test test-integration test-all mutants mutants-integration run run-prod deploy

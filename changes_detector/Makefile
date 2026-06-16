@@ -53,5 +53,6 @@ deploy:
 	$(MAKE) test
 	$(MAKE) build-prod
 	scp Makefile docker-compose.yml pequenin:~/changes_detector
+	ssh pequenin 'cd ~/changes_detector && docker compose down --rmi all'
 
 .PHONY: build build-prod test test-integration test-all mutants mutants-integration run run-prod deploy
