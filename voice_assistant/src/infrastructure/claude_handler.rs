@@ -108,63 +108,24 @@ impl ClaudeBackend for ClaudeCliBackend {
 
 // ── DeepSeekBackend (orders) ──────────────────────────────────────────────────
 
-pub(crate) fn deepseek_chat(base_url: &str, api_key: &str, model: &str, system: &str, user: &str, reasoning_effort: Option<&str>) -> Result<(String, u64, u64), String> {
-    let mut body = ureq::json!({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-    });
-    if let Some(effort) = reasoning_effort {
-        body["reasoning_effort"] = ureq::json!(effort);
-    }
-    let response = ureq::post(&format!("{base_url}/chat/completions"))
-        .set("Authorization", &format!("Bearer {api_key}"))
-        .set("Content-Type", "application/json")
-        .send_json(body)
-        .map_err(|e| format!("DeepSeek HTTP error: {e}"))?;
-
-    let body = response.into_string().map_err(|e| e.to_string())?;
-    let json: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("DeepSeek JSON parse error ({e}): {body}"))?;
-
-    if let Some(err) = json.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
-        return Err(format!("DeepSeek API error: {err}"));
-    }
-
-    let content = json["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
-
-    let usage = &json["usage"];
-    let input_tokens = usage["prompt_tokens"].as_u64().unwrap_or(0);
-    let output_tokens = usage["completion_tokens"].as_u64().unwrap_or(0);
-
-    Ok((content, input_tokens, output_tokens))
-}
-
 pub struct DeepSeekBackend {
-    base_url:          String,
-    api_key:           String,
-    model:             String,
-    reasoning_effort:  Option<String>,
+    config: deepseek_client::DeepSeekConfig,
 }
 
 impl DeepSeekBackend {
     pub fn new() -> Self {
-        Self {
-            base_url: std::env::var("DEEPSEEK_BASE_URL")
-                .unwrap_or_else(|_| "https://api.deepseek.com".to_string()),
-            api_key: std::env::var("DEEPSEEK_API_KEY").unwrap_or_default(),
-            model:   std::env::var("DEEPSEEK_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string()),
-            reasoning_effort: std::env::var("DEEPSEEK_REASONING_EFFORT").ok(),
-        }
+        Self { config: deepseek_client::DeepSeekConfig::from_env() }
     }
 
     pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
-        Self { base_url, api_key, model, reasoning_effort: None }
+        Self {
+            config: deepseek_client::DeepSeekConfig {
+                base_url,
+                api_key,
+                model,
+                reasoning_effort: None,
+            },
+        }
     }
 }
 
@@ -172,20 +133,30 @@ impl ClaudeBackend for DeepSeekBackend {
     fn query(&self, order: &str, _session_id: Option<&str>) -> Result<TokenUsage, String> {
         let prompt = load_prompt(order);
 
-        let (content, input_tokens, output_tokens) =
-            deepseek_chat(&self.base_url, &self.api_key, &self.model, &prompt, order, self.reasoning_effort.as_deref())?;
+        let resp = deepseek_client::chat(
+            &self.config.base_url,
+            &self.config.api_key,
+            &self.config.model,
+            &prompt,
+            order,
+            self.config.reasoning_effort.as_deref(),
+        )?;
 
-        let preview = if content.len() > 200 { &content[..200] } else { &content };
+        let preview = if resp.content.len() > 200 {
+            &resp.content[..200]
+        } else {
+            &resp.content
+        };
         eprintln!("[deepseek response: {preview}]");
 
         Ok(TokenUsage {
-            input_tokens,
-            output_tokens,
+            input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens,
             cache_read_input_tokens: 0,
             cache_creation_input_tokens: 0,
             total_cost_usd: 0.0,
             session_id: None,
-            result: content,
+            result: resp.content,
         })
     }
 }

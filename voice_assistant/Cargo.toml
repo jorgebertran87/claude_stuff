@@ -19,3 +19,4 @@ ureq       = { version = "2", features = ["json"] }
 whichlang  = "0.1"
 serde_json = "1"
 shaku      = { version = "0.6", features = ["derive"] }
+deepseek_client = { path = "./deepseek_client" }

@@ -4,7 +4,6 @@ use std::sync::Arc;
 use shaku::Component;
 
 use crate::domain::ports::{GoogleSheetsGateway, SkillCommands};
-use crate::infrastructure::claude_handler::deepseek_chat;
 use crate::infrastructure::token_usage::parse_result_json;
 
 pub fn run_claude_skill(prompt: &str, model: &str, allowed_tools: Option<&str>, context: &str) -> String {
@@ -55,23 +54,21 @@ pub fn run_claude_skill(prompt: &str, model: &str, allowed_tools: Option<&str>, 
         .unwrap_or_else(|_| "No pude obtener una respuesta de Claude.".to_string())
 }
 
-fn deepseek_config() -> (String, String, String, Option<String>) {
-    let base_url = std::env::var("DEEPSEEK_BASE_URL")
-        .unwrap_or_else(|_| "https://api.deepseek.com".to_string());
-    let api_key = std::env::var("DEEPSEEK_API_KEY").unwrap_or_default();
-    let model = std::env::var("DEEPSEEK_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string());
-    let reasoning_effort = std::env::var("DEEPSEEK_REASONING_EFFORT").ok();
-    (base_url, api_key, model, reasoning_effort)
-}
-
 fn deepseek_skill(system: &str, user: &str, context: &str) -> String {
-    let (base_url, api_key, model, reasoning_effort) = deepseek_config();
-    eprintln!("[{context}: deepseek, model={model}]");
-    match deepseek_chat(&base_url, &api_key, &model, system, user, reasoning_effort.as_deref()) {
-        Ok((content, _, _)) => {
-            let preview = if content.len() > 200 { &content[..200] } else { &content };
+    let config = deepseek_client::DeepSeekConfig::from_env();
+    eprintln!("[{context}: deepseek, model={}]", config.model);
+    match deepseek_client::chat(
+        &config.base_url,
+        &config.api_key,
+        &config.model,
+        system,
+        user,
+        config.reasoning_effort.as_deref(),
+    ) {
+        Ok(resp) => {
+            let preview = if resp.content.len() > 200 { &resp.content[..200] } else { &resp.content };
             eprintln!("[{context} response: {preview}]");
-            content
+            resp.content
         }
         Err(e) => {
             eprintln!("[{context}: deepseek error: {e}]");

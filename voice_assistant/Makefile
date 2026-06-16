@@ -8,14 +8,18 @@ endif
 
 MINESWEEPER_IMAGE := minesweeper-detector
 
+# Ensure the shared DeepSeek crate is available inside the Docker build context.
+_shared = rsync -a --delete --exclude=target ../deepseek_client/ ./deepseek_client/ &&
+_shared_clean = rm -rf ./deepseek_client/
+
 build-prod:
-	docker buildx build --platform $(PROD_PLATFORM) \
+	$(_shared) docker buildx build --platform $(PROD_PLATFORM) \
 		-t $(DOCKER_USERNAME)/$(IMAGE) --push .
 	docker buildx build --platform $(PROD_PLATFORM) \
 		-t $(DOCKER_USERNAME)/$(MINESWEEPER_IMAGE) --push ../minesweeper
 
 build:
-	docker build --platform $(LOCAL_PLATFORM) -t $(IMAGE) .
+	$(_shared) docker build --platform $(LOCAL_PLATFORM) -t $(IMAGE) .
 
 UID := $(shell id -u)
 
@@ -42,7 +46,7 @@ INTEGRATION_TESTS = $(patsubst tests/integration/%.rs,--test %,$(wildcard tests/
 FILE_TESTS = $(if $(FILE),--test $(basename $(notdir $(FILE))),$(INTEGRATION_TESTS))
 
 test:
-	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
+	$(_shared) docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker run --rm \
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \
@@ -51,11 +55,11 @@ test:
 
 test-integration:
 	touch .google_refresh_token
-	docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
+	$(_shared) docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
 	docker compose -f config/docker-compose.test.yml run --rm integration-tests cargo test $(INTEGRATION_TESTS)
 
 mutants:
-	docker build --platform $(LOCAL_PLATFORM) --target mutants -t $(IMAGE)-mutants .
+	$(_shared) docker build --platform $(LOCAL_PLATFORM) --target mutants -t $(IMAGE)-mutants .
 	docker run --rm \
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \
@@ -64,7 +68,7 @@ mutants:
 
 mutants-integration:
 	touch .google_refresh_token
-	docker build --platform $(LOCAL_PLATFORM) --target mutants -t $(IMAGE)-mutants .
+	$(_shared) docker build --platform $(LOCAL_PLATFORM) --target mutants -t $(IMAGE)-mutants .
 	docker run --rm \
 		--network host \
 		--env-file .env \

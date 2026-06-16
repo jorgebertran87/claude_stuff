@@ -3,3 +3,4 @@ system_prompt
 .orders_tokens
 .google_refresh_token
 target/
+deepseek_client/
