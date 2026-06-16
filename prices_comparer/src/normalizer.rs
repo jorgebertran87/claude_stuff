@@ -44,6 +44,7 @@ pub struct DeepSeekNormalizer {
     base_url: String,
     api_key: String,
     model: String,
+    reasoning_effort: Option<String>,
 }
 
 impl DeepSeekNormalizer {
@@ -54,7 +55,8 @@ impl DeepSeekNormalizer {
 
     /// `base_url` is the DeepSeek host in production or a mock server in tests.
     pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
-        Self { client: reqwest::Client::new(), base_url, api_key, model }
+        let reasoning_effort = std::env::var("DEEPSEEK_REASONING_EFFORT").ok();
+        Self { client: reqwest::Client::new(), base_url, api_key, model, reasoning_effort }
     }
 }
 
@@ -93,7 +95,7 @@ impl OrderNormalizer for DeepSeekNormalizer {
         let prompt = load_skill("normalize_order");
 
         let content =
-            deepseek_chat(&self.client, &self.base_url, &self.api_key, &self.model, &prompt, &input)
+            deepseek_chat(&self.client, &self.base_url, &self.api_key, &self.model, &prompt, &input, self.reasoning_effort.as_deref())
                 .await?;
         let array = extract_json_array(&content)
             .ok_or_else(|| anyhow::anyhow!("no product list in DeepSeek reply: {content}"))?;
@@ -112,17 +114,22 @@ async fn deepseek_chat(
     model: &str,
     system: &str,
     user: &str,
+    reasoning_effort: Option<&str>,
 ) -> anyhow::Result<String> {
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": [
+            { "role": "system", "content": system },
+            { "role": "user", "content": user },
+        ],
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = serde_json::json!(effort);
+    }
     let response = client
         .post(format!("{base_url}/chat/completions"))
         .header("Authorization", format!("Bearer {api_key}"))
-        .json(&serde_json::json!({
-            "model": model,
-            "messages": [
-                { "role": "system", "content": system },
-                { "role": "user", "content": user },
-            ],
-        }))
+        .json(&body)
         .send()
         .await?;
 
@@ -148,6 +155,7 @@ pub struct DeepSeekProductSelector {
     base_url: String,
     api_key: String,
     model: String,
+    reasoning_effort: Option<String>,
 }
 
 impl DeepSeekProductSelector {
@@ -158,7 +166,8 @@ impl DeepSeekProductSelector {
 
     /// `base_url` is the DeepSeek host in production or a mock server in tests.
     pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
-        Self { client: reqwest::Client::new(), base_url, api_key, model }
+        let reasoning_effort = std::env::var("DEEPSEEK_REASONING_EFFORT").ok();
+        Self { client: reqwest::Client::new(), base_url, api_key, model, reasoning_effort }
     }
 }
 
@@ -180,7 +189,7 @@ impl ProductSelector for DeepSeekProductSelector {
         let user = format!("Item: {description}\nCandidates:\n{list}");
 
         let content =
-            deepseek_chat(&self.client, &self.base_url, &self.api_key, &self.model, system, &user)
+            deepseek_chat(&self.client, &self.base_url, &self.api_key, &self.model, system, &user, self.reasoning_effort.as_deref())
                 .await
                 .ok()?;
         parse_index(&content).filter(|&i| i < candidates.len())
