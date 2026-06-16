@@ -40,7 +40,6 @@ fn carry_sizes_over(clean: Vec<CleanItem>, basket: &PurchasedBasket) -> Vec<Purc
 /// skill is the system prompt. On any HTTP error or unusable reply it returns
 /// an error, so callers fall back to the raw items.
 pub struct DeepSeekNormalizer {
-    client: reqwest::Client,
     base_url: String,
     api_key: String,
     model: String,
@@ -56,24 +55,8 @@ impl DeepSeekNormalizer {
     /// `base_url` is the DeepSeek host in production or a mock server in tests.
     pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
         let reasoning_effort = std::env::var("DEEPSEEK_REASONING_EFFORT").ok();
-        Self { client: reqwest::Client::new(), base_url, api_key, model, reasoning_effort }
+        Self { base_url, api_key, model, reasoning_effort }
     }
-}
-
-/// The OpenAI-compatible chat completions envelope DeepSeek returns.
-#[derive(Deserialize)]
-struct ChatResponse {
-    choices: Vec<Choice>,
-}
-
-#[derive(Deserialize)]
-struct Choice {
-    message: ChatMessage,
-}
-
-#[derive(Deserialize)]
-struct ChatMessage {
-    content: String,
 }
 
 #[async_trait]
@@ -95,7 +78,7 @@ impl OrderNormalizer for DeepSeekNormalizer {
         let prompt = load_skill("normalize_order");
 
         let content =
-            deepseek_chat(&self.client, &self.base_url, &self.api_key, &self.model, &prompt, &input, self.reasoning_effort.as_deref())
+            deepseek_chat(&self.base_url, &self.api_key, &self.model, &prompt, &input, self.reasoning_effort.as_deref())
                 .await?;
         let array = extract_json_array(&content)
             .ok_or_else(|| anyhow::anyhow!("no product list in DeepSeek reply: {content}"))?;
@@ -104,11 +87,9 @@ impl OrderNormalizer for DeepSeekNormalizer {
     }
 }
 
-/// One DeepSeek chat-completion round-trip: send a system + user message and
-/// return the assistant's reply text. Errors quote DeepSeek's own body (e.g.
-/// "Model Not Exist") so misconfiguration is legible upstream.
+/// Bridge to the shared deepseek_client crate. Wraps the synchronous HTTP call
+/// in tokio::task::spawn_blocking so it plays well with the async runtime.
 async fn deepseek_chat(
-    client: &reqwest::Client,
     base_url: &str,
     api_key: &str,
     model: &str,
@@ -116,42 +97,33 @@ async fn deepseek_chat(
     user: &str,
     reasoning_effort: Option<&str>,
 ) -> anyhow::Result<String> {
-    let mut body = serde_json::json!({
-        "model": model,
-        "messages": [
-            { "role": "system", "content": system },
-            { "role": "user", "content": user },
-        ],
-    });
-    if let Some(effort) = reasoning_effort {
-        body["reasoning_effort"] = serde_json::json!(effort);
-    }
-    let response = client
-        .post(format!("{base_url}/chat/completions"))
-        .header("Authorization", format!("Bearer {api_key}"))
-        .json(&body)
-        .send()
-        .await?;
+    let base_url = base_url.to_string();
+    let api_key = api_key.to_string();
+    let model = model.to_string();
+    let system = system.to_string();
+    let user = user.to_string();
+    let reasoning_effort = reasoning_effort.map(|s| s.to_string());
 
-    let status = response.status();
-    let body = response.text().await?;
-    if !status.is_success() {
-        anyhow::bail!("DeepSeek returned {status}: {body}");
-    }
-    let chat: ChatResponse = serde_json::from_str(&body)
-        .map_err(|e| anyhow::anyhow!("DeepSeek reply was not the expected JSON ({e}): {body}"))?;
-    chat.choices
-        .into_iter()
-        .next()
-        .map(|c| c.message.content)
-        .ok_or_else(|| anyhow::anyhow!("DeepSeek returned no choices: {body}"))
+    tokio::task::spawn_blocking(move || {
+        deepseek_client::chat(
+            &base_url,
+            &api_key,
+            &model,
+            &system,
+            &user,
+            reasoning_effort.as_deref(),
+        )
+        .map(|r| r.content)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("DeepSeek task panicked: {e}"))?
 }
 
 /// Picks the store product that best matches the bought item, over DeepSeek.
 /// Any failure (HTTP error, unparsable or out-of-range reply) yields `None` so
 /// the caller falls back to its price heuristic.
 pub struct DeepSeekProductSelector {
-    client: reqwest::Client,
     base_url: String,
     api_key: String,
     model: String,
@@ -167,7 +139,7 @@ impl DeepSeekProductSelector {
     /// `base_url` is the DeepSeek host in production or a mock server in tests.
     pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
         let reasoning_effort = std::env::var("DEEPSEEK_REASONING_EFFORT").ok();
-        Self { client: reqwest::Client::new(), base_url, api_key, model, reasoning_effort }
+        Self { base_url, api_key, model, reasoning_effort }
     }
 }
 
@@ -189,7 +161,7 @@ impl ProductSelector for DeepSeekProductSelector {
         let user = format!("Item: {description}\nCandidates:\n{list}");
 
         let content =
-            deepseek_chat(&self.client, &self.base_url, &self.api_key, &self.model, system, &user, self.reasoning_effort.as_deref())
+            deepseek_chat(&self.base_url, &self.api_key, &self.model, system, &user, self.reasoning_effort.as_deref())
                 .await
                 .ok()?;
         parse_index(&content).filter(|&i| i < candidates.len())

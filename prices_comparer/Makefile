@@ -6,8 +6,11 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
+# Ensure the shared DeepSeek crate is available inside the Docker build context.
+_shared = rsync -a --delete --exclude=target ../deepseek_client/ ./deepseek_client/ &&
+
 build-prod:
-	docker buildx build --platform $(PROD_PLATFORM) \
+	$(_shared) docker buildx build --platform $(PROD_PLATFORM) \
 		-t $(DOCKER_USERNAME)/$(IMAGE) --push .
 
 UNIT_TESTS        = $(patsubst tests/unit/%.rs,--test %,$(wildcard tests/unit/*.rs))
@@ -17,27 +20,27 @@ INTEGRATION_TESTS = $(patsubst tests/integration/%.rs,--test %,$(wildcard tests/
 FILE_TESTS = $(if $(FILE),--test $(basename $(notdir $(FILE))),$(INTEGRATION_TESTS))
 
 build:
-	docker build --target runtime -t $(IMAGE) .
+	$(_shared) docker build --target runtime -t $(IMAGE) .
 
 test:
-	docker build --target test -t $(IMAGE)-test .
+	$(_shared) docker build --target test -t $(IMAGE)-test .
 	docker run --rm $(IMAGE)-test cargo test $(UNIT_TESTS)
 
 test-integration:
-	docker build --target test -t $(IMAGE)-test .
+	$(_shared) docker build --target test -t $(IMAGE)-test .
 	docker run --rm $(IMAGE)-test cargo test $(INTEGRATION_TESTS)
 
 test-all:
-	docker build --target test -t $(IMAGE)-test .
+	$(_shared) docker build --target test -t $(IMAGE)-test .
 	docker run --rm $(IMAGE)-test cargo test $(UNIT_TESTS) $(INTEGRATION_TESTS)
 
 mutants:
-	docker build --target mutants -t $(IMAGE)-mutants .
+	$(_shared) docker build --target mutants -t $(IMAGE)-mutants .
 	docker run --rm $(IMAGE)-mutants \
 		cargo mutants -j 3 --config config/mutants.toml -- $(UNIT_TESTS)
 
 mutants-integration:
-	docker build --target mutants -t $(IMAGE)-mutants .
+	$(_shared) docker build --target mutants -t $(IMAGE)-mutants .
 	docker run --rm $(IMAGE)-mutants \
 		cargo mutants -j 3 --config config/mutants-integration.toml -- $(FILE_TESTS)
 

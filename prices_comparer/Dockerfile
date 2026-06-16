@@ -6,13 +6,18 @@ WORKDIR /build
 
 # Cache dependencies separately from application code.
 COPY Cargo.toml Cargo.lock* ./
-RUN mkdir src && echo 'fn main(){}' > src/main.rs && touch src/lib.rs \
+COPY deepseek_client/ deepseek_client/
+RUN mkdir -p src deepseek_client/src \
+    && echo 'fn main(){}' > src/main.rs \
+    && touch src/lib.rs \
+    && echo '' > deepseek_client/src/lib.rs \
     && cargo build --release \
-    && rm -rf src
+    && rm -rf src deepseek_client/src
 
 # Build the real source.
 COPY src ./src
-RUN touch src/main.rs src/lib.rs && cargo build --release
+COPY deepseek_client/src/ deepseek_client/src/
+RUN touch src/main.rs src/lib.rs deepseek_client/src/lib.rs && cargo build --release
 
 # ─── Stage 2: test ───────────────────────────────────────────────────────────
 FROM builder AS test
