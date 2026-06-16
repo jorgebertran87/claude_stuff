@@ -6,8 +6,9 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-# Ensure the shared DeepSeek crate is available inside the Docker build context.
-_shared = rsync -a --delete --exclude=target ../deepseek_client/ ./deepseek_client/ &&
+# Ensure the shared crates are available inside the Docker build context.
+_shared = rsync -a --delete --exclude=target ../deepseek_client/ ./deepseek_client/ && \
+          rsync -a --delete --exclude=target ../skill_loader/    ./skill_loader/    &&
 
 build-prod:
 	$(_shared) docker buildx build --platform $(PROD_PLATFORM) \

@@ -1,3 +1,4 @@
 /target
 .env
 deepseek_client/
+skill_loader/
