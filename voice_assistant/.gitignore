@@ -4,3 +4,4 @@ system_prompt
 .google_refresh_token
 target/
 deepseek_client/
+skill_loader/

@@ -18,13 +18,16 @@ ENV RUST_MIN_STACK=16777216
 # Compile dependencies first — cached separately from application sources
 COPY Cargo.toml Cargo.lock* build.rs ./
 COPY deepseek_client/ deepseek_client/
-RUN mkdir -p src deepseek_client/src \
+COPY skill_loader/ skill_loader/
+RUN mkdir -p src deepseek_client/src skill_loader/src \
     && touch src/lib.rs \
     && echo 'fn main() {}' > src/main.rs \
     && echo '' > deepseek_client/src/lib.rs \
+    && echo '' > skill_loader/src/lib.rs \
     && cargo build --release \
     && rm -rf src \
               deepseek_client/src \
+              skill_loader/src \
               target/release/.fingerprint/voice_assistant-* \
               target/release/deps/voice_assistant-* \
               target/release/deps/libvoice_assistant-* \
@@ -33,7 +36,8 @@ RUN mkdir -p src deepseek_client/src \
 # Compile application sources
 COPY src/ src/
 COPY deepseek_client/src/ deepseek_client/src/
-RUN touch src/lib.rs src/main.rs deepseek_client/src/lib.rs \
+COPY skill_loader/src/ skill_loader/src/
+RUN touch src/lib.rs src/main.rs deepseek_client/src/lib.rs skill_loader/src/lib.rs \
     && cargo build --release
 
 # ── Stage 2: node-installer (official Node image + claude-code) ───────────────

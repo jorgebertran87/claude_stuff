@@ -8,8 +8,9 @@ endif
 
 MINESWEEPER_IMAGE := minesweeper-detector
 
-# Ensure the shared DeepSeek crate is available inside the Docker build context.
-_shared = rsync -a --delete --exclude=target ../deepseek_client/ ./deepseek_client/ &&
+# Ensure the shared crates are available inside the Docker build context.
+_shared = rsync -a --delete --exclude=target ../deepseek_client/ ./deepseek_client/ && \
+          rsync -a --delete --exclude=target ../skill_loader/    ./skill_loader/    &&
 _shared_clean = rm -rf ./deepseek_client/
 
 build-prod:
