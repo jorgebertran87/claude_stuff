@@ -19,6 +19,12 @@ impl DeepSeekConfig {
             reasoning_effort: std::env::var("DEEPSEEK_REASONING_EFFORT").ok(),
         }
     }
+
+    /// Configuration for a specific base URL / key / model, without
+    /// reasoning-effort.  Used in tests to point at a mock server.
+    pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
+        Self { base_url, api_key, model, reasoning_effort: None }
+    }
 }
 
 /// The parsed response from a chat completion call.

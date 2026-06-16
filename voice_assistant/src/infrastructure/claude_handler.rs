@@ -118,14 +118,7 @@ impl DeepSeekBackend {
     }
 
     pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
-        Self {
-            config: deepseek_client::DeepSeekConfig {
-                base_url,
-                api_key,
-                model,
-                reasoning_effort: None,
-            },
-        }
+        Self { config: deepseek_client::DeepSeekConfig::with_base_url(base_url, api_key, model) }
     }
 }
 

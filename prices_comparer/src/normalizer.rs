@@ -40,10 +40,7 @@ fn carry_sizes_over(clean: Vec<CleanItem>, basket: &PurchasedBasket) -> Vec<Purc
 /// skill is the system prompt. On any HTTP error or unusable reply it returns
 /// an error, so callers fall back to the raw items.
 pub struct DeepSeekNormalizer {
-    base_url: String,
-    api_key: String,
-    model: String,
-    reasoning_effort: Option<String>,
+    config: deepseek_client::DeepSeekConfig,
 }
 
 impl DeepSeekNormalizer {
@@ -54,8 +51,9 @@ impl DeepSeekNormalizer {
 
     /// `base_url` is the DeepSeek host in production or a mock server in tests.
     pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
-        let reasoning_effort = std::env::var("DEEPSEEK_REASONING_EFFORT").ok();
-        Self { base_url, api_key, model, reasoning_effort }
+        let mut config = deepseek_client::DeepSeekConfig::with_base_url(base_url, api_key, model);
+        config.reasoning_effort = std::env::var("DEEPSEEK_REASONING_EFFORT").ok();
+        Self { config }
     }
 }
 
@@ -77,9 +75,7 @@ impl OrderNormalizer for DeepSeekNormalizer {
         .to_string();
         let prompt = skill_loader::load_skill("normalize_order");
 
-        let content =
-            deepseek_chat(&self.base_url, &self.api_key, &self.model, &prompt, &input, self.reasoning_effort.as_deref())
-                .await?;
+        let content = deepseek_chat(&self.config, &prompt, &input).await?;
         let array = extract_json_array(&content)
             .ok_or_else(|| anyhow::anyhow!("no product list in DeepSeek reply: {content}"))?;
         let clean: Vec<CleanItem> = serde_json::from_str(array)?;
@@ -90,19 +86,16 @@ impl OrderNormalizer for DeepSeekNormalizer {
 /// Bridge to the shared deepseek_client crate. Wraps the synchronous HTTP call
 /// in tokio::task::spawn_blocking so it plays well with the async runtime.
 async fn deepseek_chat(
-    base_url: &str,
-    api_key: &str,
-    model: &str,
+    config: &deepseek_client::DeepSeekConfig,
     system: &str,
     user: &str,
-    reasoning_effort: Option<&str>,
 ) -> anyhow::Result<String> {
-    let base_url = base_url.to_string();
-    let api_key = api_key.to_string();
-    let model = model.to_string();
+    let base_url = config.base_url.clone();
+    let api_key = config.api_key.clone();
+    let model = config.model.clone();
+    let reasoning_effort = config.reasoning_effort.clone();
     let system = system.to_string();
     let user = user.to_string();
-    let reasoning_effort = reasoning_effort.map(|s| s.to_string());
 
     tokio::task::spawn_blocking(move || {
         deepseek_client::chat(
@@ -124,10 +117,7 @@ async fn deepseek_chat(
 /// Any failure (HTTP error, unparsable or out-of-range reply) yields `None` so
 /// the caller falls back to its price heuristic.
 pub struct DeepSeekProductSelector {
-    base_url: String,
-    api_key: String,
-    model: String,
-    reasoning_effort: Option<String>,
+    config: deepseek_client::DeepSeekConfig,
 }
 
 impl DeepSeekProductSelector {
@@ -138,8 +128,9 @@ impl DeepSeekProductSelector {
 
     /// `base_url` is the DeepSeek host in production or a mock server in tests.
     pub fn with_base_url(base_url: String, api_key: String, model: String) -> Self {
-        let reasoning_effort = std::env::var("DEEPSEEK_REASONING_EFFORT").ok();
-        Self { base_url, api_key, model, reasoning_effort }
+        let mut config = deepseek_client::DeepSeekConfig::with_base_url(base_url, api_key, model);
+        config.reasoning_effort = std::env::var("DEEPSEEK_REASONING_EFFORT").ok();
+        Self { config }
     }
 }
 
@@ -160,10 +151,7 @@ impl ProductSelector for DeepSeekProductSelector {
              if none is a good match. Output just the number.";
         let user = format!("Item: {description}\nCandidates:\n{list}");
 
-        let content =
-            deepseek_chat(&self.base_url, &self.api_key, &self.model, system, &user, self.reasoning_effort.as_deref())
-                .await
-                .ok()?;
+        let content = deepseek_chat(&self.config, system, &user).await.ok()?;
         parse_index(&content).filter(|&i| i < candidates.len())
     }
 }
