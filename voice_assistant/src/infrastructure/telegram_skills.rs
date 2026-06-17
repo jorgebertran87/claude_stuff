@@ -4,57 +4,8 @@ use std::sync::Arc;
 use shaku::Component;
 
 use crate::domain::ports::{GoogleSheetsGateway, SkillCommands};
-use crate::infrastructure::token_usage::parse_result_json;
 
-pub fn run_claude_skill(prompt: &str, model: &str, allowed_tools: Option<&str>, context: &str) -> String {
-    eprintln!("[{context}: spawning claude, model={model}]");
-    let mut cmd = Command::new("claude");
-    cmd.args(["--print", "--output-format", "json", "--model", model]);
-    if let Some(tools) = allowed_tools {
-        cmd.args(["--allowedTools", tools]);
-    }
-    let mut child = match cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("[{context}: failed to spawn claude: {e}]");
-            return "Error al obtener la respuesta.".to_string();
-        }
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = std::io::Write::write_all(&mut stdin, prompt.as_bytes());
-    }
-
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("[{context}: wait error: {e}]");
-            return "Error al obtener la respuesta.".to_string();
-        }
-    };
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !stderr.is_empty() {
-        eprintln!("[{context}: claude stderr: {}]", &stderr[..stderr.len().min(500)]);
-    }
-
-    if !output.status.success() {
-        eprintln!("[{context}: claude exited {:?}]", output.status.code());
-        return "Error al obtener la respuesta.".to_string();
-    }
-
-    let json_out = String::from_utf8_lossy(&output.stdout);
-    parse_result_json(&json_out)
-        .map(|u| u.result)
-        .unwrap_or_else(|_| "No pude obtener una respuesta de Claude.".to_string())
-}
-
-fn deepseek_skill(system: &str, user: &str, context: &str) -> String {
+pub fn deepseek_skill(system: &str, user: &str, context: &str) -> String {
     let config = deepseek_client::DeepSeekConfig::from_env();
     eprintln!("[{context}: deepseek, model={}]", config.model);
     match deepseek_client::chat(

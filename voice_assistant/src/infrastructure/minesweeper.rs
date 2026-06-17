@@ -3,7 +3,8 @@ use std::time::Duration;
 use shaku::Component;
 
 use crate::domain::ports::MinesweeperAnalyzer;
-use crate::infrastructure::telegram_skills::run_claude_skill;
+use crate::infrastructure::skill_loader::load_skill;
+use crate::infrastructure::telegram_skills::deepseek_skill;
 
 pub fn run_minesweeper_parser(bytes: &[u8]) -> Option<String> {
     let base_url = std::env::var("MINESWEEPER_URL")
@@ -62,11 +63,12 @@ pub fn board_to_json(board: &str) -> String {
     serde_json::to_string(&obj).unwrap_or_default()
 }
 
-pub fn analyze_minesweeper_board(board: &str, caption: &str, model: &str) -> String {
+pub fn analyze_minesweeper_board(board: &str, caption: &str, _model: &str) -> String {
     let board_json = board_to_json(board);
-    let prompt = format!("/minesweeper {board_json}\n\nPregunta del usuario: {caption}");
-    eprintln!("[minesweeper: prompt]\n{prompt}");
-    run_claude_skill(&prompt, model, Some("Bash,WebSearch"), "minesweeper")
+    let system = load_skill("minesweeper");
+    let user = format!("{board_json}\n\nPregunta del usuario: {caption}");
+    eprintln!("[minesweeper: prompt]\n{user}");
+    deepseek_skill(&system, &user, "minesweeper")
 }
 
 // ── MinesweeperService ────────────────────────────────────────────────────────

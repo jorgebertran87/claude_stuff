@@ -1,11 +1,7 @@
-use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
-use shaku::Component;
-
-use crate::domain::ports::{ImageAnalyzer, OrderHandler};
+use crate::domain::ports::OrderHandler;
 use crate::infrastructure::token_usage::log_token_usage;
 
 // Re-exports for backward compatibility with external tests.
@@ -98,75 +94,3 @@ impl ClaudeBackend for DeepSeekBackend {
     }
 }
 
-#[derive(Component)]
-#[shaku(interface = ImageAnalyzer)]
-pub struct ClaudeImageAnalyzer;
-
-impl ImageAnalyzer for ClaudeImageAnalyzer {
-    fn analyze(&self, bytes: &[u8], caption: &str, model: &str) -> String {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let debug_dir = std::env::var("TELEGRAM_IMAGE_DEBUG_DIR").ok();
-        let dir = debug_dir.as_deref().unwrap_or("/tmp");
-        let tmp_path = format!("{dir}/telegram_image_{nanos}.jpg");
-
-        if let Err(e) = std::fs::write(&tmp_path, bytes) {
-            eprintln!("[analyze_image: failed to write temp file: {e}]");
-            return "Error al procesar la imagen.".to_string();
-        }
-        eprintln!("[analyze_image: saved image to {tmp_path}]");
-
-        let prompt = if caption.is_empty() { "Describe esta imagen." } else { caption };
-        let full_prompt = format!("Read the image at {tmp_path} and then answer: {prompt}");
-
-        let mut child = match Command::new("claude")
-            .args(["--print", "--output-format", "json",
-                   "--model", model,
-                   "--allowedTools", "Read"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("[analyze_image: failed to spawn claude: {e}]");
-                return "Error al analizar la imagen.".to_string();
-            }
-        };
-
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(full_prompt.as_bytes());
-        }
-
-        let output = match child.wait_with_output() {
-            Ok(o) => o,
-            Err(e) => {
-                eprintln!("[analyze_image: wait_with_output error: {e}]");
-                return "Error al analizar la imagen.".to_string();
-            }
-        };
-
-        if debug_dir.is_none() {
-            let _ = std::fs::remove_file(&tmp_path);
-        }
-
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr);
-            eprintln!("[analyze_image: claude exited with error: {err}]");
-            return "Error al analizar la imagen.".to_string();
-        }
-
-        let json = String::from_utf8_lossy(&output.stdout);
-        match parse_result_json(&json) {
-            Ok(usage) => {
-                let order_preview = if caption.len() > 80 { &caption[..80] } else { caption };
-                log_token_usage(&format!("[image] {order_preview}"), &usage, ".orders_tokens");
-                usage.result
-            }
-            Err(_) => "No se pudo analizar la imagen.".to_string(),
-        }
-    }
-}

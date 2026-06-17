@@ -55,11 +55,6 @@ pub trait TextSynthesizer: Send + Sync {
     fn synthesize_alexa_spotify(&self, text: &str) -> Vec<u8>;
 }
 
-/// Port for analyzing images using an AI model.
-pub trait ImageAnalyzer: Send + Sync {
-    fn analyze(&self, bytes: &[u8], caption: &str, model: &str) -> String;
-}
-
 /// Port for parsing a minesweeper board screenshot and reasoning about it.
 pub trait MinesweeperAnalyzer: Send + Sync {
     /// Parse a board screenshot into its textual board representation.

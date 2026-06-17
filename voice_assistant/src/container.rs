@@ -9,14 +9,14 @@ use shaku::{module, HasComponent, Interface};
 
 use crate::domain::model::{Language, WakeWord};
 use crate::domain::ports::{
-    AudioCapturer, AudioPlayer, AudioSpeaker, GoogleSheetsGateway, ImageAnalyzer,
+    AudioCapturer, AudioPlayer, AudioSpeaker, GoogleSheetsGateway,
     MinesweeperAnalyzer, OrderHandler, SkillCommands, TextSynthesizer, Transcriber,
 };
 use crate::domain::service::VoiceListenerService;
 use crate::infrastructure::{
     audio::MicrophoneCapturer,
     audio_player::RodioAudioPlayer,
-    claude_handler::{ClaudeBackend, ClaudeCodeHandler, ClaudeImageAnalyzer, DeepSeekBackend},
+    claude_handler::{ClaudeCodeHandler, DeepSeekBackend},
     google_sheets::GoogleSheetsGatewayImpl,
     minesweeper::MinesweeperService,
     speaker::{PiperSpeaker, PiperTextSynthesizer},
@@ -32,7 +32,6 @@ impl Interface for dyn Transcriber {}
 impl Interface for dyn AudioSpeaker {}
 impl Interface for dyn GoogleSheetsGateway {}
 impl Interface for dyn TextSynthesizer {}
-impl Interface for dyn ImageAnalyzer {}
 impl Interface for dyn MinesweeperAnalyzer {}
 impl Interface for dyn SkillCommands {}
 impl Interface for dyn AudioPlayer {}
@@ -43,9 +42,6 @@ impl Interface for dyn TelegramGateway {}
 module! {
     pub AppModule {
         components = [
-            // ── claude ────────────────────────────────────────────────────────
-            ClaudeImageAnalyzer,  // → ImageAnalyzer
-
             // ── google ────────────────────────────────────────────────────────
             GoogleSheetsGatewayImpl,  // → GoogleSheetsGateway
             WhisperTranscriber,        // → Transcriber
@@ -90,7 +86,6 @@ pub fn build_telegram_bot(token: String) -> TelegramBot {
         HasComponent::<dyn TelegramGateway>::resolve(&module),
         HasComponent::<dyn GoogleSheetsGateway>::resolve(&module),
         HasComponent::<dyn TextSynthesizer>::resolve(&module),
-        HasComponent::<dyn ImageAnalyzer>::resolve(&module),
         HasComponent::<dyn MinesweeperAnalyzer>::resolve(&module),
         HasComponent::<dyn SkillCommands>::resolve(&module),
         HasComponent::<dyn AudioPlayer>::resolve(&module),

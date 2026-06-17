@@ -4,7 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::domain::ports::{
-    AudioPlayer, GoogleSheetsGateway, ImageAnalyzer, MinesweeperAnalyzer, OrderHandler,
+    AudioPlayer, GoogleSheetsGateway, MinesweeperAnalyzer, OrderHandler,
     SkillCommands, TextSynthesizer,
 };
 
@@ -30,7 +30,6 @@ pub struct TelegramBot {
     gateway: Arc<dyn TelegramGateway>,
     sheets: Arc<dyn GoogleSheetsGateway>,
     synthesizer: Arc<dyn TextSynthesizer>,
-    image_analyzer: Arc<dyn ImageAnalyzer>,
     minesweeper: Arc<dyn MinesweeperAnalyzer>,
     skills: Arc<dyn SkillCommands>,
     audio_player: Arc<dyn AudioPlayer>,
@@ -43,42 +42,19 @@ impl TelegramBot {
         gateway: Arc<dyn TelegramGateway>,
         sheets: Arc<dyn GoogleSheetsGateway>,
         synthesizer: Arc<dyn TextSynthesizer>,
-        image_analyzer: Arc<dyn ImageAnalyzer>,
         minesweeper: Arc<dyn MinesweeperAnalyzer>,
         skills: Arc<dyn SkillCommands>,
         audio_player: Arc<dyn AudioPlayer>,
         allowed_chat_ids: Vec<i64>,
     ) -> Self {
         Self {
-            gateway, sheets, synthesizer, image_analyzer,
+            gateway, sheets, synthesizer,
             minesweeper, skills, audio_player, allowed_chat_ids,
         }
     }
 
     fn is_allowed(&self, chat_id: i64) -> bool {
         self.allowed_chat_ids.is_empty() || self.allowed_chat_ids.contains(&chat_id)
-    }
-
-    fn spawn_analysis(
-        gateway: Arc<dyn TelegramGateway>,
-        analyzer: Arc<dyn ImageAnalyzer>,
-        chat_id: i64,
-        file_id: String,
-        caption: String,
-        model: String,
-    ) -> thread::JoinHandle<()> {
-        thread::spawn(move || {
-            eprintln!("[telegram chat={} image={} model={}]", chat_id, file_id, model);
-            let bytes = match gateway.download_file(&file_id) {
-                Some(b) => b,
-                None => {
-                    gateway.post_message(chat_id, "No se pudo descargar la imagen.");
-                    return;
-                }
-            };
-            let response = analyzer.analyze(&bytes, &caption, &model);
-            gateway.post_message(chat_id, &response);
-        })
     }
 
     fn spawn_minesweeper_analysis(
@@ -152,18 +128,18 @@ impl TelegramBot {
                     self.gateway.post_message(update.chat_id, "¿Qué quieres que haga con esta imagen?");
                 } else {
                     let lower = caption.to_lowercase();
-                    let handle = if lower.contains("buscaminas") || lower.contains("minesweeper") {
-                        Self::spawn_minesweeper_analysis(
+                    if lower.contains("buscaminas") || lower.contains("minesweeper") {
+                        let handle = Self::spawn_minesweeper_analysis(
                             Arc::clone(&self.gateway), Arc::clone(&self.minesweeper), update.chat_id,
                             file_id.clone(), caption.to_string(), current_model.clone(),
-                        )
+                        );
+                        handles.push(handle);
                     } else {
-                        Self::spawn_analysis(
-                            Arc::clone(&self.gateway), Arc::clone(&self.image_analyzer),
-                            update.chat_id, file_id.clone(), caption.to_string(), current_model.clone(),
-                        )
-                    };
-                    handles.push(handle);
+                        self.gateway.post_message(
+                            update.chat_id,
+                            "El análisis de imágenes no está disponible con DeepSeek.",
+                        );
+                    }
                 }
                 continue;
             }
@@ -173,18 +149,18 @@ impl TelegramBot {
             if let Some(file_id) = pending_image_chats.remove(&update.chat_id) {
                 if !text.starts_with('/') {
                     let lower_text = text.to_lowercase();
-                    let handle = if lower_text.contains("buscaminas") || lower_text.contains("minesweeper") {
-                        Self::spawn_minesweeper_analysis(
+                    if lower_text.contains("buscaminas") || lower_text.contains("minesweeper") {
+                        let handle = Self::spawn_minesweeper_analysis(
                             Arc::clone(&self.gateway), Arc::clone(&self.minesweeper), update.chat_id,
                             file_id, text.to_string(), current_model.clone(),
-                        )
+                        );
+                        handles.push(handle);
                     } else {
-                        Self::spawn_analysis(
-                            Arc::clone(&self.gateway), Arc::clone(&self.image_analyzer),
-                            update.chat_id, file_id, text.to_string(), current_model.clone(),
-                        )
-                    };
-                    handles.push(handle);
+                        self.gateway.post_message(
+                            update.chat_id,
+                            "El análisis de imágenes no está disponible con DeepSeek.",
+                        );
+                    }
                     continue;
                 }
                 pending_image_chats.insert(update.chat_id, file_id);

@@ -40,19 +40,8 @@ COPY skill_loader/src/ skill_loader/src/
 RUN touch src/lib.rs src/main.rs deepseek_client/src/lib.rs skill_loader/src/lib.rs \
     && cargo build --release
 
-# ── Stage 2: node-installer (official Node image + claude-code) ───────────────
-FROM node:20-slim AS node-installer
-
-RUN npm install -g @anthropic-ai/claude-code
-
-# ── Stage 3: test-base (builder + Node/claude copied in + merged Cargo manifest)
+# ── Stage 2: test-base (builder + merged Cargo manifest)
 FROM builder AS test-base
-
-COPY --from=node-installer /usr/local/bin/node        /usr/local/bin/
-COPY --from=node-installer /usr/local/bin/npm         /usr/local/bin/
-COPY --from=node-installer /usr/local/bin/npx         /usr/local/bin/
-COPY --from=node-installer /usr/local/bin/claude      /usr/local/bin/
-COPY --from=node-installer /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 COPY config/Cargo-test.toml ./
 RUN cat Cargo-test.toml >> Cargo.toml
@@ -92,9 +81,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libasound2-plugins \
         ffmpeg \
         libgomp1 \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g @anthropic-ai/claude-code \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Piper TTS binary (offline text-to-speech).

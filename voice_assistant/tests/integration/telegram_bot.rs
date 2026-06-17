@@ -6,7 +6,6 @@ use cucumber::{given, when, then, World};
 
 use voice_assistant::domain::ports::OrderHandler;
 use voice_assistant::infrastructure::audio_player::RodioAudioPlayer;
-use voice_assistant::infrastructure::claude_handler::ClaudeImageAnalyzer;
 use voice_assistant::infrastructure::google_sheets::GoogleSheetsGatewayImpl;
 use voice_assistant::infrastructure::minesweeper::MinesweeperService;
 use voice_assistant::infrastructure::speaker::PiperTextSynthesizer;
@@ -114,7 +113,6 @@ fn given_bot(world: &mut TelegramWorld) {
         Arc::clone(&gateway) as Arc<dyn TelegramGateway>,
         Arc::new(GoogleSheetsGatewayImpl),
         Arc::new(PiperTextSynthesizer),
-        Arc::new(ClaudeImageAnalyzer),
         Arc::new(MinesweeperService),
         Arc::new(ClaudeSkillCommands::new(Arc::new(GoogleSheetsGatewayImpl))),
         Arc::new(RodioAudioPlayer),
@@ -130,7 +128,6 @@ fn given_bot_restricted(world: &mut TelegramWorld, chat_id: i64) {
         Arc::clone(&gateway) as Arc<dyn TelegramGateway>,
         Arc::new(GoogleSheetsGatewayImpl),
         Arc::new(PiperTextSynthesizer),
-        Arc::new(ClaudeImageAnalyzer),
         Arc::new(MinesweeperService),
         Arc::new(ClaudeSkillCommands::new(Arc::new(GoogleSheetsGatewayImpl))),
         Arc::new(RodioAudioPlayer),
