@@ -1,10 +1,7 @@
 use cucumber::{given, when, then, World};
-use std::os::unix::fs::PermissionsExt;
 
 use voice_assistant::infrastructure::audio::{bytes_to_i16, i16_to_bytes, MicrophoneCapturer};
 use voice_assistant::domain::ports::AudioCapturer;
-
-const FAKE_REC_PATH: &str = "/usr/local/bin/rec";
 
 #[derive(Default, World)]
 pub struct AudioWorld {
@@ -12,10 +9,6 @@ pub struct AudioWorld {
     output_bytes: Vec<u8>,
     capturer: Option<MicrophoneCapturer>,
     sample_rate: u32,
-    capture_returned_some: bool,
-    capture_sample_rate: u32,
-    fake_rec_installed: bool,
-    capture_file_content: Vec<u8>,
 }
 
 impl std::fmt::Debug for AudioWorld {
@@ -24,16 +17,7 @@ impl std::fmt::Debug for AudioWorld {
             .field("input_bytes_len", &self.input_bytes.len())
             .field("output_bytes_len", &self.output_bytes.len())
             .field("sample_rate", &self.sample_rate)
-            .field("capture_returned_some", &self.capture_returned_some)
             .finish()
-    }
-}
-
-impl Drop for AudioWorld {
-    fn drop(&mut self) {
-        if self.fake_rec_installed {
-            let _ = std::fs::remove_file(FAKE_REC_PATH);
-        }
     }
 }
 
@@ -196,95 +180,6 @@ fn then_rms_less_than_pct(world: &mut AudioWorld, pct: u64) {
         out_rms < threshold,
         "output RMS {out_rms:.1} should be less than {pct}% ({threshold:.1}) \
          of input RMS {in_rms:.1}",
-    );
-}
-
-// ── Capture steps ──────────────────────────────────────────────────────────────
-
-fn setup_fake_rec(world: &mut AudioWorld, script: &str) {
-    std::fs::write(FAKE_REC_PATH, script).expect("write fake rec to /usr/local/bin/rec");
-    let mut perms = std::fs::metadata(FAKE_REC_PATH).unwrap().permissions();
-    perms.set_mode(0o755);
-    std::fs::set_permissions(FAKE_REC_PATH, perms).unwrap();
-    world.fake_rec_installed = true;
-}
-
-#[given("a fake rec that writes 100 bytes of audio to the capture file")]
-fn given_fake_rec_audio(world: &mut AudioWorld) {
-    world.capture_file_content = vec![0u8; 100];
-    setup_fake_rec(world, "#!/bin/sh\nexit 0\n");
-}
-
-#[given("a fake rec that writes only the 44-byte WAV header to the capture file")]
-fn given_fake_rec_header_only(world: &mut AudioWorld) {
-    world.capture_file_content = vec![0u8; 44];
-    setup_fake_rec(world, "#!/bin/sh\nexit 0\n");
-}
-
-#[given("a fake rec that logs its arguments and writes 100 bytes of audio")]
-fn given_fake_rec_logger(world: &mut AudioWorld) {
-    world.capture_file_content = vec![0u8; 100];
-    let _ = std::fs::remove_file("/tmp/rec_args_test.log");
-    setup_fake_rec(world,
-        "#!/bin/sh\necho \"$@\" > /tmp/rec_args_test.log\nexit 0\n",
-    );
-}
-
-#[when("capture is called")]
-fn when_capture(world: &mut AudioWorld) {
-    if !world.capture_file_content.is_empty() {
-        std::fs::write("/tmp/voice_capture.wav", &world.capture_file_content)
-            .expect("write capture file before capture()");
-    }
-    let capturer = world.capturer.as_ref().unwrap();
-    let result = capturer.capture(None, None, None);
-    world.capture_returned_some = result.is_some();
-    if let Some(ac) = result {
-        world.capture_sample_rate = ac.sample_rate;
-    }
-}
-
-#[when(regex = r"^capture is called with timeout_ms (\d+) and pause_threshold_ms (\d+)$")]
-fn when_capture_with_params(world: &mut AudioWorld, timeout_ms: u64, pause_ms: u64) {
-    if !world.capture_file_content.is_empty() {
-        std::fs::write("/tmp/voice_capture.wav", &world.capture_file_content)
-            .expect("write capture file before capture()");
-    }
-    let capturer = world.capturer.as_ref().unwrap();
-    let result = capturer.capture(Some(timeout_ms), None, Some(pause_ms));
-    world.capture_returned_some = result.is_some();
-}
-
-#[then("the capture result contains audio sampled at 16000 Hz")]
-fn then_capture_some(world: &mut AudioWorld) {
-    assert!(world.capture_returned_some, "expected capture to return Some");
-    assert_eq!(world.capture_sample_rate, 16_000, "expected sample_rate 16000");
-}
-
-#[then("the capture result is None")]
-fn then_capture_none(world: &mut AudioWorld) {
-    let file_len = std::fs::metadata("/tmp/voice_capture.wav")
-        .map(|m| m.len().to_string())
-        .unwrap_or_else(|_| "missing".into());
-    assert!(
-        !world.capture_returned_some,
-        "expected capture to return None (file was {} bytes)",
-        file_len,
-    );
-}
-
-#[then(regex = r#"^rec was invoked with trim duration "([^"]+)" and pause threshold "([^"]+)"$"#)]
-fn then_rec_args(_world: &mut AudioWorld, trim_duration: String, pause_threshold: String) {
-    let args = std::fs::read_to_string("/tmp/rec_args_test.log")
-        .expect("rec args log not found — fake rec may not have run");
-    let args = args.trim();
-    assert!(
-        args.contains(&format!("trim 0 {trim_duration}")),
-        "expected 'trim 0 {trim_duration}' in rec args: {args}",
-    );
-    assert!(
-        args.contains(&format!("1 {pause_threshold} 2%")),
-        "expected '1 {pause_threshold} 2%' in rec args: {args}",
     );
 }
 
