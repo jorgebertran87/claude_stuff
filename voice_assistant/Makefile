@@ -94,4 +94,17 @@ deploy:
 	scp -r .claude pequenin:~/pequenin/
 	ssh pequenin 'cd ~/pequenin && docker compose down --rmi all'
 
-.PHONY: build build-local run run-prod run-telegram run-telegram-prod test test-integration mutants mutants-integration debug deploy
+connect-speaker:
+	ssh pequenin '\
+		bluetoothctl power on >/dev/null && \
+		{ bluetoothctl info 81:8B:AE:38:BD:5C | grep -q "Paired: yes" || \
+		  { echo "Pairing speaker..."; bluetoothctl remove 81:8B:AE:38:BD:5C 2>/dev/null; sleep 1; \
+		    bluetoothctl scan on & sleep 3; bluetoothctl pair 81:8B:AE:38:BD:5C; bluetoothctl scan off; }; } && \
+		bluetoothctl trust 81:8B:AE:38:BD:5C && \
+		bluetoothctl connect 81:8B:AE:38:BD:5C && \
+		sleep 2 && \
+		pactl set-card-profile $$(pactl list short cards | grep -i bluez | head -1 | awk "{print $$1}") a2dp_sink 2>/dev/null; \
+		SINK=$$(pactl list short sinks | grep -i bluez | head -1 | awk "{print $$1}"); \
+		[ -n "$$SINK" ] && pactl set-default-sink "$$SINK" && echo "Speaker connected: $$SINK" || echo "ERROR: no Bluetooth sink found"'
+
+.PHONY: build build-local run run-prod run-telegram run-telegram-prod test test-integration mutants mutants-integration debug deploy connect-speaker
