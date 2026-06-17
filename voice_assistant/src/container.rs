@@ -22,7 +22,7 @@ use crate::infrastructure::{
     speaker::{PiperSpeaker, PiperTextSynthesizer},
     telegram_bot::{TelegramBot, TelegramGateway, UreqGateway, UreqGatewayParameters},
     telegram_skills::ClaudeSkillCommands,
-    transcriber::GoogleTranscriber,
+    transcriber::WhisperTranscriber,
 };
 
 // ── Interface marker impls ────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ module! {
 
             // ── google ────────────────────────────────────────────────────────
             GoogleSheetsGatewayImpl,  // → GoogleSheetsGateway
-            GoogleTranscriber,        // → Transcriber
+            WhisperTranscriber,        // → Transcriber
 
             // ── audio / speech ────────────────────────────────────────────────
             MicrophoneCapturer,   // → AudioCapturer

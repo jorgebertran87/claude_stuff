@@ -115,6 +115,17 @@ RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_U
     && curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json" \
         -o /app/piper_models/en_US-lessac-medium.onnx.json
 
+# Install whisper.cpp binary (offline speech-to-text).
+ARG WHISPER_VERSION=1.7.4
+RUN mkdir -p /app/models \
+    && curl -fsSL "https://github.com/ggerganov/whisper.cpp/releases/download/v${WHISPER_VERSION}/whisper-cli" \
+        -o /usr/local/bin/whisper-cli \
+    && chmod +x /usr/local/bin/whisper-cli
+
+# Download ggml-tiny model (~75 MB, good enough for Spanish).
+RUN curl -fsSL "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin" \
+        -o /app/models/ggml-tiny.bin
+
 # Route ALSA through PulseAudio (which PipeWire emulates)
 RUN printf 'pcm.default pulse\nctl.default pulse\n' > /etc/asound.conf
 
