@@ -5,7 +5,7 @@ use std::time::Instant;
 use cucumber::{given, when, then, World};
 
 use voice_assistant::domain::ports::OrderHandler;
-use voice_assistant::infrastructure::audio_player::FfplayAudioPlayer;
+use voice_assistant::infrastructure::audio_player::RodioAudioPlayer;
 use voice_assistant::infrastructure::claude_handler::ClaudeImageAnalyzer;
 use voice_assistant::infrastructure::google_sheets::GoogleSheetsGatewayImpl;
 use voice_assistant::infrastructure::minesweeper::MinesweeperService;
@@ -117,7 +117,7 @@ fn given_bot(world: &mut TelegramWorld) {
         Arc::new(ClaudeImageAnalyzer),
         Arc::new(MinesweeperService),
         Arc::new(ClaudeSkillCommands::new(Arc::new(GoogleSheetsGatewayImpl))),
-        Arc::new(FfplayAudioPlayer),
+        Arc::new(RodioAudioPlayer),
         vec![],
     ));
 }
@@ -133,7 +133,7 @@ fn given_bot_restricted(world: &mut TelegramWorld, chat_id: i64) {
         Arc::new(ClaudeImageAnalyzer),
         Arc::new(MinesweeperService),
         Arc::new(ClaudeSkillCommands::new(Arc::new(GoogleSheetsGatewayImpl))),
-        Arc::new(FfplayAudioPlayer),
+        Arc::new(RodioAudioPlayer),
         vec![chat_id],
     ));
 }

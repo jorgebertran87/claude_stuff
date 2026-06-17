@@ -90,8 +90,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pulseaudio-utils \
         alsa-utils \
         libasound2-plugins \
-        sox \
-        libsdl2-2.0-0 \
         ffmpeg \
         libgomp1 \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \

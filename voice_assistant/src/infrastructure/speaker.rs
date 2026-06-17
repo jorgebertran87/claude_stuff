@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, LazyLock, atomic::{AtomicBool, Ordering}};
 use std::thread;
@@ -165,34 +166,44 @@ impl TextSynthesizer for PiperTextSynthesizer {
 #[shaku(interface = AudioSpeaker)]
 pub struct PiperSpeaker {
     #[shaku(default)]
-    current_pid: Arc<Mutex<Option<u32>>>,
+    stop_signal: Arc<Mutex<Option<Arc<AtomicBool>>>>,
 }
 
 impl PiperSpeaker {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self { current_pid: Arc::new(Mutex::new(None)) })
+        Arc::new(Self { stop_signal: Arc::new(Mutex::new(None)) })
     }
 
     fn play_bytes(&self, bytes: &[u8], on_start: Option<Box<dyn FnOnce() + Send>>) {
-        let tmp = "/tmp/voice_response.mp3";
-        let _ = std::fs::write(tmp, bytes);
-
+        if bytes.is_empty() {
+            return;
+        }
         if let Some(cb) = on_start {
             cb();
         }
 
-        if let Ok(mut child) = Command::new("ffplay")
-            .args(["-nodisp", "-autoexit", "-loglevel", "quiet",
-                   "-af", "atempo=1.2",
-                   tmp])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            *self.current_pid.lock().unwrap() = Some(child.id());
-            let _ = child.wait();
-            *self.current_pid.lock().unwrap() = None;
-        }
+        let stop = Arc::new(AtomicBool::new(false));
+        *self.stop_signal.lock().unwrap() = Some(Arc::clone(&stop));
+        let owned = bytes.to_vec();
+
+        thread::spawn(move || {
+            match rodio::Decoder::new(Cursor::new(owned)) {
+                Ok(source) => {
+                    if let Ok((_stream, handle)) = rodio::OutputStream::try_default() {
+                        if let Ok(sink) = rodio::Sink::try_new(&handle) {
+                            sink.append(source);
+                            while !sink.empty() && !stop.load(Ordering::SeqCst) {
+                                thread::sleep(Duration::from_millis(50));
+                            }
+                            if stop.load(Ordering::SeqCst) {
+                                sink.stop();
+                            }
+                        }
+                    }
+                }
+                Err(e) => eprintln!("[playback: decode error: {e}]"),
+            }
+        });
     }
 }
 
@@ -217,32 +228,43 @@ impl AudioSpeaker for PiperSpeaker {
     }
 
     fn stop(&self) {
-        if let Some(pid) = *self.current_pid.lock().unwrap() {
-            let _ = Command::new("kill")
-                .arg(pid.to_string())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
+        if let Some(stop) = self.stop_signal.lock().unwrap().take() {
+            stop.store(true, Ordering::SeqCst);
         }
     }
 
     fn beep(&self) {
-        let _ = Command::new("ffplay")
-            .args(["-nodisp", "-autoexit", "-loglevel", "quiet",
-                   "-f", "lavfi", "-i", "sine=frequency=440:duration=0.2"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        if let Ok((_stream, handle)) = rodio::OutputStream::try_default() {
+            if let Ok(sink) = rodio::Sink::try_new(&handle) {
+                use rodio::Source;
+                let source = rodio::source::SineWave::new(440.0)
+                    .take_duration(Duration::from_millis(200))
+                    .amplify(0.5);
+                sink.append(source);
+                sink.sleep_until_end();
+            }
+        }
     }
 
     fn play_melody(&self, stop_signal: Arc<AtomicBool>) {
         while !stop_signal.load(Ordering::SeqCst) {
-            let _ = Command::new("ffplay")
-                .args(["-nodisp", "-autoexit", "-loglevel", "quiet",
-                       "-f", "lavfi", "-i", "sine=frequency=520:duration=0.4"])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
+            if let Ok((_stream, handle)) = rodio::OutputStream::try_default() {
+                if let Ok(sink) = rodio::Sink::try_new(&handle) {
+                    use rodio::Source;
+                    let source = rodio::source::SineWave::new(520.0)
+                        .take_duration(Duration::from_millis(400))
+                        .amplify(0.3);
+                    sink.append(source);
+                    // Check stop during play
+                    while !sink.empty() && !stop_signal.load(Ordering::SeqCst) {
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                    if stop_signal.load(Ordering::SeqCst) {
+                        sink.stop();
+                        break;
+                    }
+                }
+            }
             thread::sleep(Duration::from_millis(200));
         }
     }

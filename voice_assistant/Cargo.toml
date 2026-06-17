@@ -19,5 +19,7 @@ ureq       = { version = "2", features = ["json"] }
 whichlang  = "0.1"
 serde_json = "1"
 shaku      = { version = "0.6", features = ["derive"] }
+cpal       = "0.15"
+rodio      = "0.18"
 deepseek_client = { path = "./deepseek_client" }
 skill_loader = { path = "./skill_loader" }

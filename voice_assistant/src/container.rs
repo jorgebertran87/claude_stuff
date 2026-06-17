@@ -15,7 +15,7 @@ use crate::domain::ports::{
 use crate::domain::service::VoiceListenerService;
 use crate::infrastructure::{
     audio::MicrophoneCapturer,
-    audio_player::FfplayAudioPlayer,
+    audio_player::RodioAudioPlayer,
     claude_handler::{ClaudeBackend, ClaudeCodeHandler, ClaudeImageAnalyzer, DeepSeekBackend},
     google_sheets::GoogleSheetsGatewayImpl,
     minesweeper::MinesweeperService,
@@ -54,7 +54,7 @@ module! {
             MicrophoneCapturer,   // → AudioCapturer
             PiperTextSynthesizer,  // → TextSynthesizer
             PiperSpeaker,          // → AudioSpeaker
-            FfplayAudioPlayer,    // → AudioPlayer
+            RodioAudioPlayer,      // → AudioPlayer
 
             // ── telegram ─────────────────────────────────────────────────────
             UreqGateway,          // → TelegramGateway  (token parameter)
