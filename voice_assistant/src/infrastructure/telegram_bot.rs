@@ -200,7 +200,8 @@ impl TelegramBot {
 /model [haiku|sonnet|opus] — cambia el modelo (actual: {current_model})\n\
 /bus          — próximas salidas hacia Alameda Principal\n\
 /cuentas      — analiza tu hoja de cálculo de Google Sheets\n\
-/auth_google  — inicia el flujo OAuth2 para Google Sheets"));
+/auth_google  — inicia el flujo OAuth2 para Google Sheets\n\
+/connect_speakers — conecta el altavoz Bluetooth"));
                 continue;
             }
 
@@ -295,6 +296,12 @@ impl TelegramBot {
                     let msg = skills.bus(&model, &stop_code);
                     gateway.post_message(chat_id, &msg);
                 }));
+                continue;
+            }
+
+            if text == "/connect_speakers" {
+                let msg = self.skills.connect_speakers();
+                self.gateway.post_message(update.chat_id, &msg);
                 continue;
             }
 

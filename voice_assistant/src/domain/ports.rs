@@ -75,6 +75,7 @@ pub trait SkillCommands: Send + Sync {
     fn cuentas(&self, model: &str) -> String;
     fn volume(&self, arg: &str) -> String;
     fn usage_report(&self, log_file: &str) -> String;
+    fn connect_speakers(&self) -> String;
 }
 
 /// Port for playing synthesized audio and releasing the output device.

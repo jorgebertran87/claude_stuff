@@ -151,6 +151,120 @@ pub fn handle_volume(arg: &str) -> String {
     }
 }
 
+pub fn handle_connect_speakers() -> String {
+    let mac = match std::env::var("BT_SPEAKER_MAC") {
+        Ok(m) if !m.is_empty() => m,
+        _ => return "BT_SPEAKER_MAC no configurado en .env.".to_string(),
+    };
+
+    // Power on Bluetooth
+    let _ = Command::new("bluetoothctl")
+        .args(["power", "on"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    // Check if already paired; if not, scan and pair
+    let paired = Command::new("bluetoothctl")
+        .args(["info", &mac])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("Paired: yes"))
+        .unwrap_or(false);
+
+    if !paired {
+        eprintln!("[connect_speakers: pairing {mac}]");
+        let _ = Command::new("bluetoothctl")
+            .args(["remove", &mac])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let _ = Command::new("bluetoothctl")
+            .args(["scan", "on"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let _ = Command::new("bluetoothctl")
+            .args(["pair", &mac])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let _ = Command::new("bluetoothctl")
+            .args(["scan", "off"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+
+    // Trust and connect
+    let _ = Command::new("bluetoothctl")
+        .args(["trust", &mac])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    let connect_ok = Command::new("bluetoothctl")
+        .args(["connect", &mac])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if !connect_ok {
+        return format!("Error al conectar al altavoz {mac}.").to_string();
+    }
+
+    // Wait for the connection to settle, then set A2DP profile
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    let card = Command::new("pactl")
+        .args(["list", "short", "cards"])
+        .output()
+        .ok()
+        .and_then(|out| {
+            let text = String::from_utf8_lossy(&out.stdout);
+            text.lines()
+                .find(|l| l.to_lowercase().contains("bluez"))
+                .and_then(|l| l.split_whitespace().next())
+                .map(|s| s.to_string())
+        });
+
+    if let Some(ref card_name) = card {
+        let _ = Command::new("pactl")
+            .args(["set-card-profile", card_name, "a2dp_sink"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+
+    // Set default sink to the Bluetooth sink
+    let sink = Command::new("pactl")
+        .args(["list", "short", "sinks"])
+        .output()
+        .ok()
+        .and_then(|out| {
+            let text = String::from_utf8_lossy(&out.stdout);
+            text.lines()
+                .find(|l| l.to_lowercase().contains("bluez"))
+                .and_then(|l| l.split_whitespace().next())
+                .map(|s| s.to_string())
+        });
+
+    match sink {
+        Some(sink_name) => {
+            let _ = Command::new("pactl")
+                .args(["set-default-sink", &sink_name])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            format!("Altavoz conectado: {sink_name}").to_string()
+        }
+        None => "Conectado pero no se encontró el sink Bluetooth.".to_string(),
+    }
+}
+
 pub fn read_usage_report(log_file: &str) -> String {
     let content = match std::fs::read_to_string(log_file) {
         Ok(c) => c,
@@ -262,6 +376,10 @@ impl SkillCommands for ClaudeSkillCommands {
 
     fn usage_report(&self, log_file: &str) -> String {
         read_usage_report(log_file)
+    }
+
+    fn connect_speakers(&self) -> String {
+        handle_connect_speakers()
     }
 }
 
