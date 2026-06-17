@@ -19,7 +19,7 @@ use crate::infrastructure::{
     claude_handler::{ClaudeBackend, ClaudeCodeHandler, ClaudeImageAnalyzer, DeepSeekBackend},
     google_sheets::GoogleSheetsGatewayImpl,
     minesweeper::MinesweeperService,
-    speaker::{GTTSSpeaker, GttsTextSynthesizer},
+    speaker::{PiperSpeaker, PiperTextSynthesizer},
     telegram_bot::{TelegramBot, TelegramGateway, UreqGateway, UreqGatewayParameters},
     telegram_skills::ClaudeSkillCommands,
     transcriber::GoogleTranscriber,
@@ -52,8 +52,8 @@ module! {
 
             // ── audio / speech ────────────────────────────────────────────────
             MicrophoneCapturer,   // → AudioCapturer
-            GttsTextSynthesizer,  // → TextSynthesizer
-            GTTSSpeaker,          // → AudioSpeaker
+            PiperTextSynthesizer,  // → TextSynthesizer
+            PiperSpeaker,          // → AudioSpeaker
             FfplayAudioPlayer,    // → AudioPlayer
 
             // ── telegram ─────────────────────────────────────────────────────

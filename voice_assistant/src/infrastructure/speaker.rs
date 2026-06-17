@@ -147,9 +147,9 @@ fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {
 
 #[derive(Component)]
 #[shaku(interface = TextSynthesizer)]
-pub struct GttsTextSynthesizer;
+pub struct PiperTextSynthesizer;
 
-impl TextSynthesizer for GttsTextSynthesizer {
+impl TextSynthesizer for PiperTextSynthesizer {
     fn synthesize_text(&self, text: &str) -> Vec<u8> {
         synthesize_text(text)
     }
@@ -159,16 +159,16 @@ impl TextSynthesizer for GttsTextSynthesizer {
     }
 }
 
-// ── GTTSSpeaker ───────────────────────────────────────────────────────────────
+// ── PiperSpeaker ──────────────────────────────────────────────────────────────
 
 #[derive(Component)]
 #[shaku(interface = AudioSpeaker)]
-pub struct GTTSSpeaker {
+pub struct PiperSpeaker {
     #[shaku(default)]
     current_pid: Arc<Mutex<Option<u32>>>,
 }
 
-impl GTTSSpeaker {
+impl PiperSpeaker {
     pub fn new() -> Arc<Self> {
         Arc::new(Self { current_pid: Arc::new(Mutex::new(None)) })
     }
@@ -196,7 +196,7 @@ impl GTTSSpeaker {
     }
 }
 
-impl AudioSpeaker for GTTSSpeaker {
+impl AudioSpeaker for PiperSpeaker {
     fn speak(&self, text: &str, language: &Language, on_playback_start: Option<Box<dyn FnOnce() + Send>>) {
         let (unified, lang) = match alexa_spotify_title(text) {
             Some((title, ref tl)) => (build_alexa_command(&title, tl), tl.clone()),

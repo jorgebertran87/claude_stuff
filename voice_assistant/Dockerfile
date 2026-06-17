@@ -79,6 +79,9 @@ COPY tests/files/ tests/files/
 # ── Stage 6: runtime ──────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
+# Piper TTS version (pre-built binary from GitHub releases).
+ARG PIPER_VERSION=2023.11.14-2
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         libportaudio2 \
@@ -90,10 +93,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         sox \
         libsdl2-2.0-0 \
         ffmpeg \
+        libgomp1 \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @anthropic-ai/claude-code \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Piper TTS binary (offline text-to-speech).
+RUN mkdir -p /app/piper_models \
+    && curl -fsSL "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}/piper_linux_x86_64.tar.gz" \
+        | tar xz -C /usr/local/bin \
+    && chmod +x /usr/local/bin/piper
+
+# Download Spanish voice model.
+RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/carlfm/x_low/es_ES-carlfm-x_low.onnx" \
+        -o /app/piper_models/es_ES-carlfm-x_low.onnx \
+    && curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/carlfm/x_low/es_ES-carlfm-x_low.onnx.json" \
+        -o /app/piper_models/es_ES-carlfm-x_low.onnx.json
+
+# Download English fallback voice model.
+RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx" \
+        -o /app/piper_models/en_US-lessac-medium.onnx \
+    && curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json" \
+        -o /app/piper_models/en_US-lessac-medium.onnx.json
 
 # Route ALSA through PulseAudio (which PipeWire emulates)
 RUN printf 'pcm.default pulse\nctl.default pulse\n' > /etc/asound.conf
