@@ -7,6 +7,17 @@ use shaku::Component;
 use crate::domain::model::{AudioCapture, Language};
 use crate::domain::ports::Transcriber;
 
+/// Built-in default API key used when `GOOGLE_SPEECH_API_KEY` is not set.
+/// This key is shared for development convenience; set the env var in production.
+const DEFAULT_SPEECH_API_KEY: &str = "AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw";
+
+fn speech_api_key() -> String {
+    std::env::var("GOOGLE_SPEECH_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_SPEECH_API_KEY.to_string())
+}
+
 #[derive(Component)]
 #[shaku(interface = Transcriber)]
 pub struct GoogleTranscriber;
@@ -39,9 +50,10 @@ impl Transcriber for GoogleTranscriber {
         if flac_bytes.is_empty() { return None; }
 
         let lang = &language.code;
+        let key = speech_api_key();
         let url = format!(
             "https://www.google.com/speech-api/v2/recognize\
-             ?output=json&lang={lang}&key=AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw"
+             ?output=json&lang={lang}&key={key}"
         );
 
         let resp = ureq::post(&url)
@@ -51,6 +63,31 @@ impl Transcriber for GoogleTranscriber {
 
         let body = resp.into_string().ok()?;
         parse_transcript(&body)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn speech_api_key_uses_env_var_when_set() {
+        std::env::set_var("GOOGLE_SPEECH_API_KEY", "env-key-123");
+        assert_eq!(speech_api_key(), "env-key-123");
+        std::env::remove_var("GOOGLE_SPEECH_API_KEY");
+    }
+
+    #[test]
+    fn speech_api_key_falls_back_to_default_when_env_empty() {
+        std::env::set_var("GOOGLE_SPEECH_API_KEY", "");
+        assert_eq!(speech_api_key(), DEFAULT_SPEECH_API_KEY);
+        std::env::remove_var("GOOGLE_SPEECH_API_KEY");
+    }
+
+    #[test]
+    fn speech_api_key_falls_back_to_default_when_env_absent() {
+        std::env::remove_var("GOOGLE_SPEECH_API_KEY");
+        assert_eq!(speech_api_key(), DEFAULT_SPEECH_API_KEY);
     }
 }
 
