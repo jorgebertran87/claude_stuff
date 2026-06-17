@@ -16,26 +16,14 @@ pub trait ClaudeBackend: Send + Sync {
     fn query(&self, order: &str, session_id: Option<&str>) -> Result<TokenUsage, String>;
 }
 
-#[derive(Component)]
-#[shaku(interface = OrderHandler)]
 pub struct ClaudeCodeHandler {
-    #[shaku(inject)]
     backend:    Arc<dyn ClaudeBackend>,
     log_file:   PathBuf,
-    #[shaku(default)]
     session_id: Mutex<Option<String>>,
 }
 
 impl ClaudeCodeHandler {
-    pub fn new() -> Self {
-        Self {
-            backend:    Arc::new(ClaudeCliBackend),
-            log_file:   PathBuf::from(".orders_tokens"),
-            session_id: Mutex::new(None),
-        }
-    }
-
-    pub fn with_injectable(backend: Arc<dyn ClaudeBackend>, log_file: PathBuf) -> Self {
+    pub fn new(backend: Arc<dyn ClaudeBackend>, log_file: PathBuf) -> Self {
         Self { backend, log_file, session_id: Mutex::new(None) }
     }
 }
@@ -59,50 +47,6 @@ impl OrderHandler for ClaudeCodeHandler {
     fn reset_session(&self) {
         *self.session_id.lock().unwrap() = None;
         eprintln!("[session reset]");
-    }
-}
-
-// ── ClaudeCliBackend (kept for skills / image analysis) ───────────────────────
-
-#[derive(Component)]
-#[shaku(interface = ClaudeBackend)]
-pub struct ClaudeCliBackend;
-
-impl ClaudeBackend for ClaudeCliBackend {
-    fn query(&self, order: &str, session_id: Option<&str>) -> Result<TokenUsage, String> {
-        let prompt = load_prompt(order);
-        let mut cmd = Command::new("claude");
-        cmd.args(["--print", "--output-format", "json", "--model", "claude-haiku-4-5",
-                  "--allowedTools", "Bash,WebSearch"]);
-        if let Some(id) = session_id {
-            eprintln!("[resuming session: {id}]");
-            cmd.args(["--resume", id, "--system-prompt", &prompt]);
-        } else {
-            cmd.args(["--system-prompt", &prompt]);
-        }
-        let mut child = cmd
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| e.to_string())?;
-
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(order.as_bytes());
-        }
-
-        let output = child.wait_with_output().map_err(|e| e.to_string())?;
-
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr).into_owned();
-            eprintln!("[claude exited with error: {err}]");
-            return Err(err);
-        }
-
-        let json = String::from_utf8_lossy(&output.stdout);
-        let preview_end = json.char_indices().nth(200).map(|(i, _)| i).unwrap_or(json.len());
-        eprintln!("[claude raw json: {}]", &json[..preview_end]);
-        parse_result_json(&json)
     }
 }
 

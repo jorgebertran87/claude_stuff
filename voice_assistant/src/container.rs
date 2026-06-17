@@ -16,9 +16,7 @@ use crate::domain::service::VoiceListenerService;
 use crate::infrastructure::{
     audio::MicrophoneCapturer,
     audio_player::FfplayAudioPlayer,
-    claude_handler::{ClaudeBackend, ClaudeCliBackend, ClaudeCodeHandler,
-                     ClaudeCodeHandlerParameters, ClaudeImageAnalyzer,
-                     DeepSeekBackend},
+    claude_handler::{ClaudeBackend, ClaudeCodeHandler, ClaudeImageAnalyzer, DeepSeekBackend},
     google_sheets::GoogleSheetsGatewayImpl,
     minesweeper::MinesweeperService,
     speaker::{GTTSSpeaker, GttsTextSynthesizer},
@@ -30,7 +28,6 @@ use crate::infrastructure::{
 // ── Interface marker impls ────────────────────────────────────────────────────
 
 impl Interface for dyn AudioCapturer {}
-impl Interface for dyn OrderHandler {}
 impl Interface for dyn Transcriber {}
 impl Interface for dyn AudioSpeaker {}
 impl Interface for dyn GoogleSheetsGateway {}
@@ -39,7 +36,6 @@ impl Interface for dyn ImageAnalyzer {}
 impl Interface for dyn MinesweeperAnalyzer {}
 impl Interface for dyn SkillCommands {}
 impl Interface for dyn AudioPlayer {}
-impl Interface for dyn ClaudeBackend {}
 impl Interface for dyn TelegramGateway {}
 
 // ── Application module ────────────────────────────────────────────────────────
@@ -48,8 +44,6 @@ module! {
     pub AppModule {
         components = [
             // ── claude ────────────────────────────────────────────────────────
-            ClaudeCliBackend,     // → ClaudeBackend
-            ClaudeCodeHandler,    // → OrderHandler  (injects ClaudeBackend)
             ClaudeImageAnalyzer,  // → ImageAnalyzer
 
             // ── google ────────────────────────────────────────────────────────
@@ -75,10 +69,6 @@ module! {
 
 fn build_module(telegram_token: String) -> AppModule {
     AppModule::builder()
-        .with_component_parameters::<ClaudeCodeHandler>(ClaudeCodeHandlerParameters {
-            log_file:   PathBuf::from(".orders_tokens"),
-            session_id: Default::default(),
-        })
         .with_component_parameters::<UreqGateway>(UreqGatewayParameters {
             token: telegram_token,
         })
@@ -112,7 +102,7 @@ pub fn build_telegram_bot(token: String) -> TelegramBot {
 /// direct-order (CLI) mode and as a factory passed to the Telegram bot
 /// (one handler per chat session).
 pub fn make_order_handler() -> Arc<dyn OrderHandler> {
-    Arc::new(ClaudeCodeHandler::with_injectable(
+    Arc::new(ClaudeCodeHandler::new(
         Arc::new(DeepSeekBackend::new()),
         PathBuf::from(".orders_tokens"),
     ))

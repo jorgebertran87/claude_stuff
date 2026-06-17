@@ -77,7 +77,7 @@ impl Default for SessionWorld {
 fn setup_handler(world: &mut SessionWorld, session_id: &str) {
     let (backend, calls) = SharedBackend::new(session_id);
     world.calls = calls;
-    world.handler = Some(ClaudeCodeHandler::with_injectable(
+    world.handler = Some(ClaudeCodeHandler::new(
         std::sync::Arc::new(backend),
         world.log_path.clone(),
     ));

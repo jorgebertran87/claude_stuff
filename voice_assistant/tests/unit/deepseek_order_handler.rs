@@ -122,7 +122,7 @@ fn given_stateless_backend(world: &mut DeepSeekOrderWorld) {
             })
         }
     }
-    world.handler = Some(ClaudeCodeHandler::with_injectable(
+    world.handler = Some(ClaudeCodeHandler::new(
         Arc::new(StatelessBackend),
         world.log_path.clone(),
     ));
@@ -134,7 +134,7 @@ fn given_handler(world: &mut DeepSeekOrderWorld) {
     let backend = voice_assistant::infrastructure::claude_handler::DeepSeekBackend::with_base_url(
         uri, "test-key".into(), "deepseek-chat".into(),
     );
-    world.handler = Some(ClaudeCodeHandler::with_injectable(Arc::new(backend), world.log_path.clone()));
+    world.handler = Some(ClaudeCodeHandler::new(Arc::new(backend), world.log_path.clone()));
 }
 
 // ── When steps ────────────────────────────────────────────────────────────────
