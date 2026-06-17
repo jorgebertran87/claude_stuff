@@ -49,7 +49,7 @@ fn when_tts_segment(world: &mut SpeakerWorld) {
     world.segment = tts_segment(&world.text, &world.lang).ok();
 }
 
-#[when("tts_segment makes a real HTTP request")]
+#[when("tts_segment calls piper_synthesize")]
 fn when_real_tts(world: &mut SpeakerWorld) {
     world.segment = tts_segment(&world.text, &world.lang).ok();
 }

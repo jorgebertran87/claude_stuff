@@ -49,24 +49,24 @@ Feature: Telegram bot infrastructure integration
     When run_once processes the updates
     Then the gateway posted a message to chat 1 containing "imagen"
 
-  Scenario: Image with caption is analyzed immediately
+  Scenario: Non-minesweeper image returns not-available message
     Given a TelegramBot with a fake gateway
     And a photo update from chat 1 with caption "qué ves aquí?" and downloadable bytes
     When run_once processes the updates
-    Then the gateway posted a message to chat 1
+    Then the gateway posted a message to chat 1 containing "no está disponible"
 
-  Scenario: Image with caption but failed download posts error message
+  Scenario: Non-minesweeper image with failed download also returns not-available
     Given a TelegramBot with a fake gateway
     And a photo update from chat 1 with caption "qué ves aquí?" and no downloadable bytes
     When run_once processes the updates
-    Then the gateway posted a message to chat 1 containing "descargar"
+    Then the gateway posted a message to chat 1 containing "no está disponible"
 
-  Scenario: Image without caption followed by description triggers analysis
+  Scenario: Image without caption asks for prompt, follow-up returns not-available
     Given a TelegramBot with a fake gateway
     And a photo update from chat 1 with downloadable bytes
     When run_once processes the updates
     And run_once processes another "describe lo que ves" from chat 1
-    Then the gateway posted a message to chat 1
+    Then the gateway posted a message to chat 1 containing "no está disponible"
 
   Scenario: /list command includes /bus
     Given a TelegramBot with a fake gateway

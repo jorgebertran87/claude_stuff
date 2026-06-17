@@ -40,8 +40,45 @@ COPY skill_loader/src/ skill_loader/src/
 RUN touch src/lib.rs src/main.rs deepseek_client/src/lib.rs skill_loader/src/lib.rs \
     && cargo build --release
 
-# ── Stage 2: test-base (builder + merged Cargo manifest)
+# ── Stage 2: tools (Piper TTS binary and voice models) ────────────────────
+FROM debian:bookworm-slim AS tools
+
+ARG PIPER_VERSION=2023.11.14-2
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Piper TTS binary.
+RUN mkdir -p /app/piper_models \
+    && curl -fsSL "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}/piper_linux_x86_64.tar.gz" \
+        | tar xz -C /usr/local/bin \
+    && chmod +x /usr/local/bin/piper
+
+# Spanish voice model.
+RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/carlfm/x_low/es_ES-carlfm-x_low.onnx" \
+        -o /app/piper_models/es_ES-carlfm-x_low.onnx \
+    && curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/carlfm/x_low/es_ES-carlfm-x_low.onnx.json" \
+        -o /app/piper_models/es_ES-carlfm-x_low.onnx.json
+
+# English fallback voice model.
+RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx" \
+        -o /app/piper_models/en_US-lessac-medium.onnx \
+    && curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json" \
+        -o /app/piper_models/en_US-lessac-medium.onnx.json
+
+# ── Stage 3: test-base (builder + Piper tools + merged Cargo manifest)
 FROM builder AS test-base
+
+# Piper needs libgomp1 at runtime (not in rust:1.86-slim by default).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Piper from the tools stage so integration tests can use it.
+COPY --from=tools /usr/local/bin/piper          /usr/local/bin/
+COPY --from=tools /app/piper_models             /app/piper_models/
 
 COPY config/Cargo-test.toml ./
 RUN cat Cargo-test.toml >> Cargo.toml
@@ -54,7 +91,7 @@ COPY tests/integration/ tests/integration/
 COPY features/ features/
 COPY tests/files/ tests/files/
 
-# ── Stage 5: mutants (test-base + cargo-mutants + .cargo/ + test files) ───────
+# ── Stage 5: mutants (test-base + cargo-mutants + test files) ─────────────────
 FROM test-base AS mutants
 
 RUN cargo install --locked cargo-mutants@26.0.0
@@ -65,11 +102,31 @@ COPY tests/integration/ tests/integration/
 COPY features/ features/
 COPY tests/files/ tests/files/
 
-# ── Stage 6: runtime ──────────────────────────────────────────────────────────
-FROM debian:bookworm-slim
+# ── Stage 6: whisper-builder (compile whisper.cpp from source) ────────────
+FROM debian:bookworm-slim AS whisper-builder
 
-# Piper TTS version (pre-built binary from GitHub releases).
-ARG PIPER_VERSION=2023.11.14-2
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        build-essential \
+        cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch v1.7.4 https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp \
+    && cd /tmp/whisper.cpp \
+    && cmake -B build -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build --config Release -j "$(nproc)" \
+    && cp build/bin/whisper-cli /usr/local/bin/whisper-cli \
+    && rm -rf /tmp/whisper.cpp
+
+# Download ggml-tiny model.
+RUN mkdir -p /app/models \
+    && apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && curl -fsSL "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin" \
+        -o /app/models/ggml-tiny.bin \
+    && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+# ── Stage 7: runtime ──────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
@@ -83,41 +140,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Piper TTS binary (offline text-to-speech).
-RUN mkdir -p /app/piper_models \
-    && curl -fsSL "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}/piper_linux_x86_64.tar.gz" \
-        | tar xz -C /usr/local/bin \
-    && chmod +x /usr/local/bin/piper
-
-# Download Spanish voice model.
-RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/carlfm/x_low/es_ES-carlfm-x_low.onnx" \
-        -o /app/piper_models/es_ES-carlfm-x_low.onnx \
-    && curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/carlfm/x_low/es_ES-carlfm-x_low.onnx.json" \
-        -o /app/piper_models/es_ES-carlfm-x_low.onnx.json
-
-# Download English fallback voice model.
-RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx" \
-        -o /app/piper_models/en_US-lessac-medium.onnx \
-    && curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json" \
-        -o /app/piper_models/en_US-lessac-medium.onnx.json
-
-# Install whisper.cpp binary (offline speech-to-text).
-ARG WHISPER_VERSION=1.7.4
-RUN mkdir -p /app/models \
-    && curl -fsSL "https://github.com/ggerganov/whisper.cpp/releases/download/v${WHISPER_VERSION}/whisper-cli" \
-        -o /usr/local/bin/whisper-cli \
-    && chmod +x /usr/local/bin/whisper-cli
-
-# Download ggml-tiny model (~75 MB, good enough for Spanish).
-RUN curl -fsSL "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin" \
-        -o /app/models/ggml-tiny.bin
-
 # Route ALSA through PulseAudio (which PipeWire emulates)
 RUN printf 'pcm.default pulse\nctl.default pulse\n' > /etc/asound.conf
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/voice_assistant ./
+COPY --from=tools             /usr/local/bin/piper          /usr/local/bin/
+COPY --from=tools             /app/piper_models             /app/piper_models/
+COPY --from=whisper-builder   /usr/local/bin/whisper-cli    /usr/local/bin/
+COPY --from=whisper-builder   /app/models                   /app/models/
+COPY --from=builder           /app/target/release/voice_assistant ./
 
 ENV RUST_MIN_STACK=16777216
 
