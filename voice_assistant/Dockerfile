@@ -105,3 +105,6 @@ COPY --from=builder /app/target/release/voice_assistant ./
 ENV RUST_MIN_STACK=16777216
 
 ENTRYPOINT ["./voice_assistant"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD pgrep voice_assistant || exit 1
