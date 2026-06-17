@@ -109,6 +109,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         build-essential \
         cmake \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 --branch v1.7.4 https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp \
