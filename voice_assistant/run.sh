@@ -27,7 +27,7 @@ CONTAINER=$(docker run -d \
     -v ${HOME}/.claude.json:/root/.claude.json \
     -v ${PWD}/.orders_tokens:/app/.orders_tokens:rw \
     -v ${PWD}/.google_refresh_token:/app/.google_refresh_token:rw \
-    -v /dev/snd:/dev/snd \
+    --device /dev/snd \
     ${IMAGE} "$@")
 
 # Forward signals to the container so Ctrl+C stops it cleanly.

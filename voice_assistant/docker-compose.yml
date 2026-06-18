@@ -16,13 +16,14 @@ services:
       minesweeper:
         condition: service_healthy
     env_file: .env
+    devices:
+      - /dev/snd:/dev/snd
     environment:
       PULSE_SERVER: unix:/tmp/pulse.sock
       SDL_AUDIODRIVER: pulse
       SDL_VIDEODRIVER: dummy
       MINESWEEPER_URL: http://localhost:5000
     volumes:
-      - /dev/snd:/dev/snd
       - /run/user/${UID}/pulse/native:/tmp/pulse.sock
       - ${PWD}/.claude:/app/.claude:ro
       - ${HOME}/.claude:/root/.claude
