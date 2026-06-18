@@ -139,6 +139,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libasound2-plugins \
         ffmpeg \
         libgomp1 \
+        procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Route ALSA through PulseAudio (which PipeWire emulates)
