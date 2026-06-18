@@ -117,6 +117,7 @@ RUN git clone --depth 1 --branch v1.7.4 https://github.com/ggerganov/whisper.cpp
     && cmake -B build -DCMAKE_BUILD_TYPE=Release \
     && cmake --build build --config Release -j "$(nproc)" \
     && cp build/bin/whisper-cli /usr/local/bin/whisper-cli \
+    && find build -name '*.so*' -exec cp {} /usr/local/lib/ \; \
     && rm -rf /tmp/whisper.cpp
 
 # Download ggml-tiny model.
@@ -150,8 +151,11 @@ WORKDIR /app
 COPY --from=tools             /usr/local/bin/piper          /usr/local/bin/
 COPY --from=tools             /app/piper_models             /app/piper_models/
 COPY --from=whisper-builder   /usr/local/bin/whisper-cli    /usr/local/bin/
+COPY --from=whisper-builder   /usr/local/lib/               /usr/local/lib/
 COPY --from=whisper-builder   /app/models                   /app/models/
 COPY --from=builder           /app/target/release/voice_assistant ./
+
+RUN ldconfig
 
 ENV RUST_MIN_STACK=16777216
 
