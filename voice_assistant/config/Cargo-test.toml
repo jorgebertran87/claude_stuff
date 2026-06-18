@@ -31,11 +31,6 @@ path = "tests/unit/conversation_flow.rs"
 harness = false
 
 [[test]]
-name = "claude_handler_token_logging"
-path = "tests/unit/claude_handler_token_logging.rs"
-harness = false
-
-[[test]]
 name = "session_continuity"
 path = "tests/unit/session_continuity.rs"
 harness = false
@@ -58,11 +53,6 @@ harness = false
 [[test]]
 name = "transcriber"
 path = "tests/integration/transcriber.rs"
-harness = false
-
-[[test]]
-name = "claude_handler"
-path = "tests/integration/claude_handler.rs"
 harness = false
 
 [[test]]

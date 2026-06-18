@@ -370,11 +370,17 @@ impl TelegramBot {
         };
 
         loop {
+            let prev_offset = offset;
             self.run_once(
                 &make_handler, &mut handlers, &mut voice_mode_chats,
                 &mut pending_auth_chats, &mut pending_image_chats,
                 &mut current_model, &mut offset, &speak_text, &on_voice,
             );
+            // When no updates were processed (fetch error or truly empty),
+            // pause briefly to avoid hammering Telegram on 409 / timeout.
+            if offset == prev_offset {
+                std::thread::sleep(Duration::from_secs(2));
+            }
         }
     }
 }
