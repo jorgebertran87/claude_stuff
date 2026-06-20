@@ -1,6 +1,7 @@
 pub mod claude_handler;
 pub mod ffplay_audio_player;
 pub mod google_sheets;
+pub mod google_tts;
 pub mod gtts_speaker;
 pub mod gtts_text_synthesizer;
 pub mod microphone_capturer;
