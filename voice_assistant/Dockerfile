@@ -56,11 +56,11 @@ RUN mkdir -p /app/piper_models \
         | tar xz -C /usr/local/bin \
     && chmod +x /usr/local/bin/piper
 
-# Spanish voice model.
-RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/carlfm/x_low/es_ES-carlfm-x_low.onnx" \
-        -o /app/piper_models/es_ES-carlfm-x_low.onnx \
-    && curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/carlfm/x_low/es_ES-carlfm-x_low.onnx.json" \
-        -o /app/piper_models/es_ES-carlfm-x_low.onnx.json
+# Spanish voice model (sharvard-medium — best quality Spanish voice).
+RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx" \
+        -o /app/piper_models/es_ES-sharvard-medium.onnx \
+    && curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx.json" \
+        -o /app/piper_models/es_ES-sharvard-medium.onnx.json
 
 # English fallback voice model.
 RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx" \

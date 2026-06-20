@@ -14,15 +14,16 @@ use crate::domain::ports::{
 };
 use crate::domain::service::VoiceListenerService;
 use crate::infrastructure::{
-    audio::MicrophoneCapturer,
-    audio_player::RodioAudioPlayer,
     claude_handler::{ClaudeCodeHandler, DeepSeekBackend},
     google_sheets::GoogleSheetsGatewayImpl,
+    microphone_capturer::MicrophoneCapturer,
     minesweeper::MinesweeperService,
-    speaker::{PiperSpeaker, PiperTextSynthesizer},
+    piper_speaker::PiperSpeaker,
+    piper_text_synthesizer::PiperTextSynthesizer,
+    rodio_audio_player::RodioAudioPlayer,
     telegram_bot::{TelegramBot, TelegramGateway, UreqGateway, UreqGatewayParameters},
     telegram_skills::ClaudeSkillCommands,
-    transcriber::WhisperTranscriber,
+    transcriber::GoogleTranscriber,
 };
 
 // ── Interface marker impls ────────────────────────────────────────────────────
@@ -44,7 +45,7 @@ module! {
         components = [
             // ── google ────────────────────────────────────────────────────────
             GoogleSheetsGatewayImpl,  // → GoogleSheetsGateway
-            WhisperTranscriber,        // → Transcriber
+            GoogleTranscriber,          // → Transcriber
 
             // ── audio / speech ────────────────────────────────────────────────
             MicrophoneCapturer,   // → AudioCapturer

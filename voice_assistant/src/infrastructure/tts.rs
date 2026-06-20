@@ -96,7 +96,7 @@ fn piper_model_dir() -> String {
 /// Map a language code prefix to the best available Piper voice model file name.
 fn piper_voice_for_lang(lang_prefix: &str) -> String {
     match lang_prefix {
-        "es" => "es_ES-carlfm-x_low.onnx",
+        "es" => "es_ES-sharvard-medium.onnx",
         _    => "en_US-lessac-medium.onnx",
     }
     .to_string()
@@ -119,9 +119,10 @@ fn piper_synthesize(text: &str, lang: &str) -> Result<Vec<u8>, String> {
     let wav_path = format!("/tmp/piper_out_{nanos}.wav");
     let mp3_path = format!("/tmp/piper_out_{nanos}.mp3");
 
-    // Piper: text → WAV
+    // Piper: text → WAV. Slow down Spanish slightly for clarity.
+    let length_scale = if lang_prefix == "es" { "1.15" } else { "1.0" };
     let mut child = Command::new("piper")
-        .args(["--model", &model_path, "--output_file", &wav_path])
+        .args(["--model", &model_path, "--length_scale", length_scale, "--output_file", &wav_path])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

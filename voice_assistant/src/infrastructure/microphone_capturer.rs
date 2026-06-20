@@ -1,4 +1,4 @@
-//! Microphone capture via cpal with basic voice-activity detection and
+//! Microphone capture adapter via cpal with voice-activity detection and
 //! optional acoustic echo cancellation.
 
 use std::process::{Command, Stdio};
@@ -145,7 +145,7 @@ impl MicrophoneCapturer {
     }
 
     /// Encode raw i16 samples as a WAV byte vector (16-bit mono PCM).
-    fn encode_wav(samples: &[i16], sample_rate: u32) -> Vec<u8> {
+    pub fn encode_wav(samples: &[i16], sample_rate: u32) -> Vec<u8> {
         let data_size = (samples.len() * 2) as u32;
         let file_size = 44 + data_size;
 
@@ -210,7 +210,7 @@ impl AudioCapturer for MicrophoneCapturer {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-fn rms_amplitude(samples: &[i16]) -> f64 {
+pub fn rms_amplitude(samples: &[i16]) -> f64 {
     if samples.is_empty() { return 0.0; }
     let sum_sq: f64 = samples.iter().map(|&s| (s as f64).powi(2)).sum();
     (sum_sq / samples.len() as f64).sqrt() / 32768.0
@@ -227,7 +227,7 @@ pub fn i16_to_bytes(samples: &[i16]) -> Vec<u8> {
     samples.iter().flat_map(|s| s.to_le_bytes()).collect()
 }
 
-fn resample(samples: &[i16], from_rate: u32, to_rate: u32) -> Vec<i16> {
+pub fn resample(samples: &[i16], from_rate: u32, to_rate: u32) -> Vec<i16> {
     let n_out = (samples.len() as u64 * to_rate as u64 / from_rate as u64) as usize;
     (0..n_out)
         .map(|i| {
@@ -288,98 +288,5 @@ mod tests {
     #[test]
     fn rms_amplitude_empty_is_zero() {
         assert_eq!(rms_amplitude(&[]), 0.0);
-    }
-}
-
-// ── SoxMicrophoneCapturer (sox rec-based, pre-cpal) ──────────────────────────
-
-#[derive(Component)]
-#[shaku(interface = AudioCapturer)]
-pub struct SoxMicrophoneCapturer {
-    #[shaku(default)]
-    echo_reference: Mutex<Option<EchoRef>>,
-}
-
-impl SoxMicrophoneCapturer {
-    pub fn new() -> Self {
-        Self { echo_reference: Mutex::new(None) }
-    }
-
-    /// Apply echo cancellation to a raw audio buffer using the stored reference.
-    pub fn apply_echo_cancellation(
-        &self,
-        raw:          &[u8],
-        sample_rate:  u32,
-        _sample_width: u16,
-    ) -> Vec<u8> {
-        let Some((ref_samples, ref_rate)) = ({
-            let guard = self.echo_reference.lock().unwrap();
-            guard.as_ref().map(|(bytes, rate, _)| (bytes_to_i16(bytes), *rate))
-        }) else {
-            return raw.to_vec();
-        };
-
-        let mic_samples = bytes_to_i16(raw);
-
-        let ref_resampled = if ref_rate != sample_rate {
-            resample(&ref_samples, ref_rate, sample_rate)
-        } else {
-            ref_samples
-        };
-
-        let cleaned = cancel_echo(&mic_samples, &ref_resampled, 0.95);
-        i16_to_bytes(&cleaned)
-    }
-}
-
-impl Default for SoxMicrophoneCapturer {
-    fn default() -> Self { Self::new() }
-}
-
-impl AudioCapturer for SoxMicrophoneCapturer {
-    fn capture(
-        &self,
-        timeout_ms:           Option<u64>,
-        phrase_time_limit_ms: Option<u64>,
-        pause_threshold_ms:   Option<u64>,
-    ) -> Option<AudioCapture> {
-        let max_secs   = phrase_time_limit_ms.or(timeout_ms).unwrap_or(8_000) / 1_000;
-        let pause_secs = pause_threshold_ms.unwrap_or(1_500) as f64 / 1_000.0;
-        let tmp        = "/tmp/voice_capture.wav";
-
-        // `rec` (sox): wait for voice onset, then record until pause_secs of silence.
-        let pause_arg = format!("{pause_secs:.1}");
-        let max_arg   = format!("{max_secs}");
-
-        let ok = Command::new("rec")
-            .args([
-                "-q",
-                "-c", "1", "-r", "16000",
-                "-e", "signed-integer", "-b", "16",
-                tmp,
-                "silence", "1", "0.1", "2%",
-                "1", &pause_arg, "2%",
-                "trim", "0", &max_arg,
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-
-        if !ok { return None; }
-        let bytes = std::fs::read(tmp).ok()?;
-        if bytes.len() <= 44 { return None; }   // only WAV header → silence
-        Some(AudioCapture::new(bytes, 16_000, 2))
-    }
-
-    fn calibrate(&self, _duration_secs: f64) {
-        // sox `rec` adapts automatically; nothing to calibrate.
-    }
-    fn mute(&self)   {}
-    fn unmute(&self) {}
-
-    fn set_echo_reference(&self, reference: Option<EchoRef>) {
-        *self.echo_reference.lock().unwrap() = reference;
     }
 }

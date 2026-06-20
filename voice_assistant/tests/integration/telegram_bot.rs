@@ -5,10 +5,10 @@ use std::time::Instant;
 use cucumber::{given, when, then, World};
 
 use voice_assistant::domain::ports::OrderHandler;
-use voice_assistant::infrastructure::audio_player::RodioAudioPlayer;
+use voice_assistant::infrastructure::rodio_audio_player::RodioAudioPlayer;
 use voice_assistant::infrastructure::google_sheets::GoogleSheetsGatewayImpl;
 use voice_assistant::infrastructure::minesweeper::MinesweeperService;
-use voice_assistant::infrastructure::speaker::PiperTextSynthesizer;
+use voice_assistant::infrastructure::piper_text_synthesizer::PiperTextSynthesizer;
 use voice_assistant::infrastructure::telegram_bot::{TelegramBot, TelegramGateway, TelegramUpdate};
 use voice_assistant::infrastructure::telegram_skills::ClaudeSkillCommands;
 
