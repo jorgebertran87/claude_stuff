@@ -5,6 +5,7 @@ pub mod gtts_speaker;
 pub mod gtts_text_synthesizer;
 pub mod microphone_capturer;
 pub mod minesweeper;
+pub mod piper_engine;
 pub mod piper_speaker;
 pub mod piper_text_synthesizer;
 pub mod rodio_audio_player;

@@ -2,7 +2,7 @@ use cucumber::{given, when, then, World};
 
 use voice_assistant::infrastructure::gtts_text_synthesizer::synthesize_text;
 use voice_assistant::infrastructure::speaker_utils::{alexa_spotify_title, build_alexa_command};
-use voice_assistant::infrastructure::tts::{tts_segment, AudioSegment};
+use voice_assistant::infrastructure::piper_engine::{tts_segment, AudioSegment};
 
 #[derive(Debug, Default, World)]
 pub struct SpeakerWorld {

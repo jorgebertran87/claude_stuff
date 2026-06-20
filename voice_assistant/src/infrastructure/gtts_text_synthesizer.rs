@@ -7,7 +7,8 @@ use crate::domain::ports::TextSynthesizer;
 use crate::infrastructure::speaker_utils::{
     alexa_spotify_title, apply_atempo, build_alexa_command, detect_lang, strip_markdown,
 };
-use crate::infrastructure::tts::{tts_chunks, tts_segment};
+use crate::infrastructure::piper_engine::tts_segment;
+use crate::infrastructure::tts::tts_chunks;
 
 pub fn synthesize_text(text: &str) -> Vec<u8> {
     let clean = strip_markdown(text);

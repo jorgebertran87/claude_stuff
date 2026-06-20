@@ -13,7 +13,7 @@ use crate::domain::ports::{AudioSpeaker, EchoRef};
 use crate::infrastructure::speaker_utils::{
     alexa_spotify_title, build_alexa_command, disconnect_bt_speaker, strip_markdown,
 };
-use crate::infrastructure::tts::tts_segment;
+use crate::infrastructure::piper_engine::tts_segment;
 
 #[derive(Component)]
 #[shaku(interface = AudioSpeaker)]
