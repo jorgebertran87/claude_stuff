@@ -2,7 +2,7 @@ use cucumber::{given, when, then, World};
 
 use voice_assistant::domain::model::{AudioCapture, Language};
 use voice_assistant::domain::ports::Transcriber;
-use voice_assistant::infrastructure::transcriber::GoogleTranscriber;
+use voice_assistant::infrastructure::audio::transcriber::GoogleTranscriber;
 
 #[derive(Debug, Default, World)]
 pub struct SpeechWorld {

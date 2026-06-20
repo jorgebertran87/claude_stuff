@@ -3,7 +3,7 @@
 use shaku::Component;
 
 use crate::domain::ports::AudioPlayer;
-use crate::infrastructure::speaker_utils::disconnect_bt_speaker;
+use crate::infrastructure::tts::speaker_utils::disconnect_bt_speaker;
 
 /// Write `bytes` to a temp MP3 file and play it through ffplay (blocking).
 pub fn play_audio_bytes_ffplay(bytes: &[u8]) {

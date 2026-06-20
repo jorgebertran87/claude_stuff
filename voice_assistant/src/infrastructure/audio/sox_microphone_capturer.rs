@@ -8,8 +8,8 @@ use shaku::Component;
 
 use crate::domain::model::AudioCapture;
 use crate::domain::ports::{AudioCapturer, EchoRef};
-use crate::infrastructure::microphone_capturer::{bytes_to_i16, i16_to_bytes, resample};
-use crate::infrastructure::speech::cancel_echo;
+use super::microphone_capturer::{bytes_to_i16, i16_to_bytes, resample};
+use super::speech::cancel_echo;
 
 #[derive(Component)]
 #[shaku(interface = AudioCapturer)]

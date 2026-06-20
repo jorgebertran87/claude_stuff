@@ -1,7 +1,6 @@
 //! Microphone capture adapter via cpal with voice-activity detection and
 //! optional acoustic echo cancellation.
 
-use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -10,7 +9,7 @@ use shaku::Component;
 
 use crate::domain::model::AudioCapture;
 use crate::domain::ports::{AudioCapturer, EchoRef};
-use crate::infrastructure::speech::cancel_echo;
+use super::speech::cancel_echo;
 
 /// Amplitude threshold for voice-onset detection (fraction of i16 max).
 const VAD_THRESHOLD: f64 = 0.02;
@@ -90,7 +89,6 @@ impl MicrophoneCapturer {
         let mut silence_ms: u64 = 0;
         let mut voice_heard = false;
         let max_dur = Duration::from_millis(phrase_time_limit_ms.max(timeout_ms));
-        let pause_dur = Duration::from_millis(pause_threshold_ms);
         let start = Instant::now();
 
         // Poll interval — roughly one chunk's worth

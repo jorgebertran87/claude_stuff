@@ -9,7 +9,7 @@ use crate::domain::ports::{
 };
 
 // Re-export gateway types so external code (tests, container) keeps its import path.
-pub use crate::infrastructure::telegram_gateway::{
+pub use super::telegram_gateway::{
     TelegramGateway, TelegramUpdate, UreqGateway, UreqGatewayParameters,
 };
 
