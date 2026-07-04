@@ -1,4 +1,5 @@
 target/
 .git/
 *.md
+!/.claude/commands/*.md
 .env

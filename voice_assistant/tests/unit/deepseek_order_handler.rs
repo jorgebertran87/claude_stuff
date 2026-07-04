@@ -41,7 +41,13 @@ impl Default for DeepSeekOrderWorld {
 }
 
 fn ensure_skill_files() {
+    // Skill files are copied into the test image by the Dockerfile.
+    // If they're missing (legacy image), create minimal stubs so the
+    // handler can still assemble a system prompt.
     let dir = std::path::Path::new("/app/.claude/commands");
+    if dir.join("claudito.md").exists() && dir.join("search.md").exists() {
+        return;
+    }
     std::fs::create_dir_all(dir).ok();
     std::fs::write(dir.join("claudito.md"), "claudito base prompt").ok();
     std::fs::write(dir.join("search.md"), "search skill prompt").ok();
