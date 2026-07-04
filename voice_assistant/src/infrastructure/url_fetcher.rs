@@ -57,7 +57,15 @@ impl ToolHandler for UrlFetcherTool {
 
 /// Heuristic: does the content look like HTML?
 fn looks_like_html(body: &str) -> bool {
-    let lower = &body[..body.len().min(200)].to_lowercase();
+    // Take up to 200 chars, but safely — don't split a multi-byte codepoint.
+    let end = body
+        .char_indices()
+        .take(200)
+        .last()
+        .map(|(idx, ch)| idx + ch.len_utf8())
+        .unwrap_or(body.len());
+    let safe_slice = &body[..end.min(body.len())];
+    let lower = safe_slice.to_lowercase();
     lower.contains("<html") || lower.contains("<!doctype") || lower.contains("<body")
 }
 
