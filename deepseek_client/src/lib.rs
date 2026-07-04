@@ -230,6 +230,10 @@ pub fn chat(
 /// Max tool-calling round-trips before giving up.
 const MAX_TOOL_ROUNDS: usize = 50;
 
+/// Milliseconds to sleep between consecutive tool-calling rounds to avoid
+/// overwhelming DNS resolvers and rate-limiters.
+const INTER_ROUND_DELAY_MS: u64 = 200;
+
 /// Chat completion with tool-calling loop.
 ///
 /// Sends `messages` and `tools` to the API. When the model responds with tool
@@ -253,7 +257,12 @@ pub fn chat_with_tools(
     let mut total_output_tokens: u64 = 0;
     let mut final_content = String::new();
 
-    for _round in 1..=MAX_TOOL_ROUNDS {
+    for round in 1..=MAX_TOOL_ROUNDS {
+        // Small delay between rounds to avoid overwhelming the network.
+        if round > 1 {
+            std::thread::sleep(std::time::Duration::from_millis(INTER_ROUND_DELAY_MS));
+        }
+
         let messages_json: Vec<serde_json::Value> = conversation
             .iter()
             .map(serialize_message)
