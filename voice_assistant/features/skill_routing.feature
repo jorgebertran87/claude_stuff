@@ -42,3 +42,18 @@ Feature: Skill routing by order content
     Given an order containing "quién fue Cervantes"
     When the system detects the intent
     Then the selected skill is "search"
+
+  Scenario: Order containing "busques" is not mistaken for bus
+    Given an order containing "busques información urbanística"
+    When the system detects the intent
+    Then the selected skill is "search"
+
+  Scenario: Order containing the standalone word "bus" selects bus
+    Given an order containing "cuándo pasa el bus"
+    When the system detects the intent
+    Then the selected skill is "bus"
+
+  Scenario: Order containing "autobús" still selects bus
+    Given an order containing "el autobús 14"
+    When the system detects the intent
+    Then the selected skill is "bus"

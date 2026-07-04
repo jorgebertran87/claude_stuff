@@ -1,6 +1,6 @@
 pub fn detect_intent(order: &str) -> &'static str {
     let lower = order.to_lowercase();
-    if lower.contains("bus") || lower.contains("autobús") || lower.contains("autobus")
+    if contains_word(&lower, "bus") || lower.contains("autobús") || lower.contains("autobus")
         || lower.contains("parada") || lower.contains("línea") || lower.contains("linea")
     {
         "bus"
@@ -19,6 +19,35 @@ pub fn detect_intent(order: &str) -> &'static str {
     } else {
         "search"
     }
+}
+
+/// True when `word` appears as a whole word in `text` (delimited by whitespace,
+/// punctuation, or string boundaries — not as a substring of another word).
+fn contains_word(text: &str, word: &str) -> bool {
+    let bytes = text.as_bytes();
+    let word_bytes = word.as_bytes();
+    let len = bytes.len();
+    let wlen = word_bytes.len();
+
+    if wlen > len {
+        return false;
+    }
+
+    let is_boundary = |b: u8| -> bool {
+        b.is_ascii_whitespace() || b.is_ascii_punctuation()
+    };
+
+    for i in 0..=len - wlen {
+        if &bytes[i..i + wlen] != word_bytes {
+            continue;
+        }
+        let left_ok = i == 0 || is_boundary(bytes[i - 1]);
+        let right_ok = i + wlen == len || is_boundary(bytes[i + wlen]);
+        if left_ok && right_ok {
+            return true;
+        }
+    }
+    false
 }
 
 pub use skill_loader::{load_skill, strip_frontmatter};
