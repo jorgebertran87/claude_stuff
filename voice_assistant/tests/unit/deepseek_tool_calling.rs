@@ -228,8 +228,8 @@ async fn given_two_rounds(world: &mut ToolCallingWorld) {
 #[given("a DeepSeek API that always returns a tool call")]
 async fn given_always_tool_call(world: &mut ToolCallingWorld) {
     let server = MockServer::start().await;
-    // Mount 6 identical tool-call responses (exceeds MAX_TOOL_ROUNDS of 5)
-    let responses: Vec<serde_json::Value> = (0..6).map(|_| {
+    // Mount enough responses to exceed MAX_TOOL_ROUNDS (50)
+    let responses: Vec<serde_json::Value> = (0..51).map(|_| {
         tool_call_response(single_web_search_tool_call(), 1, 1)
     }).collect();
     mount_sequence(&server, responses).await;

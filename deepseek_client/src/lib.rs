@@ -228,7 +228,7 @@ pub fn chat(
 }
 
 /// Max tool-calling round-trips before giving up.
-const MAX_TOOL_ROUNDS: usize = 5;
+const MAX_TOOL_ROUNDS: usize = 50;
 
 /// Chat completion with tool-calling loop.
 ///
