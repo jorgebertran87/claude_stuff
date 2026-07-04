@@ -98,7 +98,7 @@ async fn deepseek_chat(
     let user = user.to_string();
 
     tokio::task::spawn_blocking(move || {
-        deepseek_client::chat(
+        deepseek_client::chat_simple(
             &base_url,
             &api_key,
             &model,

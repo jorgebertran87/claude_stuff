@@ -1,4 +1,4 @@
-use deepseek_client::chat;
+use deepseek_client::chat_simple;
 use serde_json::json;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -17,7 +17,7 @@ async fn successful_chat_returns_content_and_tokens() {
         .mount(&server)
         .await;
 
-    let result = chat(
+    let result = chat_simple(
         &server.uri(),
         "test-key",
         "deepseek-chat",
@@ -44,7 +44,7 @@ async fn reasoning_effort_is_sent_when_provided() {
         .mount(&server)
         .await;
 
-    let result = chat(
+    let result = chat_simple(
         &server.uri(),
         "test-key",
         "deepseek-reasoner",
@@ -65,7 +65,7 @@ async fn http_error_is_reported() {
         .mount(&server)
         .await;
 
-    let result = chat(
+    let result = chat_simple(
         &server.uri(),
         "test-key",
         "deepseek-chat",
@@ -88,7 +88,7 @@ async fn api_error_in_json_body_is_reported() {
         .mount(&server)
         .await;
 
-    let result = chat(
+    let result = chat_simple(
         &server.uri(),
         "test-key",
         "deepseek-chat",
