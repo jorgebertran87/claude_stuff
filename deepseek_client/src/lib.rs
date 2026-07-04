@@ -27,6 +27,13 @@ impl DeepSeekConfig {
     }
 }
 
+/// A single message in a chat conversation.
+#[derive(Debug, Clone)]
+pub struct ChatMessage {
+    pub role: String,    // "system", "user", or "assistant"
+    pub content: String,
+}
+
 /// The parsed response from a chat completion call.
 #[derive(Debug)]
 pub struct ChatResponse {
@@ -47,16 +54,22 @@ pub fn chat(
     base_url: &str,
     api_key: &str,
     model: &str,
-    system: &str,
-    user: &str,
+    messages: &[ChatMessage],
     reasoning_effort: Option<&str>,
 ) -> Result<ChatResponse, String> {
+    let messages_json: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|m| {
+            ureq::json!({
+                "role": m.role,
+                "content": m.content,
+            })
+        })
+        .collect();
+
     let mut body = ureq::json!({
         "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
+        "messages": messages_json,
     });
     if let Some(effort) = reasoning_effort {
         body["reasoning_effort"] = ureq::json!(effort);

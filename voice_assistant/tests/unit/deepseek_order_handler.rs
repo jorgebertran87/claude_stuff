@@ -2,7 +2,7 @@ use cucumber::{given, then, when, World};
 use std::path::PathBuf;
 use std::sync::Arc;
 use voice_assistant::domain::ports::OrderHandler;
-use voice_assistant::infrastructure::claude_handler::{ClaudeBackend, ClaudeCodeHandler, TokenUsage};
+use voice_assistant::infrastructure::claude_handler::{ChatMessage, ClaudeBackend, ClaudeCodeHandler, TokenUsage};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -110,7 +110,7 @@ async fn given_malformed_json(world: &mut DeepSeekOrderWorld) {
 fn given_stateless_backend(world: &mut DeepSeekOrderWorld) {
     struct StatelessBackend;
     impl ClaudeBackend for StatelessBackend {
-        fn query(&self, _order: &str, _session_id: Option<&str>) -> Result<TokenUsage, String> {
+        fn query(&self, _messages: &[ChatMessage]) -> Result<TokenUsage, String> {
             Ok(TokenUsage {
                 input_tokens: 0,
                 output_tokens: 0,

@@ -7,16 +7,19 @@ use crate::domain::ports::SkillCommands;
 pub fn deepseek_skill(system: &str, user: &str, context: &str) -> String {
     let config = deepseek_client::DeepSeekConfig::from_env();
     eprintln!("[{context}: deepseek, model={}]", config.model);
+    let messages = vec![
+        deepseek_client::ChatMessage { role: "system".into(), content: system.into() },
+        deepseek_client::ChatMessage { role: "user".into(), content: user.into() },
+    ];
     match deepseek_client::chat(
         &config.base_url,
         &config.api_key,
         &config.model,
-        system,
-        user,
+        &messages,
         config.reasoning_effort.as_deref(),
     ) {
         Ok(resp) => {
-            let preview = if resp.content.len() > 200 { &resp.content[..200] } else { &resp.content };
+            let preview: String = resp.content.chars().take(200).collect();
             eprintln!("[{context} response: {preview}]");
             resp.content
         }

@@ -31,3 +31,24 @@ Feature: Conversation session continuity
     And reset_session is called
     When the handler handles another order
     Then the backend receives no session_id on that call
+
+  Scenario: Conversation history accumulates across multiple orders
+    Given a ClaudeCodeHandler with a history-tracking backend
+    When the handler handles "hola"
+    And the handler handles "qué tal"
+    Then the backend received 2 messages on the first call
+    And the backend received 4 messages on the second call
+
+  Scenario: reset_session clears the conversation history
+    Given a ClaudeCodeHandler with a history-tracking backend
+    And the handler has already handled one order
+    When reset_session is called
+    And the handler handles another order
+    Then the backend received 2 messages on that call
+
+  Scenario: History includes user and assistant messages from prior turns
+    Given a ClaudeCodeHandler with a history-tracking backend
+    When the handler handles "primera pregunta"
+    And the handler handles "segunda pregunta"
+    Then the backend received a user message "segunda pregunta"
+    And the backend received an assistant message from the prior response
