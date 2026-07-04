@@ -75,11 +75,7 @@ impl ClaudeBackend for DeepSeekBackend {
             self.config.reasoning_effort.as_deref(),
         )?;
 
-        let preview = if resp.content.len() > 200 {
-            &resp.content[..200]
-        } else {
-            &resp.content
-        };
+        let preview: String = resp.content.chars().take(200).collect();
         eprintln!("[deepseek response: {preview}]");
 
         Ok(TokenUsage {
