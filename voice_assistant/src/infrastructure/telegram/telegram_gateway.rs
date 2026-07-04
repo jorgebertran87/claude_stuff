@@ -53,6 +53,13 @@ impl UreqGateway {
     }
 }
 
+/// Returns true when the `getUpdates` error should be logged as a real error.
+/// Long-poll timeouts (Telegram's `timeout=30` closing the connection after an
+/// idle window) are expected and should be suppressed to avoid noise.
+fn should_log_get_updates_error(error_msg: &str) -> bool {
+    !error_msg.contains("timed out reading response")
+}
+
 impl TelegramGateway for UreqGateway {
     fn fetch_updates(&self, offset: i64) -> Vec<TelegramUpdate> {
         let url = format!(
@@ -66,7 +73,10 @@ impl TelegramGateway for UreqGateway {
         {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("[telegram get_updates error: {e}]");
+                let err_msg = e.to_string();
+                if should_log_get_updates_error(&err_msg) {
+                    eprintln!("[telegram get_updates error: {err_msg}]");
+                }
                 return vec![];
             }
         };
@@ -314,5 +324,28 @@ mod tests {
             }]
         }"#;
         assert!(parse_updates(json).is_empty(), "non-image document should be skipped");
+    }
+
+    // ── getUpdates error classification ──────────────────────────────────────
+
+    #[test]
+    fn long_poll_timeout_is_not_logged() {
+        let err_msg = "Network Error: Error encountered in the status line: timed out reading response";
+        assert!(!should_log_get_updates_error(err_msg),
+            "long-poll timeout should be suppressed (not logged)");
+    }
+
+    #[test]
+    fn genuine_network_error_is_logged() {
+        let err_msg = "Network Error: connection refused";
+        assert!(should_log_get_updates_error(err_msg),
+            "genuine network errors should still be logged");
+    }
+
+    #[test]
+    fn dns_failure_is_logged() {
+        let err_msg = "Network Error: Dns Failed: resolve error";
+        assert!(should_log_get_updates_error(err_msg),
+            "DNS failures should still be logged");
     }
 }
