@@ -5,3 +5,5 @@ pub mod claude_handler;
 pub mod minesweeper;
 pub mod skill_loader;
 pub mod token_usage;
+pub mod web_search;
+pub mod url_fetcher;

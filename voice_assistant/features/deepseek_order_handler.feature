@@ -39,3 +39,13 @@ Feature: DeepSeek-backed order handler
     Given a DeepSeek backend that returns malformed JSON
     When the handler handles "hola"
     Then the return value is an error message
+
+  Scenario: Handler with tools lets the model answer directly when no tools are needed
+    Given a tool-backed DeepSeek backend that replies "Son las tres de la tarde"
+    When the handler handles "qué hora es"
+    Then the return value is "Son las tres de la tarde"
+
+  Scenario: Handler with tools lets the model use web search and return an answer
+    Given a tool-backed DeepSeek backend that replies with a tool call then "The capital is Paris"
+    When the handler handles "cuál es la capital de Francia"
+    Then the return value is "The capital is Paris"

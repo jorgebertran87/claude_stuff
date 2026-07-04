@@ -19,7 +19,7 @@ use crate::infrastructure::{
         rodio_audio_player::RodioAudioPlayer,
         transcriber::GoogleTranscriber,
     },
-    claude_handler::{ClaudeCodeHandler, DeepSeekBackend},
+    claude_handler::{ClaudeCodeHandler, DeepSeekBackend, ToolOrchestrator},
     minesweeper::MinesweeperService,
     telegram::{
         telegram_bot::{TelegramBot, TelegramGateway, UreqGateway, UreqGatewayParameters},
@@ -100,8 +100,10 @@ pub fn build_telegram_bot(token: String) -> TelegramBot {
 /// direct-order (CLI) mode and as a factory passed to the Telegram bot
 /// (one handler per chat session).
 pub fn make_order_handler() -> Arc<dyn OrderHandler> {
+    let backend = DeepSeekBackend::new()
+        .with_tools(Box::new(ToolOrchestrator::new()));
     Arc::new(ClaudeCodeHandler::new(
-        Arc::new(DeepSeekBackend::new()),
+        Arc::new(backend),
         PathBuf::from(".orders_tokens"),
     ))
 }

@@ -1,0 +1,166 @@
+use deepseek_client::{ToolCall, ToolHandler};
+
+/// Maximum characters to return from a fetched page.
+const MAX_CONTENT_CHARS: usize = 50_000;
+
+/// Fetches a URL and returns its content as plain text.
+///
+/// HTML pages have their tags stripped to extract readable text.
+/// Content is truncated to `MAX_CONTENT_CHARS` to avoid blowing up context.
+pub struct UrlFetcherTool;
+
+impl UrlFetcherTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ToolHandler for UrlFetcherTool {
+    fn execute(&self, call: &ToolCall) -> Result<String, String> {
+        let url = call
+            .arguments
+            .get("url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "Missing 'url' argument".to_string())?;
+
+        let response = ureq::get(url)
+            .set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+            .set("Accept", "text/html, text/plain, */*")
+            .call()
+            .map_err(|e| format!("URL fetch error for '{url}': {e}"))?;
+
+        let status = response.status();
+        if status >= 400 {
+            return Err(format!(
+                "URL fetch error for '{url}': HTTP {status}"
+            ));
+        }
+
+        let content_type = response
+            .header("Content-Type")
+            .unwrap_or("")
+            .to_string();
+
+        let body = response
+            .into_string()
+            .map_err(|e| format!("URL fetch read error for '{url}': {e}"))?;
+
+        let text = if content_type.contains("text/html") || looks_like_html(&body) {
+            strip_html(&body)
+        } else {
+            body
+        };
+
+        Ok(truncate_content(&text))
+    }
+}
+
+/// Heuristic: does the content look like HTML?
+fn looks_like_html(body: &str) -> bool {
+    let lower = &body[..body.len().min(200)].to_lowercase();
+    lower.contains("<html") || lower.contains("<!doctype") || lower.contains("<body")
+}
+
+/// Strip HTML tags, returning readable text.
+///
+/// A simple tag stripper — removes everything between `<` and `>`,
+/// collapses whitespace, and trims.
+fn strip_html(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut in_tag = false;
+
+    for ch in html.chars() {
+        if ch == '<' {
+            in_tag = true;
+        } else if ch == '>' {
+            in_tag = false;
+        } else if !in_tag {
+            result.push(ch);
+        }
+    }
+
+    // Collapse runs of whitespace.
+    let collapsed: String = result
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    collapsed
+}
+
+/// Truncate content to MAX_CONTENT_CHARS, breaking at a newline if possible.
+fn truncate_content(text: &str) -> String {
+    if text.chars().count() <= MAX_CONTENT_CHARS {
+        return text.to_string();
+    }
+
+    // Find a char boundary near MAX_CONTENT_CHARS.
+    let mut end = MAX_CONTENT_CHARS;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    let prefix = &text[..end];
+    // Try to break at the last newline.
+    if let Some(last_nl) = prefix.rfind('\n') {
+        if last_nl > MAX_CONTENT_CHARS / 2 {
+            return format!("{}\n\n[Content truncated...]", &text[..last_nl]);
+        }
+    }
+
+    format!("{prefix}\n\n[Content truncated...]")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_html_removes_tags() {
+        let html = "<html><body><h1>Hello</h1><p>World</p></body></html>";
+        let text = strip_html(html);
+        assert!(text.contains("Hello"));
+        assert!(text.contains("World"));
+        assert!(!text.contains("<html"));
+        assert!(!text.contains("<h1>"));
+    }
+
+    #[test]
+    fn strip_html_collapses_whitespace() {
+        let html = "<div>  line1  \n\n  line2  </div>";
+        let text = strip_html(html);
+        // Should have line1 and line2 on separate lines, trimmed
+        assert!(text.contains("line1"));
+        assert!(text.contains("line2"));
+        assert!(!text.contains("  "));
+    }
+
+    #[test]
+    fn looks_like_html_detects_html() {
+        assert!(looks_like_html("<!DOCTYPE html><html>..."));
+        assert!(looks_like_html("<html lang=\"en\">..."));
+        assert!(looks_like_html("<body>content</body>"));
+    }
+
+    #[test]
+    fn looks_like_html_ignores_plain_text() {
+        assert!(!looks_like_html("Hello, world!"));
+        assert!(!looks_like_html("{\"json\": true}"));
+    }
+
+    #[test]
+    fn truncate_short_text_is_unchanged() {
+        let s = "Hello world";
+        assert_eq!(truncate_content(s), "Hello world");
+    }
+
+    #[test]
+    fn truncate_long_text_adds_marker() {
+        let s = "x".repeat(MAX_CONTENT_CHARS + 1000);
+        let result = truncate_content(&s);
+        assert!(result.len() < MAX_CONTENT_CHARS + 200);
+        assert!(result.contains("[Content truncated...]"));
+    }
+}

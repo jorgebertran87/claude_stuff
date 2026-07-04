@@ -1,10 +1,52 @@
 use cucumber::{given, then, when, World};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use voice_assistant::domain::ports::OrderHandler;
 use voice_assistant::infrastructure::claude_handler::{ChatMessage, ClaudeBackend, ClaudeCodeHandler, TokenUsage};
 use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+
+use deepseek_client::{ToolCall, ToolHandler};
+
+/// Fake tool handler that returns a canned response.
+struct FakeToolHandler {
+    calls: Mutex<Vec<ToolCall>>,
+    response: String,
+}
+
+impl FakeToolHandler {
+    fn new(response: &str) -> Self {
+        Self { calls: Mutex::new(Vec::new()), response: response.to_string() }
+    }
+}
+
+impl ToolHandler for FakeToolHandler {
+    fn execute(&self, call: &ToolCall) -> Result<String, String> {
+        self.calls.lock().unwrap().push(call.clone());
+        Ok(self.response.clone())
+    }
+}
+
+/// Mount a mock that serves a sequence of JSON responses, one per request.
+/// Falls back to the last response once the sequence is exhausted.
+async fn mount_sequence(server: &MockServer, responses: Vec<serde_json::Value>) {
+    let counter = Arc::new(Mutex::new(0usize));
+    let responses = Arc::new(responses);
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(move |_req: &Request| {
+            let mut c = counter.lock().unwrap();
+            let idx = *c;
+            if idx < responses.len() {
+                *c += 1;
+            }
+            let resp_idx = idx.min(responses.len() - 1);
+            ResponseTemplate::new(200).set_body_json(responses[resp_idx].clone())
+        })
+        .mount(server)
+        .await;
+}
 
 // ── World ─────────────────────────────────────────────────────────────────────
 
@@ -140,6 +182,64 @@ fn given_handler(world: &mut DeepSeekOrderWorld) {
     let backend = voice_assistant::infrastructure::claude_handler::DeepSeekBackend::with_base_url(
         uri, "test-key".into(), "deepseek-chat".into(),
     );
+    world.handler = Some(ClaudeCodeHandler::new(Arc::new(backend), world.log_path.clone()));
+}
+
+#[given(regex = r#"^a tool-backed DeepSeek backend that replies "(.+)"$"#)]
+async fn given_tool_backend_reply(world: &mut DeepSeekOrderWorld, content: String) {
+    ensure_skill_files();
+    let server = MockServer::start().await;
+    mount_ok_reply(&server, &content, 0, 0).await;
+    let uri = server.uri();
+    world.server = Some(server);
+    // Build the handler immediately with a fake tool handler attached.
+    let handler = FakeToolHandler::new("search result");
+    let backend = voice_assistant::infrastructure::claude_handler::DeepSeekBackend::with_base_url(
+        uri, "test-key".into(), "deepseek-chat".into(),
+    )
+    .with_tools(Box::new(handler));
+    world.handler = Some(ClaudeCodeHandler::new(Arc::new(backend), world.log_path.clone()));
+}
+
+#[given(regex = r#"^a tool-backed DeepSeek backend that replies with a tool call then "(.+)"$"#)]
+async fn given_tool_backend_with_tool_call(world: &mut DeepSeekOrderWorld, final_answer: String) {
+    ensure_skill_files();
+    let server = MockServer::start().await;
+    mount_sequence(&server, vec![
+        // Round 1: tool call
+        serde_json::json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "web_search",
+                            "arguments": "{\"query\":\"capital of France\"}"
+                        }
+                    }]
+                }
+            }],
+            "usage": { "prompt_tokens": 10, "completion_tokens": 5 }
+        }),
+        // Round 2: text response
+        serde_json::json!({
+            "choices": [{
+                "message": { "role": "assistant", "content": final_answer }
+            }],
+            "usage": { "prompt_tokens": 15, "completion_tokens": 8 }
+        }),
+    ]).await;
+    let uri = server.uri();
+    world.server = Some(server);
+    // Build the handler immediately with a fake tool handler attached.
+    let handler = FakeToolHandler::new("search result");
+    let backend = voice_assistant::infrastructure::claude_handler::DeepSeekBackend::with_base_url(
+        uri, "test-key".into(), "deepseek-chat".into(),
+    )
+    .with_tools(Box::new(handler));
     world.handler = Some(ClaudeCodeHandler::new(Arc::new(backend), world.log_path.clone()));
 }
 

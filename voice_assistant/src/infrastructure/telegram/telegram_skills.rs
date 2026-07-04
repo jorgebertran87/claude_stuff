@@ -8,8 +8,8 @@ pub fn deepseek_skill(system: &str, user: &str, context: &str) -> String {
     let config = deepseek_client::DeepSeekConfig::from_env();
     eprintln!("[{context}: deepseek, model={}]", config.model);
     let messages = vec![
-        deepseek_client::ChatMessage { role: "system".into(), content: system.into() },
-        deepseek_client::ChatMessage { role: "user".into(), content: user.into() },
+        deepseek_client::ChatMessage::new("system", system),
+        deepseek_client::ChatMessage::new("user", user),
     ];
     match deepseek_client::chat(
         &config.base_url,

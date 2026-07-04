@@ -17,23 +17,11 @@ fn when_assemble(world: &mut SearchPromptWorld) {
     world.prompt = load_prompt(&world.order);
 }
 
-#[then(regex = r#"^the prompt does not contain "(.+)"$"#)]
-fn then_does_not_contain(world: &mut SearchPromptWorld, needle: String) {
+#[then(regex = r#"^the prompt contains "(.+)"$"#)]
+fn then_contains(world: &mut SearchPromptWorld, needle: String) {
     assert!(
-        !world.prompt.contains(&needle),
-        "prompt should NOT contain \"{needle}\", got:\n{}",
-        world.prompt
-    );
-}
-
-#[then(regex = r#"^the prompt contains "(.+)" or "(.+)" or "(.+)"$"#)]
-fn then_contains_any_of(world: &mut SearchPromptWorld, a: String, b: String, c: String) {
-    let found = world.prompt.contains(&a)
-        || world.prompt.contains(&b)
-        || world.prompt.contains(&c);
-    assert!(
-        found,
-        "prompt should contain at least one of \"{a}\" / \"{b}\" / \"{c}\", got:\n{}",
+        world.prompt.contains(&needle),
+        "prompt should contain \"{needle}\", got:\n{}",
         world.prompt
     );
 }

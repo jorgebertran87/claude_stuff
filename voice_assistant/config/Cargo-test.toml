@@ -84,3 +84,18 @@ harness = false
 name = "search_prompt_assembly"
 path = "tests/unit/search_prompt_assembly.rs"
 harness = false
+
+[[test]]
+name = "deepseek_tool_calling"
+path = "tests/unit/deepseek_tool_calling.rs"
+harness = false
+
+[[test]]
+name = "web_search_tool"
+path = "tests/unit/web_search_tool.rs"
+harness = false
+
+[[test]]
+name = "url_fetch_tool"
+path = "tests/unit/url_fetch_tool.rs"
+harness = false
