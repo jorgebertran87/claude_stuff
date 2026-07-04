@@ -23,6 +23,8 @@ impl ToolHandler for UrlFetcherTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing 'url' argument".to_string())?;
 
+        eprintln!("[url_fetch] GET {url}");
+
         let response = ureq::get(url)
             .set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
             .set("Accept", "text/html, text/plain, */*")
@@ -46,12 +48,15 @@ impl ToolHandler for UrlFetcherTool {
             .map_err(|e| format!("URL fetch read error for '{url}': {e}"))?;
 
         let text = if content_type.contains("text/html") || looks_like_html(&body) {
+            eprintln!("[url_fetch] HTML detected, stripping tags ({len} bytes raw)", len = body.len());
             strip_html(&body)
         } else {
             body
         };
 
-        Ok(truncate_content(&text))
+        let truncated = truncate_content(&text);
+        eprintln!("[url_fetch] returned {} bytes", truncated.len());
+        Ok(truncated)
     }
 }
 

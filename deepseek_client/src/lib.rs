@@ -298,11 +298,21 @@ pub fn chat_with_tools(
         let has_tool_calls = !tool_calls.is_empty();
 
         if has_text && !has_tool_calls {
+            eprintln!("[deepseek tools: round {round} — final text ({output_tokens} tok)]");
             final_content = content;
             break;
         }
 
         if has_tool_calls {
+            eprintln!(
+                "[deepseek tools: round {round} — {} tool call(s) requested]",
+                tool_calls.len()
+            );
+            for tc in &tool_calls {
+                let args_preview: String = tc.arguments.to_string()
+                    .chars().take(120).collect();
+                eprintln!("[deepseek tools:   -> {} ({})]", tc.name, args_preview);
+            }
             // Record the assistant message with its tool calls.
             conversation.push(ChatMessage {
                 role: "assistant".into(),
@@ -316,6 +326,9 @@ pub fn chat_with_tools(
                 let result = tool_handler
                     .execute(tc)
                     .unwrap_or_else(|e| format!("Error: {e}"));
+                let len = result.len();
+                let preview: String = result.chars().take(100).collect();
+                eprintln!("[deepseek tools:   <- {} ({len} bytes): {preview}...]", tc.name);
                 conversation.push(ChatMessage {
                     role: "tool".into(),
                     content: result,
@@ -332,6 +345,7 @@ pub fn chat_with_tools(
     }
 
     if final_content.is_empty() {
+        eprintln!("[deepseek tools: max rounds ({MAX_TOOL_ROUNDS}) exceeded]");
         return Err(format!(
             "Max tool rounds ({MAX_TOOL_ROUNDS}) exceeded without a final text response"
         ));

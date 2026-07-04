@@ -40,6 +40,8 @@ impl ToolHandler for DuckDuckGoSearchTool {
         let encoded = url_encode(query);
         let url = format!("{}/lite/?q={}", self.base_url, encoded);
 
+        eprintln!("[web_search] query=\"{query}\"");
+
         let response = ureq::get(&url)
             .set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
             .set("Accept", "text/html")
@@ -51,6 +53,8 @@ impl ToolHandler for DuckDuckGoSearchTool {
             .map_err(|e| format!("Search read error: {e}"))?;
 
         let results = parse_ddg_lite_html(&body);
+
+        eprintln!("[web_search] {} results found", results.len());
 
         if results.is_empty() {
             return Ok("No search results found.".to_string());
