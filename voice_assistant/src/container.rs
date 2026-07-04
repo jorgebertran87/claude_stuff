@@ -9,7 +9,7 @@ use shaku::{module, HasComponent, Interface};
 
 use crate::domain::model::{Language, WakeWord};
 use crate::domain::ports::{
-    AudioCapturer, AudioPlayer, AudioSpeaker, GoogleSheetsGateway,
+    AudioCapturer, AudioPlayer, AudioSpeaker,
     MinesweeperAnalyzer, OrderHandler, SkillCommands, TextSynthesizer, Transcriber,
 };
 use crate::domain::service::VoiceListenerService;
@@ -20,7 +20,6 @@ use crate::infrastructure::{
         transcriber::GoogleTranscriber,
     },
     claude_handler::{ClaudeCodeHandler, DeepSeekBackend},
-    google_sheets::GoogleSheetsGatewayImpl,
     minesweeper::MinesweeperService,
     telegram::{
         telegram_bot::{TelegramBot, TelegramGateway, UreqGateway, UreqGatewayParameters},
@@ -37,7 +36,6 @@ use crate::infrastructure::{
 impl Interface for dyn AudioCapturer {}
 impl Interface for dyn Transcriber {}
 impl Interface for dyn AudioSpeaker {}
-impl Interface for dyn GoogleSheetsGateway {}
 impl Interface for dyn TextSynthesizer {}
 impl Interface for dyn MinesweeperAnalyzer {}
 impl Interface for dyn SkillCommands {}
@@ -50,7 +48,6 @@ module! {
     pub AppModule {
         components = [
             // ── google ────────────────────────────────────────────────────────
-            GoogleSheetsGatewayImpl,  // → GoogleSheetsGateway
             GoogleTranscriber,          // → Transcriber
 
             // ── audio / speech ────────────────────────────────────────────────
@@ -62,7 +59,7 @@ module! {
             // ── telegram ─────────────────────────────────────────────────────
             UreqGateway,          // → TelegramGateway  (token parameter)
             MinesweeperService,   // → MinesweeperAnalyzer
-            ClaudeSkillCommands,  // → SkillCommands  (injects GoogleSheetsGateway)
+            ClaudeSkillCommands,  // → SkillCommands
         ],
         providers = []
     }
@@ -91,7 +88,6 @@ pub fn build_telegram_bot(token: String) -> TelegramBot {
     let module = build_module(token);
     TelegramBot::with_injectable(
         HasComponent::<dyn TelegramGateway>::resolve(&module),
-        HasComponent::<dyn GoogleSheetsGateway>::resolve(&module),
         HasComponent::<dyn TextSynthesizer>::resolve(&module),
         HasComponent::<dyn MinesweeperAnalyzer>::resolve(&module),
         HasComponent::<dyn SkillCommands>::resolve(&module),

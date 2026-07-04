@@ -42,13 +42,6 @@ pub trait AudioSpeaker: Send + Sync {
     fn disconnect(&self) {}
 }
 
-/// Port for accessing Google Sheets data and managing OAuth credentials.
-pub trait GoogleSheetsGateway: Send + Sync {
-    fn auth_url(&self) -> Option<String>;
-    fn exchange_code(&self, code: &str) -> Result<(), String>;
-    fn fetch_as_text(&self) -> Result<String, String>;
-}
-
 /// Port for synthesizing text to MP3 audio bytes.
 pub trait TextSynthesizer: Send + Sync {
     fn synthesize_text(&self, text: &str) -> Vec<u8>;
@@ -67,7 +60,6 @@ pub trait MinesweeperAnalyzer: Send + Sync {
 /// Port for the slash-command skills exposed by the Telegram bot.
 pub trait SkillCommands: Send + Sync {
     fn bus(&self, model: &str, stop_code: &str) -> String;
-    fn cuentas(&self, model: &str) -> String;
     fn volume(&self, arg: &str) -> String;
     fn usage_report(&self, log_file: &str) -> String;
     fn connect_speakers(&self) -> String;

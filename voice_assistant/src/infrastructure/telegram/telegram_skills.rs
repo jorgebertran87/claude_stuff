@@ -1,9 +1,8 @@
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 
 use shaku::Component;
 
-use crate::domain::ports::{GoogleSheetsGateway, SkillCommands};
+use crate::domain::ports::SkillCommands;
 
 pub fn deepseek_skill(system: &str, user: &str, context: &str) -> String {
     let config = deepseek_client::DeepSeekConfig::from_env();
@@ -26,19 +25,6 @@ pub fn deepseek_skill(system: &str, user: &str, context: &str) -> String {
             "Error al obtener la respuesta.".to_string()
         }
     }
-}
-
-pub fn handle_cuentas(sheets: &dyn GoogleSheetsGateway, _model: &str) -> String {
-    let data = match sheets.fetch_as_text() {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
-    let sheet_name = std::env::var("CUENTAS_SHEET_NAME")
-        .unwrap_or_else(|_| "Cuentas Personales".to_string());
-    let system = "Eres un asistente financiero que analiza datos de hojas de cálculo y genera resúmenes claros. Responde en texto plano, sin formato markdown.".to_string();
-    let user = format!("Analiza estos datos de mi hoja de cálculo \"{sheet_name}\" y dame un resumen claro y detallado.\n\nIncluye: saldo total por cuenta, ingresos y gastos del período, categorías de gasto principales, y cualquier observación relevante sobre el estado financiero.\n\n{data}");
-    eprintln!("[cuentas: prompt {} bytes]", user.len());
-    deepseek_skill(&system, &user, "cuentas")
 }
 
 pub fn handle_bus(_model: &str, stop_code: &str) -> String {
@@ -298,27 +284,13 @@ fn parse_token_field(line: &str, field: &str) -> u64 {
 // ── ClaudeSkillCommands ───────────────────────────────────────────────────────
 
 /// Adapter exposing the bot's slash-command skills as a single injected port.
-/// Holds the Google Sheets gateway needed by `/cuentas`.
 #[derive(Component)]
 #[shaku(interface = SkillCommands)]
-pub struct ClaudeSkillCommands {
-    #[shaku(inject)]
-    sheets: Arc<dyn GoogleSheetsGateway>,
-}
-
-impl ClaudeSkillCommands {
-    pub fn new(sheets: Arc<dyn GoogleSheetsGateway>) -> Self {
-        Self { sheets }
-    }
-}
+pub struct ClaudeSkillCommands;
 
 impl SkillCommands for ClaudeSkillCommands {
     fn bus(&self, model: &str, stop_code: &str) -> String {
         handle_bus(model, stop_code)
-    }
-
-    fn cuentas(&self, model: &str) -> String {
-        handle_cuentas(self.sheets.as_ref(), model)
     }
 
     fn volume(&self, arg: &str) -> String {

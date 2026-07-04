@@ -29,5 +29,4 @@ services:
       - ${HOME}/.claude:/root/.claude
       - ${HOME}/.claude.json:/root/.claude.json
       - ${PWD}/.orders_tokens:/app/.orders_tokens:rw
-      - ${PWD}/.google_refresh_token:/app/.google_refresh_token:rw
     command: ["--telegram"]

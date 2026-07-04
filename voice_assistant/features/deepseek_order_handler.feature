@@ -2,7 +2,7 @@ Feature: DeepSeek-backed order handler
   As a user
   I want the assistant to answer my orders using the DeepSeek chat API
   So that I don't depend on the Claude CLI for text orders while keeping
-  Claude for skills (bus, cuentas) and image analysis
+  Claude for skills (bus) and image analysis
 
   Scenario: An order is answered by DeepSeek
     Given a DeepSeek backend that replies "Son las tres de la tarde"

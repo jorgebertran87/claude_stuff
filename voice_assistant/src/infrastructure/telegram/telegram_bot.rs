@@ -4,7 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::domain::ports::{
-    AudioPlayer, GoogleSheetsGateway, MinesweeperAnalyzer, OrderHandler,
+    AudioPlayer, MinesweeperAnalyzer, OrderHandler,
     SkillCommands, TextSynthesizer,
 };
 
@@ -28,7 +28,6 @@ fn resolve_model(name: &str) -> Option<&'static str> {
 
 pub struct TelegramBot {
     gateway: Arc<dyn TelegramGateway>,
-    sheets: Arc<dyn GoogleSheetsGateway>,
     synthesizer: Arc<dyn TextSynthesizer>,
     minesweeper: Arc<dyn MinesweeperAnalyzer>,
     skills: Arc<dyn SkillCommands>,
@@ -40,7 +39,6 @@ impl TelegramBot {
     #[allow(clippy::too_many_arguments)]
     pub fn with_injectable(
         gateway: Arc<dyn TelegramGateway>,
-        sheets: Arc<dyn GoogleSheetsGateway>,
         synthesizer: Arc<dyn TextSynthesizer>,
         minesweeper: Arc<dyn MinesweeperAnalyzer>,
         skills: Arc<dyn SkillCommands>,
@@ -48,7 +46,7 @@ impl TelegramBot {
         allowed_chat_ids: Vec<i64>,
     ) -> Self {
         Self {
-            gateway, sheets, synthesizer,
+            gateway, synthesizer,
             minesweeper, skills, audio_player, allowed_chat_ids,
         }
     }
@@ -103,7 +101,6 @@ impl TelegramBot {
         make_handler: &dyn Fn() -> Arc<dyn OrderHandler>,
         handlers: &mut HashMap<i64, Arc<dyn OrderHandler>>,
         voice_mode_chats: &mut HashSet<i64>,
-        pending_auth_chats: &mut HashMap<i64, Instant>,
         pending_image_chats: &mut HashMap<i64, String>,
         current_model: &mut String,
         offset: &mut i64,
@@ -175,37 +172,7 @@ impl TelegramBot {
 /volume [+N|-N|N] — consulta o ajusta el volumen del altavoz\n\
 /model [haiku|sonnet|opus] — cambia el modelo (actual: {current_model})\n\
 /bus          — próximas salidas hacia Alameda Principal\n\
-/cuentas      — analiza tu hoja de cálculo de Google Sheets\n\
-/auth_google  — inicia el flujo OAuth2 para Google Sheets\n\
 /connect_speakers — conecta el altavoz Bluetooth"));
-                continue;
-            }
-
-            if let Some(&started) = pending_auth_chats.get(&update.chat_id) {
-                if !text.starts_with('/') {
-                    pending_auth_chats.remove(&update.chat_id);
-                    let msg = if started.elapsed() > Duration::from_secs(600) {
-                        "El código ha expirado. Usa /auth_google para obtener uno nuevo.".to_string()
-                    } else {
-                        match self.sheets.exchange_code(text) {
-                            Ok(()) => "Token de Google guardado. Ya puedes usar /cuentas.".to_string(),
-                            Err(e) => format!("Error al intercambiar el código: {e}"),
-                        }
-                    };
-                    self.gateway.post_message(update.chat_id, &msg);
-                    continue;
-                }
-            }
-
-            if text == "/auth_google" {
-                let msg = match self.sheets.auth_url() {
-                    Some(url) => {
-                        pending_auth_chats.insert(update.chat_id, Instant::now());
-                        format!("Abre este enlace en tu navegador y autoriza el acceso:\n\n{url}\n\nCuando Google te muestre el código, envíamelo aquí.")
-                    }
-                    None => "GOOGLE_CLIENT_ID no configurado en .env.".to_string(),
-                };
-                self.gateway.post_message(update.chat_id, &msg);
                 continue;
             }
 
@@ -247,18 +214,6 @@ impl TelegramBot {
                     }
                 };
                 self.gateway.post_message(update.chat_id, &msg);
-                continue;
-            }
-
-            if text == "/cuentas" {
-                let gateway = Arc::clone(&self.gateway);
-                let skills  = Arc::clone(&self.skills);
-                let model   = current_model.clone();
-                let chat_id = update.chat_id;
-                handles.push(thread::spawn(move || {
-                    let msg = skills.cuentas(&model);
-                    gateway.post_message(chat_id, &msg);
-                }));
                 continue;
             }
 
@@ -331,7 +286,6 @@ impl TelegramBot {
         let mut offset: i64 = 0;
         let mut handlers: HashMap<i64, Arc<dyn OrderHandler>> = HashMap::new();
         let mut voice_mode_chats: HashSet<i64> = HashSet::new();
-        let mut pending_auth_chats: HashMap<i64, Instant> = HashMap::new();
         let mut pending_image_chats: HashMap<i64, String> = HashMap::new();
         let mut current_model: String = MODEL_HAIKU.to_string();
 
@@ -373,7 +327,7 @@ impl TelegramBot {
             let prev_offset = offset;
             self.run_once(
                 &make_handler, &mut handlers, &mut voice_mode_chats,
-                &mut pending_auth_chats, &mut pending_image_chats,
+                &mut pending_image_chats,
                 &mut current_model, &mut offset, &speak_text, &on_voice,
             );
             // When no updates were processed (fetch error or truly empty),

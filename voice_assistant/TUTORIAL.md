@@ -83,7 +83,6 @@ TELEGRAM_BOT_TOKEN=               # Only if using Telegram (see Step 6)
 TELEGRAM_ALLOWED_CHAT_IDS=        # Leave empty to allow any chat
 DOCKER_USERNAME=                  # Your Docker Hub username (only for publishing)
 BT_SPEAKER_MAC=                   # MAC address of your Bluetooth speaker (optional)
-CUENTAS_SHEET_NAME=               # Name of your spreadsheet (optional)
 ```
 
 Save the file.
@@ -174,55 +173,6 @@ Type them directly in the chat:
 | `/usage` | Show how many tokens and money you have spent |
 | `/voice_mode` | Toggle spoken responses through the computer speaker |
 | `/volume [+N\|-N\|N]` | Raise, lower or check the volume (e.g. `/volume 70`, `/volume +10`) |
-| `/cuentas` | Analyse your Google Sheets spreadsheet (requires setup) |
-| `/auth_google` | Connect your Google account to use `/cuentas` |
-
----
-
-## Step 8 — Connect Google Sheets for `/cuentas` (optional)
-
-This allows the bot to analyse your personal spreadsheet.
-
-### 8.1 Create credentials in Google Cloud
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create a new project (or use an existing one)
-3. Enable the **Google Sheets API**: APIs & Services → Library → search "Google Sheets API" → Enable
-4. Go to APIs & Services → Credentials → Create Credentials → **OAuth 2.0 Client ID**
-5. Application type: **Desktop app**
-6. Download or copy the **Client ID** and **Client Secret**
-
-### 8.2 Configure the consent screen
-
-1. Go to APIs & Services → OAuth consent screen
-2. Type: **External**
-3. Fill in the app name and email
-4. Under **Scopes**, add: `https://www.googleapis.com/auth/spreadsheets.readonly`
-5. Under **Test users**, add your Google email
-6. Save
-
-### 8.3 Add the credentials to `.env`
-
-```env
-CUENTAS_SHEET_NAME=My Spreadsheet       # Exact name of your sheet
-GOOGLE_SPREADSHEET_ID=                  # ID from the sheet URL (see below)
-GOOGLE_CLIENT_ID=                       # Client ID from the previous step
-GOOGLE_CLIENT_SECRET=                   # Client Secret from the previous step
-GOOGLE_REFRESH_TOKEN=                   # Generated in step 8.4
-```
-
-The **Spreadsheet ID** is in the URL of your sheet:
-`https://docs.google.com/spreadsheets/d/`**`THIS_IS_THE_ID`**`/edit`
-
-### 8.4 Authorise access from Telegram
-
-With the bot running, write to it:
-
-```
-/auth_google
-```
-
-The bot will send you a link. Open it in the browser, accept the permissions, and copy the code that appears. Send it back to the bot. Done — the token is saved and you can now use `/cuentas`.
 
 ---
 
@@ -236,9 +186,6 @@ Speak closer to the microphone or try a lower threshold. You can also change the
 
 **"No tienes tokens disponibles" (No tokens available)**
 Your Anthropic account has no credit. Top it up at [console.anthropic.com](https://console.anthropic.com).
-
-**"Error al acceder a Google Sheets" (Error accessing Google Sheets)**
-Run `/auth_google` again to renew the token.
 
 **Telegram bot not responding**
 Verify that `TELEGRAM_BOT_TOKEN` is correct in `.env` and that the container is running (`docker ps`).
@@ -342,7 +289,6 @@ TELEGRAM_BOT_TOKEN=               # Sólo si usas Telegram (ver Paso 6)
 TELEGRAM_ALLOWED_CHAT_IDS=        # Deja vacío para permitir cualquier chat
 DOCKER_USERNAME=                  # Tu usuario de Docker Hub (sólo para publicar)
 BT_SPEAKER_MAC=                   # MAC de tu altavoz Bluetooth (opcional)
-CUENTAS_SHEET_NAME=               # Nombre de tu hoja de cálculo (opcional)
 ```
 
 Guarda el fichero.
@@ -433,55 +379,6 @@ Escríbelos directamente en el chat:
 | `/usage` | Muestra cuántos tokens y dinero llevas gastado |
 | `/voice_mode` | Activa/desactiva que el bot hable por el altavoz del ordenador |
 | `/volume [+N\|-N\|N]` | Sube, baja o consulta el volumen (ej: `/volume 70`, `/volume +10`) |
-| `/cuentas` | Analiza tu hoja de cálculo de Google Sheets (requiere configuración) |
-| `/auth_google` | Conecta tu cuenta de Google para usar `/cuentas` |
-
----
-
-## Paso 8 — Conectar Google Sheets para `/cuentas` (opcional)
-
-Esto permite que el bot analice tu hoja de cálculo personal.
-
-### 8.1 Crea credenciales en Google Cloud
-
-1. Ve a [Google Cloud Console](https://console.cloud.google.com)
-2. Crea un proyecto nuevo (o usa uno existente)
-3. Activa la **Google Sheets API**: APIs y servicios → Biblioteca → busca "Google Sheets API" → Activar
-4. Ve a APIs y servicios → Credenciales → Crear credenciales → **ID de cliente OAuth 2.0**
-5. Tipo de aplicación: **Aplicación de escritorio**
-6. Descarga o copia el **Client ID** y el **Client Secret**
-
-### 8.2 Configura la pantalla de consentimiento
-
-1. Ve a APIs y servicios → Pantalla de consentimiento de OAuth
-2. Tipo: **Externo**
-3. Rellena nombre de la app y correo
-4. En **Ámbitos**, añade: `https://www.googleapis.com/auth/spreadsheets.readonly`
-5. En **Usuarios de prueba**, añade tu correo de Google
-6. Guarda
-
-### 8.3 Añade las credenciales al `.env`
-
-```env
-CUENTAS_SHEET_NAME=Cuentas Personales   # Nombre exacto de tu hoja
-GOOGLE_SPREADSHEET_ID=                  # ID de la URL de tu hoja (ver abajo)
-GOOGLE_CLIENT_ID=                       # Client ID del paso anterior
-GOOGLE_CLIENT_SECRET=                   # Client Secret del paso anterior
-GOOGLE_REFRESH_TOKEN=                   # Se genera en el paso 8.4
-```
-
-El **Spreadsheet ID** está en la URL de tu hoja:
-`https://docs.google.com/spreadsheets/d/`**`ESTE_ES_EL_ID`**`/edit`
-
-### 8.4 Autoriza el acceso desde Telegram
-
-Con el bot corriendo, escríbele:
-
-```
-/auth_google
-```
-
-El bot te enviará un enlace. Ábrelo en el navegador, acepta los permisos, y copia el código que aparece. Envíaselo al bot. Listo — el token queda guardado y ya puedes usar `/cuentas`.
 
 ---
 
@@ -495,9 +392,6 @@ Habla más cerca del micrófono o prueba con un umbral más bajo. También puede
 
 **"No tienes tokens disponibles"**
 Tu cuenta de Anthropic no tiene crédito. Recárgala en [console.anthropic.com](https://console.anthropic.com).
-
-**"Error al acceder a Google Sheets"**
-Ejecuta `/auth_google` de nuevo para renovar el token.
 
 **El bot de Telegram no responde**
 Verifica que `TELEGRAM_BOT_TOKEN` es correcto en `.env` y que el contenedor está corriendo (`docker ps`).

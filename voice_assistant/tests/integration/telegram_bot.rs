@@ -6,7 +6,6 @@ use cucumber::{given, when, then, World};
 
 use voice_assistant::domain::ports::OrderHandler;
 use voice_assistant::infrastructure::audio::rodio_audio_player::RodioAudioPlayer;
-use voice_assistant::infrastructure::google_sheets::GoogleSheetsGatewayImpl;
 use voice_assistant::infrastructure::minesweeper::MinesweeperService;
 use voice_assistant::infrastructure::tts::piper_text_synthesizer::PiperTextSynthesizer;
 use voice_assistant::infrastructure::telegram::telegram_bot::{TelegramBot, TelegramGateway, TelegramUpdate};
@@ -71,7 +70,6 @@ pub struct TelegramWorld {
     handler: Arc<FakeHandler>,
     handlers: HashMap<i64, Arc<dyn OrderHandler>>,
     voice_mode_chats: HashSet<i64>,
-    pending_auth_chats: HashMap<i64, Instant>,
     pending_image_chats: HashMap<i64, String>,
     current_model: String,
     offset: i64,
@@ -95,7 +93,6 @@ impl Default for TelegramWorld {
             handler: Arc::clone(&handler),
             handlers: HashMap::new(),
             voice_mode_chats: HashSet::new(),
-            pending_auth_chats: HashMap::new(),
             pending_image_chats: HashMap::new(),
             current_model: "claude-haiku-4-5-20251001".to_string(),
             offset: 0,
@@ -111,10 +108,9 @@ fn given_bot(world: &mut TelegramWorld) {
     world.gateway = Arc::clone(&gateway);
     world.bot = Some(TelegramBot::with_injectable(
         Arc::clone(&gateway) as Arc<dyn TelegramGateway>,
-        Arc::new(GoogleSheetsGatewayImpl),
         Arc::new(PiperTextSynthesizer),
         Arc::new(MinesweeperService),
-        Arc::new(ClaudeSkillCommands::new(Arc::new(GoogleSheetsGatewayImpl))),
+        Arc::new(ClaudeSkillCommands),
         Arc::new(RodioAudioPlayer),
         vec![],
     ));
@@ -126,10 +122,9 @@ fn given_bot_restricted(world: &mut TelegramWorld, chat_id: i64) {
     world.gateway = Arc::clone(&gateway);
     world.bot = Some(TelegramBot::with_injectable(
         Arc::clone(&gateway) as Arc<dyn TelegramGateway>,
-        Arc::new(GoogleSheetsGatewayImpl),
         Arc::new(PiperTextSynthesizer),
         Arc::new(MinesweeperService),
-        Arc::new(ClaudeSkillCommands::new(Arc::new(GoogleSheetsGatewayImpl))),
+        Arc::new(ClaudeSkillCommands),
         Arc::new(RodioAudioPlayer),
         vec![chat_id],
     ));
@@ -219,7 +214,6 @@ fn when_run_once(world: &mut TelegramWorld) {
         make_handler,
         &mut world.handlers,
         &mut world.voice_mode_chats,
-        &mut world.pending_auth_chats,
         &mut world.pending_image_chats,
         &mut world.current_model,
         &mut world.offset,
@@ -247,7 +241,6 @@ fn when_run_once_again(world: &mut TelegramWorld, text: String, chat_id: i64) {
         make_handler,
         &mut world.handlers,
         &mut world.voice_mode_chats,
-        &mut world.pending_auth_chats,
         &mut world.pending_image_chats,
         &mut world.current_model,
         &mut world.offset,

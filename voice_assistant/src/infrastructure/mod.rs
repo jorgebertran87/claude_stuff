@@ -2,7 +2,6 @@ pub mod audio;
 pub mod tts;
 pub mod telegram;
 pub mod claude_handler;
-pub mod google_sheets;
 pub mod minesweeper;
 pub mod skill_loader;
 pub mod token_usage;

@@ -56,11 +56,6 @@ path = "tests/integration/transcriber.rs"
 harness = false
 
 [[test]]
-name = "google_sheets"
-path = "tests/integration/google_sheets.rs"
-harness = false
-
-[[test]]
 name = "audio"
 path = "tests/integration/audio.rs"
 harness = false

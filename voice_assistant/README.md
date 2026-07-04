@@ -123,11 +123,6 @@ All configuration lives in `rust/.env`. See `rust/.env.example`.
 | `TELEGRAM_BOT_TOKEN` | _(required for `--telegram`)_ | Bot token from BotFather |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | _(empty = allow all)_ | Comma-separated list of chat IDs that may use the bot |
 | `BT_SPEAKER_MAC` | _(optional)_ | Bluetooth MAC address of the speaker; disconnected automatically after 5 min of voice inactivity |
-| `CUENTAS_SHEET_NAME` | `Cuentas Personales` | Spreadsheet name shown in the analysis prompt; defaults to `Cuentas Personales` |
-| `GOOGLE_SPREADSHEET_ID` | _(required for `/cuentas`)_ | ID from the Google Sheets URL (`/spreadsheets/d/<ID>/`) |
-| `GOOGLE_CLIENT_ID` | _(required for `/cuentas`)_ | OAuth2 client ID from Google Cloud Console |
-| `GOOGLE_CLIENT_SECRET` | _(required for `/cuentas`)_ | OAuth2 client secret |
-| `GOOGLE_REFRESH_TOKEN` | _(required for `/cuentas`)_ | Long-lived refresh token (see setup below) |
 
 ### `.env.example`
 
@@ -139,7 +134,6 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_CHAT_IDS=
 DOCKER_USERNAME=
 BT_SPEAKER_MAC=
-CUENTAS_SHEET_NAME=
 ```
 
 ## Running with Docker
@@ -216,8 +210,6 @@ Set `TELEGRAM_BOT_TOKEN` in `.env` before starting. Each Telegram chat gets its 
 | `/usage` | Show a summary of token usage and cost logged in `.orders_tokens` |
 | `/voice_mode` | Toggle spoken audio responses for the current chat (plays through the local speaker) |
 | `/volume [+N\|-N\|N]` | Adjust or query the speaker volume (e.g. `/volume 70`, `/volume +10`, `/volume`) |
-| `/auth_google` | Start the Google OAuth2 flow; sends an authorization URL, then accepts the code to save the refresh token |
-| `/cuentas` | Fetch the configured Google Sheet and return a Claude analysis |
 
 If `TELEGRAM_ALLOWED_CHAT_IDS` is empty, the bot responds to any chat. Populate it with a comma-separated list of numeric chat IDs to restrict access. Messages containing only `/commands` other than the ones listed above are silently ignored. Responses longer than 4 096 characters are split and sent as multiple messages.
 
@@ -309,19 +301,6 @@ If the wake word is recognised alone, a beep prompts you to speak the order sepa
 **Alexa/Spotify handling** — if the response contains "alexa", "spotify", and a quoted song or playlist title, `alexa_spotify_title` extracts the title and detects its language. The entire voice command is then rebuilt and synthesised as a single TTS call in that language: Spanish titles produce `"Alexa, pon X en Spotify"`, English titles produce `"Alexa, play X on Spotify"`. This avoids any multilingual segment splitting and the audio gaps it caused.
 
 **Voice mode (Telegram)** — `/voice_mode` toggles spoken audio output for a chat. When active, Claude's text responses are synthesised with gTTS and played through the local speaker (PulseAudio). Alexa+Spotify orders are always spoken regardless of voice mode. `/volume [+N|-N|N]` adjusts the PulseAudio default sink volume via `pactl` and replies with the resulting percentage.
-
-**`/cuentas` — Google Sheets analysis** — fetches all rows from the spreadsheet identified by `GOOGLE_SPREADSHEET_ID` using the Google Sheets API v4 with an OAuth2 refresh-token flow, then forwards the data to Claude for analysis. One-time OAuth2 setup:
-
-```bash
-# 1. Create an OAuth2 credential (Desktop app) in Google Cloud Console
-#    and enable the Google Sheets API.
-# 2. Get the auth code URL (replace CLIENT_ID):
-open "https://accounts.google.com/o/oauth2/auth?client_id=CLIENT_ID&redirect_uri=urn:ietf:wg:oauth:2.0:oob&response_type=code&scope=https://www.googleapis.com/auth/spreadsheets.readonly"
-# 3. Exchange the code for tokens (replace CLIENT_ID, CLIENT_SECRET, CODE):
-curl -X POST https://oauth2.googleapis.com/token \
-  -d "client_id=CLIENT_ID&client_secret=CLIENT_SECRET&code=CODE&grant_type=authorization_code&redirect_uri=urn:ietf:wg:oauth:2.0:oob"
-# 4. Copy the refresh_token value into .env as GOOGLE_REFRESH_TOKEN.
-```
 
 **Bluetooth auto-disconnect** — when `BT_SPEAKER_MAC` is set, a background thread checks every 30 seconds whether 5 minutes have elapsed since the last audio playback (voice mode response or Alexa+Spotify order in Telegram mode; any voice order in listen mode). If so, `bluetoothctl disconnect <MAC>` is called automatically. The timer resets after each playback and after each disconnect.
 
