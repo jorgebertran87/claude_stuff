@@ -79,3 +79,8 @@ harness = false
 name = "deepseek_order_handler"
 path = "tests/unit/deepseek_order_handler.rs"
 harness = false
+
+[[test]]
+name = "search_prompt_assembly"
+path = "tests/unit/search_prompt_assembly.rs"
+harness = false

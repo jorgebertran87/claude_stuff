@@ -90,6 +90,7 @@ COPY tests/unit/ tests/unit/
 COPY tests/integration/ tests/integration/
 COPY features/ features/
 COPY tests/files/ tests/files/
+COPY .claude/commands/ .claude/commands/
 
 # ── Stage 5: mutants (test-base + cargo-mutants + test files) ─────────────────
 FROM test-base AS mutants

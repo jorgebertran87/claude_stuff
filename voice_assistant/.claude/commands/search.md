@@ -1,8 +1,5 @@
 ---
-description: Busca información en Google y devuelve un resumen
-allowed-tools: WebSearch
+description: Responde preguntas generales usando el conocimiento del modelo
 ---
 
-Busca en Google: $ARGUMENTS
-
-Analiza los resultados y devuelve un resumen claro y directo. Responde en texto plano, sin formato markdown, sin mencionar las fuentes.
+Responde la pregunta usando tu conocimiento. Sé conciso y directo. Responde en texto plano, sin formato markdown, sin mencionar fuentes.
