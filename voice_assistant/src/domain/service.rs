@@ -88,6 +88,20 @@ impl VoiceListenerService {
         (response, stop_signal, melody_thread)
     }
 
+    /// Checks whether `order` is a session-management meta-command.
+    ///
+    /// Returns `Some(confirmation_message)` if the order was handled internally
+    /// (e.g. resetting the session).  Returns `None` if the order should be
+    /// forwarded to the [`OrderHandler`].
+    pub fn handle_meta_commands(&self, order: &str) -> Option<String> {
+        if order.trim().to_lowercase() == "elimina la sesión" {
+            self.order_handler.reset_session();
+            Some("Sesión eliminada.".to_string())
+        } else {
+            None
+        }
+    }
+
     pub fn run(&self) {
         println!("Voice Order Listener");
         println!("====================");
@@ -119,6 +133,15 @@ impl VoiceListenerService {
             if let Some(ref order_text) = order {
                 *last_activity.lock().unwrap() = Instant::now();
                 println!("Order received: {order_text:?}");
+
+                // Session-management meta-commands are handled locally.
+                if let Some(confirmation) = self.handle_meta_commands(order_text) {
+                    println!("Claudito: {confirmation}");
+                    self.speaker.speak(&confirmation, &self.language, None);
+                    waiting_for_answer = false;
+                    continue;
+                }
+
                 let (response, stop_melody, melody_thread) =
                     self.handle_with_melody(order_text);
                 println!("Claudito: {response}");
@@ -128,13 +151,9 @@ impl VoiceListenerService {
                     waiting_for_answer = true;
                 } else {
                     waiting_for_answer = response.trim_end().ends_with('?');
-                    if !waiting_for_answer {
-                        self.order_handler.reset_session();
-                    }
                 }
             } else {
                 waiting_for_answer = false;
-                self.order_handler.reset_session();
             }
         }
     }

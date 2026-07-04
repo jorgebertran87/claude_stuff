@@ -26,3 +26,26 @@ Feature: Conversation flow and state transitions
     When the speech is interrupted
     Then waiting_for_answer is set to True
     And the next order is captured directly without requiring the wake word again
+
+  Scenario: "Elimina la sesión" voice command resets the session
+    Given a VoiceListenerService with a FakeOrderHandler
+    When the service handles the meta-command "Elimina la sesión"
+    Then reset_session is called on the order handler
+    And the confirmation message is "Sesión eliminada."
+
+  Scenario: "elimina la sesión" with different casing also resets the session
+    Given a VoiceListenerService with a FakeOrderHandler
+    When the service handles the meta-command "ELIMINA LA SESIÓN"
+    Then reset_session is called on the order handler
+
+  Scenario: A normal order is not recognized as a meta-command
+    Given a VoiceListenerService with a FakeOrderHandler
+    When the service handles the meta-command "qué hora es"
+    Then reset_session is not called on the order handler
+    And no confirmation message is returned
+
+  Scenario: A phrase similar to the reset command does not trigger reset
+    Given a VoiceListenerService with a FakeOrderHandler
+    When the service handles the meta-command "elimina la cuenta"
+    Then reset_session is not called on the order handler
+    And no confirmation message is returned
