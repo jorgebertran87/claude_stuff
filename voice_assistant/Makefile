@@ -92,6 +92,7 @@ deploy:
 	$(MAKE) build-prod
 	scp Makefile run.sh docker-compose.yml pequenin:~/pequenin
 	scp -r .claude pequenin:~/pequenin/
+	scp -r searxng pequenin:~/pequenin/
 	ssh pequenin 'cd ~/pequenin && docker compose down --rmi all'
 
 connect-speaker:
