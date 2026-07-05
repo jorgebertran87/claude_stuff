@@ -16,6 +16,8 @@ pub fn detect_intent(order: &str) -> &'static str {
         || lower.contains("weather")
     {
         "weather"
+    } else if lower.contains("catastro") || lower.contains("catastral") {
+        "catastro"
     } else {
         "search"
     }

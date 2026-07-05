@@ -1,35 +1,30 @@
 ---
 description: Consulta datos catastrales de una propiedad por referencia catastral
-allowed-tools: Bash
 ---
 
-Usa el tool Bash para ejecutar SIEMPRE este comando y obtener los datos catastrales reales:
+Usa url_fetch para consultar la API del Catastro con esta URL exacta:
 
-```bash
-curl -s --max-time 15 -A "Mozilla/5.0" \
-  "https://ovc.catastro.meh.es/OVCServWeb/OVCWcfCallejero/COVCCallejero.svc/json/Consulta_DNPRC?RefCat=REFERENCIA"
+```
+https://ovc.catastro.meh.es/OVCServWeb/OVCWcfCallejero/COVCCallejero.svc/json/Consulta_DNPRC?RefCat=REFERENCIA
 ```
 
 Sustituye `REFERENCIA` por la referencia catastral proporcionada ($ARGUMENTS) o extraída del contexto. La referencia catastral puede estar en dos formatos:
 - **Urbana**: 20 caracteres (ej: `5989208UF6558N0003PX`)
 - **Rústica**: 13 caracteres (ej: `13077A01800039`)
 
-Si la respuesta JSON falla, usa el endpoint REST alternativo:
-```bash
-curl -s --max-time 15 -A "Mozilla/5.0" \
-  "https://ovc.catastro.meh.es/OVCServWeb/OVCWcfCallejero/COVCCallejero.svc/rest/Consulta_DNPRC?RefCat=REFERENCIA"
-```
+Si la URL con `/json/` falla, prueba con `/rest/` (devuelve XML en lugar de JSON).
 
-## Interpretación de la respuesta JSON
+## Interpretación de la respuesta
 
-Extrae y presenta estos campos:
+El JSON devuelto contiene los datos catastrales no protegidos. Extrae y presenta estos campos:
 - **Dirección**: `bico.bi.dt.ldt` — dirección postal completa
 - **Uso**: `bico.bi.debi.luso` — tipo de uso (Residencial, Industrial, etc.)
-- **Superficie**: `bico.bi.debi.sfc` — metros cuadrados construidos
-- **Año construcción**: `bico.bi.debi.ant` — antigüedad
+- **Superficie construida**: `bico.bi.debi.sfc` — metros cuadrados
+- **Año de construcción**: `bico.bi.debi.ant` — antigüedad
 - **Coeficiente de participación**: `bico.bi.debi.cpt` — porcentaje sobre el total de la finca
 - **Tipo de finca**: `bico.bi.finca.ltp` — descripción de la parcela
-- **Construcciones**: array `bico.bi.lcons[]` — para cada una, mostrar:
+- **Superficie de suelo**: `bico.bi.finca.dff.ss` — metros cuadrados de parcela
+- **Construcciones**: array `bico.bi.lcons[]` — para cada elemento, mostrar:
   - `lcd`: localización (VIVIENDA, ALMACEN, etc.)
   - `dfcons.stl`: superficie en m²
   - `dvcons.dtip`: descripción del tipo constructivo
@@ -42,6 +37,7 @@ Responde en texto plano, sin formato markdown. Presenta los datos agrupados:
 Dirección: [dirección completa]
 Uso: [tipo de uso]
 Superficie construida: [sfc] m²
+Superficie de parcela: [ss] m²
 Año de construcción: [ant]
 Coeficiente de participación: [cpt]%
 Tipo de finca: [descripción]

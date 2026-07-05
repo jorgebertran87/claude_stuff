@@ -57,3 +57,18 @@ Feature: Skill routing by order content
     Given an order containing "el autobús 14"
     When the system detects the intent
     Then the selected skill is "bus"
+
+  Scenario: Order about a catastral reference selects catastro
+    Given an order containing "referencia catastral 5989208UF6558N0003PX"
+    When the system detects the intent
+    Then the selected skill is "catastro"
+
+  Scenario: Order mentioning catastro selects catastro
+    Given an order containing "consulta el catastro de esta finca"
+    When the system detects the intent
+    Then the selected skill is "catastro"
+
+  Scenario: Order asking to investigate a catastral reference selects catastro
+    Given an order containing "investiga sobre esta referencia catastral"
+    When the system detects the intent
+    Then the selected skill is "catastro"
