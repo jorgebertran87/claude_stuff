@@ -251,10 +251,17 @@ impl TelegramBot {
                 .entry(update.chat_id)
                 .or_insert_with(make_handler);
 
+            let cap = update.text.len().min(50);
+            // Snap back to the nearest UTF-8 character boundary so we
+            // never panic on multi-byte characters (e.g. á, ñ, emoji).
+            let mut truncate_at = cap;
+            while truncate_at > 0 && !update.text.is_char_boundary(truncate_at) {
+                truncate_at -= 1;
+            }
             eprintln!(
                 "[telegram chat={} text={:?}]",
                 update.chat_id,
-                &update.text[..update.text.len().min(50)]
+                &update.text[..truncate_at]
             );
             let response = handler.handle(&update.text);
             let lower = response.to_lowercase();
