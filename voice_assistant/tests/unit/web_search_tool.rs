@@ -1,8 +1,7 @@
 use cucumber::{given, then, when, World};
 use deepseek_client::{ToolCall, ToolHandler};
 use serde_json::json;
-use std::sync::Arc;
-use voice_assistant::infrastructure::web_search::DuckDuckGoSearchTool;
+use voice_assistant::infrastructure::web_search::SearXngSearchTool;
 
 // Re-export needed because ToolHandler is in deepseek_client
 use wiremock::matchers::{method, path, query_param};
@@ -12,7 +11,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[derive(World)]
 pub struct WebSearchWorld {
-    search_tool: Option<DuckDuckGoSearchTool>,
+    search_tool: Option<SearXngSearchTool>,
     result: Option<Result<String, String>>,
     server: Option<MockServer>,
 }
@@ -35,77 +34,72 @@ impl Default for WebSearchWorld {
     }
 }
 
-// ── DuckDuckGo Lite HTML fixture ──────────────────────────────────────────────
+// ── SearXNG JSON fixtures ─────────────────────────────────────────────────────
 
-fn search_results_html() -> String {
-    r#"<!DOCTYPE html>
-<html>
-<body>
-<div class="filters"></div>
-<table>
-  <tr>
-    <td><a href="https://www.rust-lang.org/" rel="nofollow">Rust Programming Language</a></td>
-  </tr>
-  <tr>
-    <td class="result-snippet">A language empowering everyone to build reliable and efficient software.</td>
-  </tr>
-</table>
-<table>
-  <tr>
-    <td><a href="https://en.wikipedia.org/wiki/Rust_(programming_language)" rel="nofollow">Rust (programming language) - Wikipedia</a></td>
-  </tr>
-  <tr>
-    <td class="result-snippet">Rust is a general-purpose programming language emphasizing performance, type safety, and concurrency.</td>
-  </tr>
-</table>
-</body>
-</html>"#.to_string()
+fn search_results_json() -> serde_json::Value {
+    json!({
+        "query": "rust programming language",
+        "results": [
+            {
+                "title": "Rust Programming Language",
+                "url": "https://www.rust-lang.org/",
+                "content": "A language empowering everyone to build reliable and efficient software.",
+                "engine": "duckduckgo"
+            },
+            {
+                "title": "Rust (programming language) - Wikipedia",
+                "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+                "content": "Rust is a general-purpose programming language emphasizing performance, type safety, and concurrency.",
+                "engine": "wikipedia"
+            }
+        ]
+    })
 }
 
-fn no_results_html() -> String {
-    r#"<!DOCTYPE html>
-<html>
-<body>
-<div class="no-results">No results found.</div>
-</body>
-</html>"#.to_string()
+fn no_results_json() -> serde_json::Value {
+    json!({
+        "query": "xyznonexistent123",
+        "results": []
+    })
 }
 
 // ── Given steps ────────────────────────────────────────────────────────────────
 
-#[given(regex = r#"^the DuckDuckGo Lite API returns search results for "(.+)"$"#)]
-async fn given_search_results(world: &mut WebSearchWorld, _query: String) {
+#[given(regex = r#"^the SearXNG API returns search results for "(.+)"$"#)]
+async fn given_search_results(world: &mut WebSearchWorld, query: String) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/lite/"))
-        .and(query_param("q", _query.as_str()))
+        .and(path("/search"))
+        .and(query_param("format", "json"))
+        .and(query_param("q", query.as_str()))
         .respond_with(ResponseTemplate::new(200)
-            .set_body_string(search_results_html())
-            .insert_header("Content-Type", "text/html"))
+            .set_body_json(search_results_json())
+            .insert_header("Content-Type", "application/json"))
         .mount(&server)
         .await;
     world.server = Some(server);
 }
 
-#[given(regex = r#"^the DuckDuckGo Lite API returns no results for "(.+)"$"#)]
-async fn given_no_results(world: &mut WebSearchWorld, _query: String) {
+#[given(regex = r#"^the SearXNG API returns no results for "(.+)"$"#)]
+async fn given_no_results(world: &mut WebSearchWorld, query: String) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/lite/"))
-        .and(query_param("q", _query.as_str()))
+        .and(path("/search"))
+        .and(query_param("format", "json"))
+        .and(query_param("q", query.as_str()))
         .respond_with(ResponseTemplate::new(200)
-            .set_body_string(no_results_html())
-            .insert_header("Content-Type", "text/html"))
+            .set_body_json(no_results_json())
+            .insert_header("Content-Type", "application/json"))
         .mount(&server)
         .await;
     world.server = Some(server);
 }
 
-#[given("the DuckDuckGo Lite API returns HTTP 500")]
+#[given("the SearXNG API returns HTTP 500")]
 async fn given_http_500(world: &mut WebSearchWorld) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/lite/"))
+        .and(path("/search"))
         .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
         .mount(&server)
         .await;
@@ -117,8 +111,8 @@ async fn given_http_500(world: &mut WebSearchWorld) {
 #[when(regex = r#"^the web_search tool executes with query "(.+)"$"#)]
 fn when_execute_search(world: &mut WebSearchWorld, query: String) {
     let server_uri = world.server.as_ref().expect("mock server not started").uri();
-    // Point the tool at our mock server instead of real DuckDuckGo
-    let tool = DuckDuckGoSearchTool::with_base_url(server_uri);
+    // Point the tool at our mock server instead of real SearXNG.
+    let tool = SearXngSearchTool::with_base_url(server_uri);
     let call = ToolCall {
         id: "call_1".into(),
         name: "web_search".into(),

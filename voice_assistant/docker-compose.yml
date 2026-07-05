@@ -1,4 +1,20 @@
 services:
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/search?format=json&q=health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
   minesweeper:
     image: ${MINESWEEPER_IMAGE:-minesweeper-detector}
     network_mode: host
@@ -13,6 +29,8 @@ services:
     image: ${RUN_IMAGE:-voice-assistant-rust}
     network_mode: host
     depends_on:
+      searxng:
+        condition: service_healthy
       minesweeper:
         condition: service_healthy
     env_file: .env
@@ -23,6 +41,7 @@ services:
       SDL_AUDIODRIVER: pulse
       SDL_VIDEODRIVER: dummy
       MINESWEEPER_URL: http://localhost:5000
+      SEARXNG_URL: http://localhost:8080
     volumes:
       - /run/user/${UID}/pulse/native:/tmp/pulse.sock
       - ${PWD}/.claude:/app/.claude:ro

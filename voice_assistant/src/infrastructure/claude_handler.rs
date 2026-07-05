@@ -78,14 +78,14 @@ impl OrderHandler for ClaudeCodeHandler {
 
 /// Dispatches tool calls to the appropriate handler by name.
 pub struct ToolOrchestrator {
-    search: crate::infrastructure::web_search::DuckDuckGoSearchTool,
+    search: crate::infrastructure::web_search::SearXngSearchTool,
     fetcher: crate::infrastructure::url_fetcher::UrlFetcherTool,
 }
 
 impl ToolOrchestrator {
     pub fn new() -> Self {
         Self {
-            search: crate::infrastructure::web_search::DuckDuckGoSearchTool::new(),
+            search: crate::infrastructure::web_search::SearXngSearchTool::new(),
             fetcher: crate::infrastructure::url_fetcher::UrlFetcherTool::new(),
         }
     }

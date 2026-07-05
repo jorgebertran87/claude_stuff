@@ -6,20 +6,20 @@ const MAX_RESULTS: usize = 5;
 /// Maximum characters per snippet to keep results concise.
 const MAX_SNIPPET_CHARS: usize = 300;
 
-/// Searches the web via DuckDuckGo Lite (no API key required).
+/// Searches the web via a self-hosted SearXNG instance (JSON API).
 ///
-/// Scrapes `https://lite.duckduckgo.com/lite/` which returns clean,
-/// no-JS HTML.  Parses the result tables to extract title, snippet,
-/// and URL for each hit.
-pub struct DuckDuckGoSearchTool {
+/// Queries `GET /search?format=json&q=...` and extracts title, url,
+/// and content (snippet) from each result in the JSON response.
+pub struct SearXngSearchTool {
     base_url: String,
 }
 
-impl DuckDuckGoSearchTool {
-    /// Create a tool pointed at the real DuckDuckGo Lite endpoint.
+impl SearXngSearchTool {
+    /// Create a tool pointed at the local SearXNG service (Docker).
     pub fn new() -> Self {
         Self {
-            base_url: "https://lite.duckduckgo.com".to_string(),
+            base_url: std::env::var("SEARXNG_URL")
+                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
         }
     }
 
@@ -29,7 +29,7 @@ impl DuckDuckGoSearchTool {
     }
 }
 
-impl ToolHandler for DuckDuckGoSearchTool {
+impl ToolHandler for SearXngSearchTool {
     fn execute(&self, call: &ToolCall) -> Result<String, String> {
         let query = call
             .arguments
@@ -38,13 +38,13 @@ impl ToolHandler for DuckDuckGoSearchTool {
             .ok_or_else(|| "Missing 'query' argument".to_string())?;
 
         let encoded = url_encode(query);
-        let url = format!("{}/lite/?q={}", self.base_url, encoded);
+        let url = format!("{}/search?format=json&q={}", self.base_url, encoded);
 
         eprintln!("[web_search] query=\"{query}\"");
 
         let response = ureq::get(&url)
             .set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
-            .set("Accept", "text/html")
+            .set("Accept", "application/json")
             .call()
             .map_err(|e| format!("Search HTTP error: {e}"))?;
 
@@ -52,7 +52,7 @@ impl ToolHandler for DuckDuckGoSearchTool {
             .into_string()
             .map_err(|e| format!("Search read error: {e}"))?;
 
-        let results = parse_ddg_lite_html(&body);
+        let results = parse_searxng_json(&body);
 
         eprintln!("[web_search] {} results found", results.len());
 
@@ -64,91 +64,53 @@ impl ToolHandler for DuckDuckGoSearchTool {
     }
 }
 
-/// A parsed search result from DuckDuckGo Lite.
+/// A parsed search result from the SearXNG JSON response.
 struct SearchResult {
-    title: String,
+    title:   String,
     snippet: String,
-    url: String,
+    url:     String,
 }
 
-/// Parse DuckDuckGo Lite HTML into search results.
+/// Parse SearXNG JSON response into search results.
 ///
-/// DuckDuckGo Lite renders each result as a `<table>` with two rows:
-/// 1. `<a href="URL">Title</a>`
-/// 2. `<td class="result-snippet">Snippet</td>`
-fn parse_ddg_lite_html(html: &str) -> Vec<SearchResult> {
-    let mut results = Vec::new();
-    let mut remaining = html;
-
-    while results.len() < MAX_RESULTS {
-        // Find the next result table.
-        let table_start = match remaining.find("<table") {
-            Some(pos) => pos,
-            None => break,
-        };
-        let table_end = match remaining[table_start..].find("</table>") {
-            Some(pos) => table_start + pos + "</table>".len(),
-            None => break,
-        };
-        let table = &remaining[table_start..table_end];
-
-        // Extract the link: <a href="URL" ...>Title</a>
-        let title = extract_tag_content(table, "a").unwrap_or_default();
-        let url = extract_attribute(table, "a", "href").unwrap_or_default();
-
-        // Extract the snippet: <td class="result-snippet">...</td>
-        let snippet = extract_snippet(table);
-
-        if !title.is_empty() && !url.is_empty() {
-            let snippet = truncate_snippet(&snippet);
-            results.push(SearchResult { title, snippet, url });
+/// Expected format:
+/// ```json
+/// { "query": "...", "results": [
+///     { "title": "...", "url": "...", "content": "..." },
+///     ...
+/// ] }
+/// ```
+fn parse_searxng_json(body: &str) -> Vec<SearchResult> {
+    let json: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[web_search] JSON parse error: {e}");
+            return Vec::new();
         }
+    };
 
-        remaining = &remaining[table_end..];
-    }
+    let results_array = match json.get("results").and_then(|r| r.as_array()) {
+        Some(arr) => arr,
+        None => return Vec::new(),
+    };
 
-    results
-}
-
-/// Extract the snippet from a result-snippet td.
-fn extract_snippet(html: &str) -> String {
-    // Look for <td class="result-snippet"> or just <td class="result-snippet" ...>
-    if let Some(start) = html.find("result-snippet") {
-        // Find the closing > of the td tag
-        if let Some(content_start) = html[start..].find('>') {
-            let content_start = start + content_start + 1;
-            if let Some(end) = html[content_start..].find("</td>") {
-                return html[content_start..content_start + end].trim().to_string();
+    results_array
+        .iter()
+        .take(MAX_RESULTS)
+        .filter_map(|r| {
+            let title = r.get("title").and_then(|v| v.as_str()).unwrap_or_default();
+            let url = r.get("url").and_then(|v| v.as_str()).unwrap_or_default();
+            let snippet = r.get("content").and_then(|v| v.as_str()).unwrap_or_default();
+            if title.is_empty() || url.is_empty() {
+                return None;
             }
-        }
-    }
-    String::new()
-}
-
-/// Extract the text content of the first tag with the given name.
-fn extract_tag_content(html: &str, tag: &str) -> Option<String> {
-    let open = format!("<{}", tag);
-    let start = html.find(&open)?;
-    let content_start = html[start..].find('>')? + 1;
-    let close = format!("</{}>", tag);
-    let content_end = html[start + content_start..].find(&close)?;
-    Some(html[start + content_start..start + content_start + content_end]
-        .trim()
-        .to_string())
-}
-
-/// Extract the value of an attribute from the first tag with the given name.
-fn extract_attribute(html: &str, tag: &str, attr: &str) -> Option<String> {
-    let open = format!("<{}", tag);
-    let start = html.find(&open)?;
-    let tag_end = html[start..].find('>')?;
-    let tag_content = &html[start..start + tag_end];
-
-    let attr_pattern = format!("{}=\"", attr);
-    let attr_start = tag_content.find(&attr_pattern)?;
-    let value_start = attr_start + attr_pattern.len();
-    let value_end = tag_content[value_start..].find('"')?;
-    Some(tag_content[value_start..value_start + value_end].to_string())
+            Some(SearchResult {
+                title:   title.to_string(),
+                snippet: truncate_snippet(snippet),
+                url:     url.to_string(),
+            })
+        })
+        .collect()
 }
 
 /// Truncate a snippet to MAX_SNIPPET_CHARS, breaking at word boundaries.
@@ -217,34 +179,57 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_typical_ddg_lite_page() {
-        let html = r#"<table><tr><td><a href="https://example.com" rel="nofollow">Example Title</a></td></tr><tr><td class="result-snippet">This is a snippet about the example.</td></tr></table>"#;
-        let results = parse_ddg_lite_html(html);
+    fn parse_searxng_json_results() {
+        let json = r#"{
+            "query": "rust",
+            "results": [
+                {
+                    "title": "Rust Programming Language",
+                    "url": "https://www.rust-lang.org/",
+                    "content": "A language empowering everyone."
+                }
+            ]
+        }"#;
+        let results = parse_searxng_json(json);
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].title, "Example Title");
-        assert_eq!(results[0].url, "https://example.com");
-        assert_eq!(results[0].snippet, "This is a snippet about the example.");
+        assert_eq!(results[0].title, "Rust Programming Language");
+        assert_eq!(results[0].url, "https://www.rust-lang.org/");
+        assert_eq!(results[0].snippet, "A language empowering everyone.");
     }
 
     #[test]
-    fn parse_extracts_up_to_max_results() {
-        let one_table = r#"<table><tr><td><a href="http://a.com">A</a></td></tr><tr><td class="result-snippet">snippet</td></tr></table>"#;
-        let html = one_table.repeat(7);
-        let results = parse_ddg_lite_html(&html);
+    fn parse_searxng_json_respects_max_results() {
+        let one = r#"{"title":"T","url":"http://a.com","content":"s"}"#;
+        let results_array = (0..7).map(|_| one).collect::<Vec<_>>().join(",");
+        let json = format!(r#"{{"query":"q","results":[{results_array}]}}"#);
+        let results = parse_searxng_json(&json);
         assert_eq!(results.len(), MAX_RESULTS);
     }
 
     #[test]
-    fn parse_skips_tables_without_links() {
-        let html = r#"<table><tr><td>No link here</td></tr></table><table><tr><td><a href="http://x.com">X</a></td></tr><tr><td class="result-snippet">snippet</td></tr></table>"#;
-        let results = parse_ddg_lite_html(html);
+    fn parse_searxng_json_skips_results_without_title() {
+        let json = r#"{
+            "query": "q",
+            "results": [
+                {"url": "http://a.com", "content": "s"},
+                {"title": "B", "url": "http://b.com", "content": "s2"}
+            ]
+        }"#;
+        let results = parse_searxng_json(json);
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].title, "X");
+        assert_eq!(results[0].title, "B");
     }
 
     #[test]
-    fn parse_empty_html_returns_no_results() {
-        let results = parse_ddg_lite_html("<html></html>");
+    fn parse_searxng_empty_results() {
+        let json = r#"{"query": "q", "results": []}"#;
+        let results = parse_searxng_json(json);
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn parse_searxng_invalid_json_returns_empty() {
+        let results = parse_searxng_json("not json at all");
         assert_eq!(results.len(), 0);
     }
 
