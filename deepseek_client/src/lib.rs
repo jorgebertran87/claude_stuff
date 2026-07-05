@@ -165,6 +165,56 @@ fn parse_chat_response(json: &serde_json::Value) -> Result<(String, Vec<ToolCall
     Ok((content, tool_calls, input_tokens, output_tokens))
 }
 
+// ── Current date helpers ────────────────────────────────────────────────────
+
+/// Returns today's date as an ISO 8601 string (YYYY-MM-DD).
+fn current_date_string() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mut days = (secs / 86400) as i64;
+
+    let mut year = 1970i64;
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if days < days_in_year {
+            break;
+        }
+        days -= days_in_year;
+        year += 1;
+    }
+
+    let leap = is_leap_year(year);
+    let month_lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut month = 1i64;
+    for (i, &mlen) in month_lengths.iter().enumerate() {
+        let mut mlen = mlen as i64;
+        if i == 1 && leap {
+            mlen = 29;
+        }
+        if days < mlen {
+            break;
+        }
+        days -= mlen;
+        month += 1;
+    }
+
+    let day = days + 1;
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn is_leap_year(y: i64) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
+}
+
+/// Build the date system message that is prepended to every chat request.
+fn date_system_message() -> ChatMessage {
+    ChatMessage::new("system", &format!("Current date: {}.", current_date_string()))
+}
+
+// ── Public API ──────────────────────────────────────────────────────────────
+
 /// Single-turn convenience wrapper: wraps `system` and `user` into two
 /// `ChatMessage`s and calls the multi-turn `chat()`.  Kept for backward
 /// compatibility with consumers that don't need multi-turn history.
@@ -195,10 +245,11 @@ pub fn chat(
     messages: &[ChatMessage],
     reasoning_effort: Option<&str>,
 ) -> Result<ChatResponse, String> {
-    let messages_json: Vec<serde_json::Value> = messages
-        .iter()
-        .map(serialize_message)
-        .collect();
+    let mut messages_json: Vec<serde_json::Value> = Vec::with_capacity(messages.len() + 1);
+    messages_json.push(serialize_message(&date_system_message()));
+    for m in messages {
+        messages_json.push(serialize_message(m));
+    }
 
     let mut body = ureq::json!({
         "model": model,
@@ -252,7 +303,9 @@ pub fn chat_with_tools(
     tool_handler: &dyn ToolHandler,
     reasoning_effort: Option<&str>,
 ) -> Result<ChatResponse, String> {
-    let mut conversation: Vec<ChatMessage> = messages.to_vec();
+    let mut conversation: Vec<ChatMessage> = Vec::with_capacity(messages.len() + 1);
+    conversation.push(date_system_message());
+    conversation.extend_from_slice(messages);
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
     let mut final_content = String::new();
