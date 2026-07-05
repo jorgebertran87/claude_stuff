@@ -2,11 +2,22 @@
 # Inherits all default engine settings, enables JSON API, and disables
 # the rate limiter since SearXNG is only accessed from the local host.
 use_default_settings: true
+
 search:
   formats:
     - html
     - json
+
 server:
   secret_key: "voice-assistant-searxng-internal"
   limiter: false
   image_proxy: false
+
+engines:
+  - name: google
+    disabled: false
+  - name: duckduckgo
+    disabled: true
+
+outgoing:
+  request_timeout: 10.0
