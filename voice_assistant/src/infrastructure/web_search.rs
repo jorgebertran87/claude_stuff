@@ -19,7 +19,7 @@ impl SearXngSearchTool {
     pub fn new() -> Self {
         Self {
             base_url: std::env::var("SEARXNG_URL")
-                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
+                .unwrap_or_else(|_| "http://localhost:8081".to_string()),
         }
     }
 

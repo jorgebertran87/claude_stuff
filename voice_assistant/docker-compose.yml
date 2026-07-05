@@ -3,7 +3,7 @@ services:
     image: searxng/searxng:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8080"
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
     environment:
@@ -41,7 +41,7 @@ services:
       SDL_AUDIODRIVER: pulse
       SDL_VIDEODRIVER: dummy
       MINESWEEPER_URL: http://localhost:5000
-      SEARXNG_URL: http://localhost:8080
+      SEARXNG_URL: http://localhost:8081
     volumes:
       - /run/user/${UID}/pulse/native:/tmp/pulse.sock
       - ${PWD}/.claude:/app/.claude:ro
