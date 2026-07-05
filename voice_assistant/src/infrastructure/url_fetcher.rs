@@ -1,17 +1,38 @@
 use deepseek_client::{ToolCall, ToolHandler};
+use std::time::Duration;
 
 /// Maximum characters to return from a fetched page.
 const MAX_CONTENT_CHARS: usize = 50_000;
+
+/// Default connect timeout.
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Default read timeout.
+const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Fetches a URL and returns its content as plain text.
 ///
 /// HTML pages have their tags stripped to extract readable text.
 /// Content is truncated to `MAX_CONTENT_CHARS` to avoid blowing up context.
-pub struct UrlFetcherTool;
+///
+/// Uses native-tls (OpenSSL) for TLS to maximize compatibility with
+/// government and legacy servers.
+pub struct UrlFetcherTool {
+    agent: ureq::Agent,
+}
 
 impl UrlFetcherTool {
+    /// Creates a tool with default timeouts (10 s connect, 30 s read).
     pub fn new() -> Self {
-        Self
+        Self::with_timeouts(DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT)
+    }
+
+    /// Creates a tool with custom connect and read timeouts.
+    pub fn with_timeouts(connect_timeout: Duration, read_timeout: Duration) -> Self {
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(connect_timeout)
+            .timeout_read(read_timeout)
+            .build();
+        Self { agent }
     }
 }
 
@@ -25,7 +46,9 @@ impl ToolHandler for UrlFetcherTool {
 
         eprintln!("[url_fetch] GET {url}");
 
-        let response = ureq::get(url)
+        let response = self
+            .agent
+            .get(url)
             .set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
             .set("Accept", "text/html, text/plain, */*")
             .call()

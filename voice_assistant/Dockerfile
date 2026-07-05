@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpulse-dev \
         libasound2-dev \
         libsdl2-dev \
+        libssl-dev \
         ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 

@@ -1,6 +1,7 @@
 use cucumber::{given, then, when, World};
 use deepseek_client::{ToolCall, ToolHandler};
 use serde_json::json;
+use std::time::Duration;
 use voice_assistant::infrastructure::url_fetcher::UrlFetcherTool;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -98,11 +99,45 @@ async fn given_large_response(world: &mut UrlFetchWorld, url_path: String, count
     world.server = Some(server);
 }
 
+#[given(regex = r#"^a URL "(.+)" that returns plain text "(.+)" after a (\d+)-second delay$"#)]
+async fn given_plain_text_delayed(
+    world: &mut UrlFetchWorld,
+    url_path: String,
+    body: String,
+    delay_secs: u64,
+) {
+    let server = MockServer::start().await;
+    let path_only = url_path.strip_prefix("https://example.com").unwrap_or(&url_path).to_string();
+    Mock::given(method("GET"))
+        .and(path(path_only))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(body)
+                .insert_header("Content-Type", "text/plain")
+                .set_delay(Duration::from_secs(delay_secs)),
+        )
+        .mount(&server)
+        .await;
+    world.server = Some(server);
+}
+
+#[given(regex = r#"^a url_fetch tool configured with a (\d+)-second connect timeout and a (\d+)-second read timeout$"#)]
+fn given_custom_timeout_tool(
+    world: &mut UrlFetchWorld,
+    connect_secs: u64,
+    read_secs: u64,
+) {
+    world.tool = Some(UrlFetcherTool::with_timeouts(
+        Duration::from_secs(connect_secs),
+        Duration::from_secs(read_secs),
+    ));
+}
+
 // ── When steps ─────────────────────────────────────────────────────────────────
 
 #[when(regex = r#"^the url_fetch tool executes with url "(.+)"$"#)]
 fn when_fetch_url(world: &mut UrlFetchWorld, url: String) {
-    let tool = UrlFetcherTool::new();
+    let tool = world.tool.take().unwrap_or_else(UrlFetcherTool::new);
 
     // Rewrite the URL to point at the mock server, or use original for unreachable test
     let actual_url = if let Some(ref server) = world.server {

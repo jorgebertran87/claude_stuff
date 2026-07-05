@@ -28,3 +28,13 @@ Feature: URL fetch tool
     Given a URL "https://example.com/large" that returns 60000 characters of text
     When the url_fetch tool executes with url "https://example.com/large"
     Then the result is shorter than 55000 characters
+
+  Scenario: Fetch a URL that responds within the timeout succeeds
+    Given a URL "https://example.com/slow" that returns plain text "done" after a 2-second delay
+    When the url_fetch tool executes with url "https://example.com/slow"
+    Then the result contains "done"
+
+  Scenario: Fetch with a custom-configured agent uses the injected timeouts
+    Given a url_fetch tool configured with a 1-second connect timeout and a 1-second read timeout
+    When the url_fetch tool executes with url "https://example.com/hanging"
+    Then the result contains an error message
