@@ -1,3 +1,6 @@
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
 use deepseek_client::{ToolCall, ToolHandler};
 
 /// Maximum number of search results to return.
@@ -6,12 +9,59 @@ const MAX_RESULTS: usize = 5;
 /// Maximum characters per snippet to keep results concise.
 const MAX_SNIPPET_CHARS: usize = 300;
 
+/// Default minimum gap between searches to avoid upstream rate limiting.
+const DEFAULT_MIN_GAP_SECS: u64 = 3;
+
+/// Enforces a minimum delay between consecutive search requests so that
+/// upstream engines (Google, Brave) are not suspended for flooding.
+///
+/// Thread-safe: multiple callers block until the gap has elapsed since
+/// the most recent request, serialising access through the limiter.
+struct RateLimiter {
+    min_gap: Duration,
+    last_request: Mutex<Option<Instant>>,
+}
+
+impl RateLimiter {
+    fn new(min_gap: Duration) -> Self {
+        Self { min_gap, last_request: Mutex::new(None) }
+    }
+
+    /// Blocks until at least `min_gap` has passed since the previous call.
+    /// Returns the duration actually slept (zero on the first call or when
+    /// the gap has already elapsed).
+    fn wait(&self) -> Duration {
+        let mut last = self.last_request.lock().unwrap();
+        let now = Instant::now();
+
+        let to_wait = match *last {
+            Some(prev) => self
+                .min_gap
+                .checked_sub(now.duration_since(prev))
+                .unwrap_or(Duration::ZERO),
+            None => Duration::ZERO,
+        };
+
+        // Advance the clock *before* sleeping so concurrent callers
+        // observe the future time and also wait.
+        *last = Some(now + to_wait);
+        drop(last);
+
+        if !to_wait.is_zero() {
+            std::thread::sleep(to_wait);
+        }
+
+        to_wait
+    }
+}
+
 /// Searches the web via a self-hosted SearXNG instance (JSON API).
 ///
 /// Queries `GET /search?format=json&q=...` and extracts title, url,
 /// and content (snippet) from each result in the JSON response.
 pub struct SearXngSearchTool {
-    base_url: String,
+    base_url:     String,
+    rate_limiter: RateLimiter,
 }
 
 impl SearXngSearchTool {
@@ -20,12 +70,22 @@ impl SearXngSearchTool {
         Self {
             base_url: std::env::var("SEARXNG_URL")
                 .unwrap_or_else(|_| "http://localhost:8081".to_string()),
+            rate_limiter: RateLimiter::new(Duration::from_secs(DEFAULT_MIN_GAP_SECS)),
         }
     }
 
     /// Point the tool at a custom URL (used in tests with wiremock).
     pub fn with_base_url(base_url: String) -> Self {
-        Self { base_url }
+        Self {
+            base_url,
+            rate_limiter: RateLimiter::new(Duration::from_secs(DEFAULT_MIN_GAP_SECS)),
+        }
+    }
+
+    /// Create a tool with a custom rate-limit gap (used in tests).
+    #[cfg(test)]
+    pub fn with_rate_limit(base_url: String, min_gap: Duration) -> Self {
+        Self { base_url, rate_limiter: RateLimiter::new(min_gap) }
     }
 }
 
@@ -37,10 +97,18 @@ impl ToolHandler for SearXngSearchTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing 'query' argument".to_string())?;
 
+        let waited = self.rate_limiter.wait();
+        if !waited.is_zero() {
+            eprintln!(
+                "[web_search] rate-limited: waited {} ms before query=\"{query}\"",
+                waited.as_millis()
+            );
+        } else {
+            eprintln!("[web_search] query=\"{query}\"");
+        }
+
         let encoded = url_encode(query);
         let url = format!("{}/search?format=json&q={}", self.base_url, encoded);
-
-        eprintln!("[web_search] query=\"{query}\"");
 
         let response = ureq::get(&url)
             .set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
@@ -248,5 +316,74 @@ mod tests {
     fn url_encode_special_chars() {
         let encoded = url_encode("rust & go");
         assert!(encoded.contains("%26"));
+    }
+}
+
+#[cfg(test)]
+mod rate_limiter_tests {
+    use super::*;
+
+    #[test]
+    fn first_call_returns_zero_wait() {
+        let rl = RateLimiter::new(Duration::from_secs(10));
+        let waited = rl.wait();
+        assert_eq!(waited, Duration::ZERO);
+    }
+
+    #[test]
+    fn rapid_calls_enforce_minimum_gap() {
+        let rl = RateLimiter::new(Duration::from_millis(100));
+
+        let start = Instant::now();
+        let w1 = rl.wait();
+        let w2 = rl.wait();
+        let elapsed = start.elapsed();
+
+        assert_eq!(w1, Duration::ZERO, "first call should not wait");
+        assert!(
+            w2 >= Duration::from_millis(90),
+            "second call should wait, waited {:?}",
+            w2
+        );
+        assert!(
+            elapsed >= Duration::from_millis(90),
+            "total elapsed should show delay, was {:?}",
+            elapsed
+        );
+    }
+
+    #[test]
+    fn no_wait_when_gap_already_elapsed() {
+        let rl = RateLimiter::new(Duration::from_millis(10));
+
+        rl.wait(); // first call
+        std::thread::sleep(Duration::from_millis(30)); // well beyond the gap
+
+        let w = rl.wait();
+        assert_eq!(w, Duration::ZERO, "should not wait after gap elapsed");
+    }
+
+    #[test]
+    fn configured_gap_is_respected() {
+        let rl = RateLimiter::new(Duration::from_millis(100));
+
+        rl.wait();
+        let start = Instant::now();
+        rl.wait();
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed >= Duration::from_millis(90),
+            "should respect ~100 ms gap, was {:?}",
+            elapsed
+        );
+    }
+
+    #[test]
+    fn tool_uses_default_gap() {
+        let tool = SearXngSearchTool::new();
+        // Default should be 3 seconds (DEFAULT_MIN_GAP_SECS)
+        // We just verify the tool constructs without panicking
+        let _ = tool;
     }
 }

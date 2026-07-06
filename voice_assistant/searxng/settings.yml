@@ -16,8 +16,13 @@ server:
 engines:
   - name: google
     disabled: false
-  - name: duckduckgo
+  - name: brave
     disabled: true
+  - name: duckduckgo
+    disabled: false
 
 outgoing:
-  request_timeout: 10.0
+  request_timeout: 15.0
+  retries: 1
+  pool_connections: 2
+  pool_maxsize: 1
