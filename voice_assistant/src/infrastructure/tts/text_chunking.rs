@@ -1,6 +1,6 @@
 //! Text chunking utilities for TTS engines.
 //! Splits text into sentences and chunks suitable for TTS synthesis.
-//! The TTS engines themselves are in `piper_engine.rs` and `google_tts.rs`.
+//! The TTS engines themselves are in `engine.rs` and `google_tts.rs`.
 
 const MAX_TTS_CHARS: usize = 200;
 

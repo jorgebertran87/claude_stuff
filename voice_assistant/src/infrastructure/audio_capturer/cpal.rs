@@ -9,7 +9,9 @@ use shaku::Component;
 
 use crate::domain::model::AudioCapture;
 use crate::domain::ports::{AudioCapturer, EchoRef};
-use crate::infrastructure::transcriber::speech::cancel_echo;
+use crate::infrastructure::shared::audio::{
+    bytes_to_i16, cancel_echo, i16_to_bytes, resample, rms_amplitude,
+};
 
 /// Amplitude threshold for voice-onset detection (fraction of i16 max).
 const VAD_THRESHOLD: f64 = 0.02;
@@ -204,38 +206,6 @@ impl AudioCapturer for MicrophoneCapturer {
     fn set_echo_reference(&self, reference: Option<EchoRef>) {
         *self.echo_reference.lock().unwrap() = reference;
     }
-}
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-pub fn rms_amplitude(samples: &[i16]) -> f64 {
-    if samples.is_empty() { return 0.0; }
-    let sum_sq: f64 = samples.iter().map(|&s| (s as f64).powi(2)).sum();
-    (sum_sq / samples.len() as f64).sqrt() / 32768.0
-}
-
-pub fn bytes_to_i16(bytes: &[u8]) -> Vec<i16> {
-    bytes
-        .chunks_exact(2)
-        .map(|b| i16::from_le_bytes([b[0], b[1]]))
-        .collect()
-}
-
-pub fn i16_to_bytes(samples: &[i16]) -> Vec<u8> {
-    samples.iter().flat_map(|s| s.to_le_bytes()).collect()
-}
-
-pub fn resample(samples: &[i16], from_rate: u32, to_rate: u32) -> Vec<i16> {
-    let n_out = (samples.len() as u64 * to_rate as u64 / from_rate as u64) as usize;
-    (0..n_out)
-        .map(|i| {
-            let src = i as f64 * from_rate as f64 / to_rate as f64;
-            let lo  = src.floor() as usize;
-            let hi  = (lo + 1).min(samples.len().saturating_sub(1));
-            let t   = src.fract() as f32;
-            (samples[lo] as f32 * (1.0 - t) + samples[hi] as f32 * t) as i16
-        })
-        .collect()
 }
 
 #[cfg(test)]

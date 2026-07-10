@@ -1,6 +1,6 @@
 //! Shared utilities for speaker and text-to-speech adapters:
 //! markdown stripping, language detection, Alexa/Spotify command building,
-//! Bluetooth speaker disconnect, and atempo speed adjustment.
+//! and atempo speed adjustment.
 
 use std::process::{Command, Stdio};
 use std::sync::LazyLock;
@@ -65,22 +65,6 @@ pub fn build_alexa_command(title: &str, lang: &str) -> String {
         "es" => format!("Alexa, pon {} en Spotify", title),
         _    => format!("Alexa, play {} on Spotify", title),
     }
-}
-
-pub fn disconnect_bt_speaker() {
-    let mac = match std::env::var("BT_SPEAKER_MAC") {
-        Ok(m) if !m.is_empty() => m,
-        _ => {
-            eprintln!("[bt: BT_SPEAKER_MAC not set, skipping disconnect]");
-            return;
-        }
-    };
-    eprintln!("[bt: disconnecting {mac} after inactivity]");
-    let _ = Command::new("bluetoothctl")
-        .args(["disconnect", &mac])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
 }
 
 pub fn apply_atempo(bytes: Vec<u8>, speed: f32) -> Vec<u8> {

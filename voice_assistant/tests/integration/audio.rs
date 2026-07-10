@@ -1,6 +1,7 @@
 use cucumber::{given, when, then, World};
 
-use voice_assistant::infrastructure::audio_capturer::cpal::{bytes_to_i16, i16_to_bytes, MicrophoneCapturer};
+use voice_assistant::infrastructure::shared::audio::{bytes_to_i16, i16_to_bytes};
+use voice_assistant::infrastructure::audio_capturer::MicrophoneCapturer;
 use voice_assistant::domain::ports::AudioCapturer;
 
 #[derive(Default, World)]

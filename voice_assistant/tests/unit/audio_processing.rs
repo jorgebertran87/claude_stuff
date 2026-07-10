@@ -66,19 +66,19 @@ fn given_mixed(world: &mut AudioWorld) {
 
 #[when("the denoising pipeline processes it")]
 fn when_denoise(world: &mut AudioWorld) {
-    use voice_assistant::infrastructure::transcriber::speech::denoise;
+    use voice_assistant::infrastructure::shared::audio::denoise;
     world.result_samples = denoise(&world.original_samples, world.sample_rate, 0.95);
 }
 
 #[when("the echo cancellation pipeline processes the speech audio")]
 fn when_echo_cancel(world: &mut AudioWorld) {
-    use voice_assistant::infrastructure::transcriber::speech::cancel_echo;
+    use voice_assistant::infrastructure::shared::audio::cancel_echo;
     world.result_samples = cancel_echo(&world.original_samples, &world.reference_samples, 0.95);
 }
 
 #[when("the echo cancellation pipeline processes the mixed audio using the echo as reference")]
 fn when_echo_cancel_mixed(world: &mut AudioWorld) {
-    use voice_assistant::infrastructure::transcriber::speech::cancel_echo;
+    use voice_assistant::infrastructure::shared::audio::cancel_echo;
     world.cleaned_samples = cancel_echo(&world.mixed_samples, &world.reference_samples, 0.95);
 }
 

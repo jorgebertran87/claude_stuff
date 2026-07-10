@@ -5,7 +5,7 @@ use std::io::Cursor;
 use shaku::Component;
 
 use crate::domain::ports::AudioPlayer;
-use crate::infrastructure::tts::speaker_utils::disconnect_bt_speaker;
+use crate::infrastructure::shared::speaker::disconnect_bt_speaker;
 
 /// Write `bytes` to a temporary MP3 buffer and play it through rodio (blocking).
 pub fn play_audio_bytes(bytes: &[u8]) {
