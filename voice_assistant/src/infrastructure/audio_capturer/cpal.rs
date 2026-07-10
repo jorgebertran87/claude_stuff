@@ -9,7 +9,7 @@ use shaku::Component;
 
 use crate::domain::model::AudioCapture;
 use crate::domain::ports::{AudioCapturer, EchoRef};
-use super::speech::cancel_echo;
+use crate::infrastructure::transcriber::speech::cancel_echo;
 
 /// Amplitude threshold for voice-onset detection (fraction of i16 max).
 const VAD_THRESHOLD: f64 = 0.02;

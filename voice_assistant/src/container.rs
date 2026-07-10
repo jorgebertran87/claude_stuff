@@ -14,21 +14,17 @@ use crate::domain::ports::{
 };
 use crate::domain::service::VoiceListenerService;
 use crate::infrastructure::{
-    audio::{
-        microphone_capturer::MicrophoneCapturer,
-        rodio_audio_player::RodioAudioPlayer,
-        transcriber::GoogleTranscriber,
-    },
-    claude_handler::{ClaudeCodeHandler, DeepSeekBackend, ToolOrchestrator},
-    minesweeper::MinesweeperService,
+    audio_capturer::cpal::MicrophoneCapturer,
+    audio_player::rodio::RodioAudioPlayer,
+    transcriber::google_stt::GoogleTranscriber,
+    order_handler::claude::{ClaudeCodeHandler, DeepSeekBackend, ToolOrchestrator},
+    minesweeper_analyzer::server::MinesweeperService,
     telegram::{
         telegram_bot::{TelegramBot, TelegramGateway, UreqGateway, UreqGatewayParameters},
-        telegram_skills::ClaudeSkillCommands,
     },
-    tts::{
-        piper_speaker::PiperSpeaker,
-        piper_text_synthesizer::PiperTextSynthesizer,
-    },
+    commands::telegram::ClaudeSkillCommands,
+    audio_speaker::piper::PiperSpeaker,
+    text_synthesizer::piper::PiperTextSynthesizer,
 };
 
 // ── Interface marker impls ────────────────────────────────────────────────────

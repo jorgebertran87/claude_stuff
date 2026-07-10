@@ -1,6 +1,6 @@
 use cucumber::{given, when, then, World};
 
-use voice_assistant::infrastructure::audio::speech::{cancel_echo, denoise};
+use voice_assistant::infrastructure::transcriber::speech::{cancel_echo, denoise};
 
 #[derive(Debug, Default, World)]
 pub struct SpeechProcessingWorld {

@@ -5,7 +5,7 @@ use std::time::Instant;
 use cucumber::{given, when, then, World};
 
 use voice_assistant::domain::ports::OrderHandler;
-use voice_assistant::infrastructure::audio::rodio_audio_player::RodioAudioPlayer;
+use voice_assistant::infrastructure::audio_player::RodioAudioPlayer;
 use voice_assistant::infrastructure::minesweeper::MinesweeperService;
 use voice_assistant::infrastructure::tts::piper_text_synthesizer::PiperTextSynthesizer;
 use voice_assistant::infrastructure::telegram::telegram_bot::{TelegramBot, TelegramGateway, TelegramUpdate};

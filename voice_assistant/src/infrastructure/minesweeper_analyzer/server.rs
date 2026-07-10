@@ -4,7 +4,7 @@ use shaku::Component;
 
 use crate::domain::ports::MinesweeperAnalyzer;
 use crate::infrastructure::skill_loader::load_skill;
-use crate::infrastructure::telegram::telegram_skills::deepseek_skill;
+use crate::infrastructure::commands::telegram::deepseek_skill;
 
 pub fn run_minesweeper_parser(bytes: &[u8]) -> Option<String> {
     let base_url = std::env::var("MINESWEEPER_URL")

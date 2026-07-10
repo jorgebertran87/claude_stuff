@@ -2,7 +2,7 @@ use cucumber::{given, then, when, World};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use voice_assistant::domain::ports::OrderHandler;
-use voice_assistant::infrastructure::claude_handler::{ChatMessage, ClaudeBackend, ClaudeCodeHandler, TokenUsage};
+use voice_assistant::infrastructure::order_handler::{ChatMessage, ClaudeBackend, ClaudeCodeHandler, TokenUsage};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
@@ -179,7 +179,7 @@ fn given_stateless_backend(world: &mut DeepSeekOrderWorld) {
 #[given("a DeepSeek handler pointed at the mock")]
 fn given_handler(world: &mut DeepSeekOrderWorld) {
     let uri = world.server.as_ref().expect("mock server not started").uri();
-    let backend = voice_assistant::infrastructure::claude_handler::DeepSeekBackend::with_base_url(
+    let backend = voice_assistant::infrastructure::order_handler::DeepSeekBackend::with_base_url(
         uri, "test-key".into(), "deepseek-chat".into(),
     );
     world.handler = Some(ClaudeCodeHandler::new(Arc::new(backend), world.log_path.clone()));
@@ -194,7 +194,7 @@ async fn given_tool_backend_reply(world: &mut DeepSeekOrderWorld, content: Strin
     world.server = Some(server);
     // Build the handler immediately with a fake tool handler attached.
     let handler = FakeToolHandler::new("search result");
-    let backend = voice_assistant::infrastructure::claude_handler::DeepSeekBackend::with_base_url(
+    let backend = voice_assistant::infrastructure::order_handler::DeepSeekBackend::with_base_url(
         uri, "test-key".into(), "deepseek-chat".into(),
     )
     .with_tools(Box::new(handler));
@@ -236,7 +236,7 @@ async fn given_tool_backend_with_tool_call(world: &mut DeepSeekOrderWorld, final
     world.server = Some(server);
     // Build the handler immediately with a fake tool handler attached.
     let handler = FakeToolHandler::new("search result");
-    let backend = voice_assistant::infrastructure::claude_handler::DeepSeekBackend::with_base_url(
+    let backend = voice_assistant::infrastructure::order_handler::DeepSeekBackend::with_base_url(
         uri, "test-key".into(), "deepseek-chat".into(),
     )
     .with_tools(Box::new(handler));

@@ -4,10 +4,10 @@
 use shaku::Component;
 
 use crate::domain::ports::TextSynthesizer;
-use super::speaker_utils::{
+use crate::infrastructure::tts::speaker_utils::{
     alexa_spotify_title, build_alexa_command, detect_lang, strip_markdown,
 };
-use super::piper_engine::tts_segment;
+use crate::infrastructure::tts::piper_engine::tts_segment;
 
 /// Piper can handle arbitrary-length text — no chunking needed.
 /// Returns raw MP3 bytes directly (no atempo re-encode — speed is

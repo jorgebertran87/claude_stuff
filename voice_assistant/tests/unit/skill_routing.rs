@@ -1,5 +1,5 @@
 use cucumber::{given, when, then, World};
-use voice_assistant::infrastructure::claude_handler::detect_intent;
+use voice_assistant::infrastructure::order_handler::detect_intent;
 
 #[derive(Debug, Default, World)]
 pub struct SkillWorld {

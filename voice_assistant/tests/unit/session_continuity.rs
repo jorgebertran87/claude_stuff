@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use voice_assistant::domain::ports::OrderHandler;
-use voice_assistant::infrastructure::claude_handler::{ClaudeBackend, ClaudeCodeHandler, TokenUsage, ChatMessage};
+use voice_assistant::infrastructure::order_handler::{ClaudeBackend, ClaudeCodeHandler, TokenUsage, ChatMessage};
 
 // ── Fake backend ────────────────────────────────────────────────────────────
 

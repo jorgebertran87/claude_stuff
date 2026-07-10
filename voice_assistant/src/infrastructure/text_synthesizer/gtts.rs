@@ -4,11 +4,11 @@
 use shaku::Component;
 
 use crate::domain::ports::TextSynthesizer;
-use super::speaker_utils::{
+use crate::infrastructure::tts::speaker_utils::{
     alexa_spotify_title, apply_atempo, build_alexa_command, detect_lang, strip_markdown,
 };
-use super::piper_engine::tts_segment;
-use super::text_chunking::tts_chunks;
+use crate::infrastructure::tts::piper_engine::tts_segment;
+use crate::infrastructure::tts::text_chunking::tts_chunks;
 
 pub fn synthesize_text(text: &str) -> Vec<u8> {
     let clean = strip_markdown(text);

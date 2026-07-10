@@ -1,5 +1,5 @@
 use cucumber::{given, when, then, World};
-use voice_assistant::infrastructure::claude_handler::load_prompt;
+use voice_assistant::infrastructure::order_handler::load_prompt;
 
 #[derive(Debug, Default, World)]
 pub struct SearchPromptWorld {
