@@ -84,18 +84,6 @@ mod tests {
         let ww = WakeWord::new("claudito").unwrap();
         assert_eq!(ww.extract_order("hola mundo"), None);
     }
-
-    #[test]
-    fn lang_prefix_strips_region() {
-        let lang = Language::new("es-ES").unwrap();
-        assert_eq!(lang.lang_prefix(), "es");
-    }
-
-    #[test]
-    fn lang_prefix_returns_code_when_no_dash() {
-        let lang = Language::new("en").unwrap();
-        assert_eq!(lang.lang_prefix(), "en");
-    }
 }
 
 fn words_of(text: &str) -> Vec<String> {
@@ -104,40 +92,4 @@ fn words_of(text: &str) -> Vec<String> {
         .find_iter(&text.to_lowercase())
         .map(|m| m.as_str().to_string())
         .collect()
-}
-
-// ── Language ──────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone)]
-pub struct Language {
-    pub code: String,
-}
-
-impl Language {
-    pub fn new(code: impl Into<String>) -> Result<Self, String> {
-        let code = code.into();
-        if code.trim().is_empty() {
-            return Err("Language code cannot be empty".into());
-        }
-        Ok(Self { code })
-    }
-
-    pub fn lang_prefix(&self) -> &str {
-        self.code.split('-').next().unwrap_or(&self.code)
-    }
-}
-
-// ── AudioCapture ──────────────────────────────────────────────────────────────
-
-#[derive(Debug)]
-pub struct AudioCapture {
-    pub raw:          Vec<u8>,
-    pub sample_rate:  u32,
-    pub sample_width: u16,
-}
-
-impl AudioCapture {
-    pub fn new(raw: Vec<u8>, sample_rate: u32, sample_width: u16) -> Self {
-        Self { raw, sample_rate, sample_width }
-    }
 }
