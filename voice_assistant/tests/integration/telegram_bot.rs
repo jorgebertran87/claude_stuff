@@ -6,10 +6,10 @@ use cucumber::{given, when, then, World};
 
 use voice_assistant::domain::ports::OrderHandler;
 use voice_assistant::infrastructure::audio_player::RodioAudioPlayer;
-use voice_assistant::infrastructure::minesweeper::MinesweeperService;
-use voice_assistant::infrastructure::tts::piper_text_synthesizer::PiperTextSynthesizer;
+use voice_assistant::infrastructure::minesweeper_analyzer::MinesweeperService;
+use voice_assistant::infrastructure::text_synthesizer::PiperTextSynthesizer;
 use voice_assistant::infrastructure::telegram::telegram_bot::{TelegramBot, TelegramGateway, TelegramUpdate};
-use voice_assistant::infrastructure::telegram::telegram_skills::ClaudeSkillCommands;
+use voice_assistant::infrastructure::commands::ClaudeSkillCommands;
 
 // ── Fake gateway ──────────��────────────────────────────────────────────────────
 

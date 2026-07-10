@@ -1,6 +1,6 @@
 use cucumber::{given, when, then, World};
 
-use voice_assistant::infrastructure::tts::gtts_text_synthesizer::synthesize_text;
+use voice_assistant::infrastructure::text_synthesizer::synthesize_text;
 use voice_assistant::infrastructure::tts::speaker_utils::{alexa_spotify_title, build_alexa_command};
 use voice_assistant::infrastructure::tts::engine::{tts_segment, AudioSegment};
 
