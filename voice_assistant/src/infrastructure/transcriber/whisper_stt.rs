@@ -13,7 +13,6 @@ const DEFAULT_WHISPER_MODEL: &str = "/app/models/ggml-tiny.bin";
 fn whisper_model_path() -> String {
     std::env::var("WHISPER_MODEL")
         .ok()
-        .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_WHISPER_MODEL.to_string())
 }
 

@@ -14,7 +14,6 @@ const DEFAULT_SPEECH_API_KEY: &str = "AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw";
 fn speech_api_key() -> String {
     std::env::var("GOOGLE_SPEECH_API_KEY")
         .ok()
-        .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_SPEECH_API_KEY.to_string())
 }
 

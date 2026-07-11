@@ -68,11 +68,6 @@ fn given_wav_header_only(world: &mut TranscriberWorld, sample_rate: u32) {
     world.audio = Some(AudioCapture::new(header, sample_rate, 2));
 }
 
-#[given(regex = r#"^the environment variable "([^"]+)" is set to "([^"]*)"$"#)]
-fn given_env_var(_world: &mut TranscriberWorld, key: String, value: String) {
-    std::env::set_var(&key, &value);
-}
-
 // ── When steps ─────────────────────────────────────────────────────────────────
 
 #[when("the Transcriber transcribes the audio")]
