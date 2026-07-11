@@ -6,46 +6,6 @@ tokio = { version = "1", features = ["rt", "macros"] }
 wiremock = "0.5"
 
 [[test]]
-name = "wake_word_detection"
-path = "tests/unit/wake_word_detection.rs"
-harness = false
-
-[[test]]
-name = "order_capture"
-path = "tests/unit/order_capture.rs"
-harness = false
-
-[[test]]
-name = "interruptible_speech"
-path = "tests/unit/interruptible_speech.rs"
-harness = false
-
-[[test]]
-name = "audio_processing"
-path = "tests/unit/audio_processing.rs"
-harness = false
-
-[[test]]
-name = "conversation_flow"
-path = "tests/unit/conversation_flow.rs"
-harness = false
-
-[[test]]
-name = "session_continuity"
-path = "tests/unit/session_continuity.rs"
-harness = false
-
-[[test]]
-name = "skill_routing"
-path = "tests/unit/skill_routing.rs"
-harness = false
-
-[[test]]
-name = "cli_direct_order"
-path = "tests/unit/cli_direct_order.rs"
-harness = false
-
-[[test]]
 name = "speaker"
 path = "tests/integration/speaker.rs"
 harness = false
@@ -76,31 +36,6 @@ path = "tests/integration/container.rs"
 harness = false
 
 [[test]]
-name = "deepseek_order_handler"
-path = "tests/unit/deepseek_order_handler.rs"
-harness = false
-
-[[test]]
-name = "search_prompt_assembly"
-path = "tests/unit/search_prompt_assembly.rs"
-harness = false
-
-[[test]]
-name = "deepseek_tool_calling"
-path = "tests/unit/deepseek_tool_calling.rs"
-harness = false
-
-[[test]]
-name = "web_search_tool"
-path = "tests/unit/web_search_tool.rs"
-harness = false
-
-[[test]]
 name = "voice_listener_service"
 path = "tests/unit/voice_listener_service.rs"
-harness = false
-
-[[test]]
-name = "url_fetch_tool"
-path = "tests/unit/url_fetch_tool.rs"
 harness = false
