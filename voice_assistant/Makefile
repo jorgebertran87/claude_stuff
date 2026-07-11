@@ -42,8 +42,9 @@ run-telegram-prod:
 UNIT_TESTS = --lib $(patsubst tests/unit/%.rs,--test %,$(wildcard tests/unit/*.rs))
 INTEGRATION_TESTS = $(patsubst tests/integration/%.rs,--test %,$(wildcard tests/integration/*.rs))
 
-# Map infrastructure source file → relevant integration test (name matches file stem)
-FILE_TESTS = $(if $(FILE),--test $(basename $(notdir $(FILE))),$(INTEGRATION_TESTS))
+# FILE must point to the infrastructure source file (e.g. src/infrastructure/transcriber/google_stt.rs).
+# The test name is derived from the parent directory (the port name).
+FILE_TEST = $(if $(FILE),--test $(notdir $(patsubst %/,%,$(dir $(FILE)))),$(INTEGRATION_TESTS))
 
 test:
 	$(_shared) docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
@@ -77,7 +78,7 @@ mutants-integration:
 		-v $(HOME)/.claude:/root/.claude \
 		-v $(PWD)/.google_refresh_token:/app/.google_refresh_token \
 		$(IMAGE)-mutants \
-		cargo mutants -j 3 --config config/mutants-integration.toml $(if $(FILE),-f $(FILE)) -- $(FILE_TESTS)
+		cargo mutants -j 3 --config config/mutants-integration.toml -f $(FILE) -- $(FILE_TEST)
 
 debug:
 	docker run -it --rm \

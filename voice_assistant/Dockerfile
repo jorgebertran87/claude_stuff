@@ -69,42 +69,7 @@ RUN curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_U
     && curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json" \
         -o /app/piper_models/en_US-lessac-medium.onnx.json
 
-# ── Stage 3: test-base (builder + Piper tools + merged Cargo manifest)
-FROM builder AS test-base
-
-# Piper needs libgomp1 at runtime (not in rust:1.86-slim by default).
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy Piper from the tools stage so integration tests can use it.
-COPY --from=tools /usr/local/bin/piper          /usr/local/bin/
-COPY --from=tools /app/piper_models             /app/piper_models/
-
-COPY config/Cargo-test.toml ./
-RUN cat Cargo-test.toml >> Cargo.toml
-
-# ── Stage 4: test (test-base + test files) ────────────────────────────────────
-FROM test-base AS test
-
-COPY tests/unit/ tests/unit/
-COPY tests/integration/ tests/integration/
-COPY features/ features/
-COPY tests/files/ tests/files/
-COPY .claude/commands/ .claude/commands/
-
-# ── Stage 5: mutants (test-base + cargo-mutants + test files) ─────────────────
-FROM test-base AS mutants
-
-RUN cargo install --locked cargo-mutants@26.0.0
-
-COPY config/mutants.toml config/mutants-integration.toml config/
-COPY tests/unit/ tests/unit/
-COPY tests/integration/ tests/integration/
-COPY features/ features/
-COPY tests/files/ tests/files/
-
-# ── Stage 6: whisper-builder (compile whisper.cpp from source) ────────────
+# ── Stage 3: whisper-builder (compile whisper.cpp from source) ────────────
 FROM debian:bookworm-slim AS whisper-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -128,6 +93,47 @@ RUN mkdir -p /app/models \
     && curl -fsSL "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin" \
         -o /app/models/ggml-tiny.bin \
     && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+# ── Stage 4: test-base (builder + Piper tools + whisper-cli + merged Cargo manifest)
+FROM builder AS test-base
+
+# Piper needs libgomp1 at runtime (not in rust:1.86-slim by default).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Piper from the tools stage so integration tests can use it.
+COPY --from=tools /usr/local/bin/piper          /usr/local/bin/
+COPY --from=tools /app/piper_models             /app/piper_models/
+
+# whisper-cli for WhisperTranscriber integration tests
+COPY --from=whisper-builder /usr/local/bin/whisper-cli /usr/local/bin/
+COPY --from=whisper-builder /usr/local/lib/            /usr/local/lib/
+COPY --from=whisper-builder /app/models                /app/models/
+RUN ldconfig
+
+COPY config/Cargo-test.toml ./
+RUN cat Cargo-test.toml >> Cargo.toml
+
+# ── Stage 5: test (test-base + test files) ────────────────────────────────────
+FROM test-base AS test
+
+COPY tests/unit/ tests/unit/
+COPY tests/integration/ tests/integration/
+COPY features/ features/
+COPY tests/files/ tests/files/
+COPY .claude/commands/ .claude/commands/
+
+# ── Stage 6: mutants (test-base + cargo-mutants + test files) ─────────────────
+FROM test-base AS mutants
+
+RUN cargo install --locked cargo-mutants@26.0.0
+
+COPY config/mutants.toml config/mutants-integration.toml config/
+COPY tests/unit/ tests/unit/
+COPY tests/integration/ tests/integration/
+COPY features/ features/
+COPY tests/files/ tests/files/
 
 # ── Stage 7: runtime ──────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
