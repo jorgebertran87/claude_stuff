@@ -20,6 +20,15 @@ Every feature, fix, or refactor follows this sequence. Do not skip or reorder st
 
 3. **Implement** — Write the **minimum code** to turn the test green, following the DDD architecture and SOLID principles below. Refactor only after green.
 
+### Test File Organization
+
+Tests map one-to-one to the hexagonal architecture's top-level components:
+
+- **Unit tests** — one `.feature` file and one step-definition file per **application service**. If a project has a single `VoiceListenerService`, it gets a single `voice_listener_service.feature` with a matching test harness. Unit-level scenarios for domain models (entities, value objects, domain services) that the application service delegates to live in the same feature file — don't create separate feature files for individual domain types.
+- **Integration tests** — one `.feature` file and one step-definition file per **infrastructure adapter** (each dependency-injection binding). Every port implementation (e.g. the Piper TTS speaker, the Google STT transcriber, the cpal audio capturer) gets its own integration feature that exercises the real adapter against its external dependency.
+
+This keeps the test suite's shape a direct mirror of the architecture: unit tests cover the service layer, integration tests cover the infrastructure layer.
+
 ### Architecture: Domain-Driven Design
 
 Organize code around the domain model, not technical layers:
