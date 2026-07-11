@@ -6,8 +6,8 @@ tokio = { version = "1", features = ["rt", "macros"] }
 wiremock = "0.5"
 
 [[test]]
-name = "speaker"
-path = "tests/integration/speaker.rs"
+name = "audio_capturer"
+path = "tests/integration/audio_capturer.rs"
 harness = false
 
 [[test]]
@@ -16,13 +16,13 @@ path = "tests/integration/transcriber.rs"
 harness = false
 
 [[test]]
-name = "audio"
-path = "tests/integration/audio.rs"
+name = "text_synthesizer"
+path = "tests/integration/text_synthesizer.rs"
 harness = false
 
 [[test]]
-name = "speech"
-path = "tests/integration/speech.rs"
+name = "audio_speaker"
+path = "tests/integration/audio_speaker.rs"
 harness = false
 
 [[test]]

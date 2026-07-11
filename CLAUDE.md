@@ -25,9 +25,26 @@ Every feature, fix, or refactor follows this sequence. Do not skip or reorder st
 Tests map one-to-one to the hexagonal architecture's top-level components:
 
 - **Unit tests** — one `.feature` file and one step-definition file per **application service**. If a project has a single `VoiceListenerService`, it gets a single `voice_listener_service.feature` with a matching test harness. Unit-level scenarios for domain models (entities, value objects, domain services) that the application service delegates to live in the same feature file — don't create separate feature files for individual domain types.
-- **Integration tests** — one `.feature` file and one step-definition file per **infrastructure adapter** (each dependency-injection binding). Every port implementation (e.g. the Piper TTS speaker, the Google STT transcriber, the cpal audio capturer) gets its own integration feature that exercises the real adapter against its external dependency.
+- **Integration tests** — one `.feature` file and one step-definition file per **port** (each dependency-injection binding). Every port (e.g. `AudioCapturer`, `Transcriber`, `TextSynthesizer`) gets its own integration feature that exercises the real adapter against its external dependency.
 
 This keeps the test suite's shape a direct mirror of the architecture: unit tests cover the service layer, integration tests cover the infrastructure layer.
+
+#### Integration Test Rules (required)
+
+**1. Named after ports, not adapters.** Feature files and test files use the **port/interface** name (e.g. `transcriber.feature`, `audio_capturer.rs`), never the concrete adapter name (e.g. ~~`google_transcriber.feature`~~). When an implementation is swapped (e.g. `GoogleTranscriber` → `WhisperTranscriber`), only the DI container wiring changes — the test files are untouched.
+
+**2. Resolve adapters through the DI container.** Integration tests must **never** import or instantiate concrete infrastructure types directly. Instead, expose a `pub fn test_module()` from the container that builds the module, and resolve adapters through their port:
+
+```rust
+use shaku::HasComponent;
+use my_project::container;
+use my_project::domain::ports::Transcriber;
+
+let module = container::test_module();
+let transcriber: Box<dyn Transcriber> = module.resolve();
+```
+
+Tests only import: the port trait, `HasComponent` from shaku, and `container`. This enforces **Dependency Inversion** — the test knows only the interface, and the container handles which implementation is wired. A test that directly constructs `GoogleTranscriber` is a violation and must be corrected.
 
 ### Architecture: Domain-Driven Design
 

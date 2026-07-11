@@ -63,6 +63,12 @@ module! {
 
 // ── Module builder ────────────────────────────────────────────────────────────
 
+/// Build a module for integration tests (empty Telegram token).
+/// Tests resolve adapters through their ports — never import concrete types.
+pub fn test_module() -> AppModule {
+    build_module(String::new())
+}
+
 fn build_module(telegram_token: String) -> AppModule {
     AppModule::builder()
         .with_component_parameters::<UreqGateway>(UreqGatewayParameters {
