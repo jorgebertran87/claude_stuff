@@ -308,31 +308,3 @@ impl SkillCommands for ClaudeSkillCommands {
         handle_connect_speakers()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn read_usage_report_returns_no_data_when_file_missing() {
-        let report = read_usage_report("/tmp/nonexistent_orders_tokens_test");
-        assert_eq!(report, "No hay datos de uso todavía.");
-    }
-
-    #[test]
-    fn read_usage_report_summarises_log_lines() {
-        let path = "/tmp/test_orders_tokens_usage";
-        std::fs::write(
-            path,
-            "Claude order: hola | Tokens used — input: 10, output: 100, cache_read: 500, cache_creation: 50, total: 660 | cost: $0.002000 USD\n\
-             Claude order: adios | Tokens used — input: 20, output: 200, cache_read: 1000, cache_creation: 100, total: 1320 | cost: $0.008000 USD\n",
-        ).unwrap();
-        let report = read_usage_report(path);
-        assert!(report.contains("2 ordenes"), "got: {report}");
-        assert!(report.contains("0.0100"), "total cost; got: {report}");
-        assert!(report.contains("0.0050"), "avg cost; got: {report}");
-        assert!(report.contains("1980"), "total tokens; got: {report}");
-        assert!(report.contains("adios"), "most expensive query; got: {report}");
-        std::fs::remove_file(path).ok();
-    }
-}

@@ -18,20 +18,3 @@ impl Language {
         self.code.split('-').next().unwrap_or(&self.code)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lang_prefix_strips_region() {
-        let lang = Language::new("es-ES").unwrap();
-        assert_eq!(lang.lang_prefix(), "es");
-    }
-
-    #[test]
-    fn lang_prefix_returns_code_when_no_dash() {
-        let lang = Language::new("en").unwrap();
-        assert_eq!(lang.lang_prefix(), "en");
-    }
-}

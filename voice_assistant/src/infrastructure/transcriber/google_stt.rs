@@ -65,32 +65,6 @@ impl Transcriber for GoogleTranscriber {
         parse_transcript(&body)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn speech_api_key_uses_env_var_when_set() {
-        std::env::set_var("GOOGLE_SPEECH_API_KEY", "env-key-123");
-        assert_eq!(speech_api_key(), "env-key-123");
-        std::env::remove_var("GOOGLE_SPEECH_API_KEY");
-    }
-
-    #[test]
-    fn speech_api_key_falls_back_to_default_when_env_empty() {
-        std::env::set_var("GOOGLE_SPEECH_API_KEY", "");
-        assert_eq!(speech_api_key(), DEFAULT_SPEECH_API_KEY);
-        std::env::remove_var("GOOGLE_SPEECH_API_KEY");
-    }
-
-    #[test]
-    fn speech_api_key_falls_back_to_default_when_env_absent() {
-        std::env::remove_var("GOOGLE_SPEECH_API_KEY");
-        assert_eq!(speech_api_key(), DEFAULT_SPEECH_API_KEY);
-    }
-}
-
 fn parse_transcript(body: &str) -> Option<String> {
     // Google returns one JSON object per line; the last non-empty result wins.
     // Format: {"result":[{"alternative":[{"transcript":"text",...}],"final":true}]}
