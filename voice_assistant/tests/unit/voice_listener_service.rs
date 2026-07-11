@@ -445,8 +445,39 @@ fn given_ww_then_captures(world: &mut VoiceListenerWorld, text: String) {
 
 #[when("the service waits for the wake word")]
 fn when_ww_wait(world: &mut VoiceListenerWorld) {
+    // Use a capturer that panics on exhaustion instead of returning None.
+    // When a mutant breaks WakeWord::matches() it would otherwise loop
+    // forever inside wait_for_wake_word(), producing a 20 s TIMEOUT.
+    // Panicking immediately gives a fast, clean CAUGHT instead.
+    struct WakeWordCapturer {
+        queue: Mutex<Vec<Option<AudioCapture>>>,
+    }
+    impl AudioCapturer for WakeWordCapturer {
+        fn capture(
+            &self,
+            _timeout_ms: Option<u64>,
+            _phrase_time_limit_ms: Option<u64>,
+            _pause_threshold_ms: Option<u64>,
+        ) -> Option<AudioCapture> {
+            let mut q = self.queue.lock().unwrap();
+            if q.is_empty() {
+                panic!(
+                    "wake word capturer exhausted: wait_for_wake_word() did not \
+                     detect the wake word (matches() may be broken by a mutant)"
+                );
+            }
+            q.remove(0)
+        }
+        fn calibrate(&self, _: f64) {}
+        fn mute(&self) {}
+        fn unmute(&self) {}
+        fn set_echo_reference(&self, _: Option<EchoRef>) {}
+    }
+
     let service = VoiceListenerService::new(
-        Arc::new(FakeCapturer::new(world.wake_word_capture_queue.drain(..).collect())),
+        Arc::new(WakeWordCapturer {
+            queue: Mutex::new(world.wake_word_capture_queue.drain(..).collect()),
+        }),
         Arc::new(FakeTranscriber::new(world.wake_word_transcription_queue.drain(..).collect())),
         Arc::new(TrackingOrderHandler::new("unused")),
         Arc::new(FakeSpeaker::new()),
@@ -458,7 +489,7 @@ fn when_ww_wait(world: &mut VoiceListenerWorld) {
     // wait_for_wake_word returns Some(order) when inline order is present,
     // or None when the wake word was heard but no order followed.
     // The fact that it returned at all means the wake word was detected
-    // (otherwise it loops forever).
+    // (otherwise it would have panicked in the capturer).
     world.wake_word_detected = Some(true);
     world.inline_order = Some(result);
 }
