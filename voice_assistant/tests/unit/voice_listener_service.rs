@@ -4,11 +4,29 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use voice_assistant::cli::{parse_args, CliArgs};
 use voice_assistant::domain::model::{AudioCapture, Language, WakeWord};
 use voice_assistant::domain::ports::{
     AudioCapturer, AudioSpeaker, EchoRef, OrderHandler, Transcriber,
 };
 use voice_assistant::domain::service::VoiceListenerService;
+
+// ── CLI parse result wrapper (Result does not implement Default) ────────────
+
+#[derive(Debug)]
+enum CliParseResult {
+    NotParsed,
+    DirectOrder(String),
+    TelegramMode,
+    ListenMode,
+    Error(String),
+}
+
+impl Default for CliParseResult {
+    fn default() -> Self {
+        CliParseResult::NotParsed
+    }
+}
 
 // ── Fake AudioCapturer ────────────────────────────────────────────────────────
 
@@ -159,6 +177,19 @@ pub struct VoiceListenerWorld {
     wake_word_transcription_queue: Vec<Option<String>>,
     wake_word_detected: Option<bool>,
     inline_order: Option<Option<String>>,
+
+    // ── CLI parsing fields ─────────────────────────────────────────────────
+    cli_args: Vec<String>,
+    cli_parse_result: CliParseResult,
+
+    // ── WakeWord unit test fields ──────────────────────────────────────────
+    unit_wake_word: Option<WakeWord>,
+    unit_match_result: Option<bool>,
+    unit_extract_result: Option<Option<String>>,
+
+    // ── Language unit test fields ──────────────────────────────────────────
+    unit_language: Option<Language>,
+    unit_prefix_result: Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -470,6 +501,154 @@ fn then_ww_ignores_first(_world: &mut VoiceListenerWorld) {
 #[then("the service detects the wake word on the second utterance")]
 fn then_ww_detected_second(world: &mut VoiceListenerWorld) {
     assert!(world.wake_word_detected.unwrap());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CLI argument parsing steps
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Parses a comma-separated list of double-quoted strings like `"prog", "--order", "value"`.
+fn parse_quoted_args(raw: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut in_quote = false;
+    let mut current = String::new();
+    for ch in raw.chars() {
+        if ch == '"' {
+            in_quote = !in_quote;
+            if !in_quote {
+                args.push(std::mem::take(&mut current));
+            }
+        } else if in_quote {
+            current.push(ch);
+        }
+    }
+    args
+}
+
+#[given(regex = r#"^the command-line arguments (.+)$"#)]
+fn given_cli_args(world: &mut VoiceListenerWorld, raw: String) {
+    world.cli_args = parse_quoted_args(&raw);
+}
+
+#[when("the arguments are parsed")]
+fn when_parse_args(world: &mut VoiceListenerWorld) {
+    world.cli_parse_result = match parse_args(&world.cli_args) {
+        Ok(CliArgs::DirectOrder(s)) => CliParseResult::DirectOrder(s),
+        Ok(CliArgs::TelegramMode)   => CliParseResult::TelegramMode,
+        Ok(CliArgs::ListenMode)     => CliParseResult::ListenMode,
+        Err(e)                      => CliParseResult::Error(e),
+    };
+}
+
+#[then(regex = r#"^the result is DirectOrder with value "(.+)"$"#)]
+fn then_cli_direct_order(world: &mut VoiceListenerWorld, expected: String) {
+    match &world.cli_parse_result {
+        CliParseResult::DirectOrder(s) if s == &expected => {}
+        other => panic!("expected DirectOrder({expected:?}), got {other:?}"),
+    }
+}
+
+#[then("the parsing result is an error")]
+fn then_cli_error(world: &mut VoiceListenerWorld) {
+    match &world.cli_parse_result {
+        CliParseResult::Error(_) => {}
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+#[then("the parsing result is TelegramMode")]
+fn then_cli_telegram(world: &mut VoiceListenerWorld) {
+    match &world.cli_parse_result {
+        CliParseResult::TelegramMode => {}
+        other => panic!("expected TelegramMode, got {other:?}"),
+    }
+}
+
+#[then("the parsing result is ListenMode")]
+fn then_cli_listen(world: &mut VoiceListenerWorld) {
+    match &world.cli_parse_result {
+        CliParseResult::ListenMode => {}
+        other => panic!("expected ListenMode, got {other:?}"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WakeWord unit test steps
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[given(regex = r#"^a wake word "(.+)"$"#)]
+fn given_unit_wake_word(world: &mut VoiceListenerWorld, value: String) {
+    world.unit_wake_word = Some(WakeWord::new(&value).unwrap());
+}
+
+#[when(regex = r#"^the wake word is checked against "(.+)"$"#)]
+fn when_check_wake_word(world: &mut VoiceListenerWorld, text: String) {
+    let ww = world.unit_wake_word.as_ref().expect("wake word not set");
+    world.unit_match_result = Some(ww.matches(&text));
+}
+
+#[then("the wake word matches")]
+fn then_wake_word_matches(world: &mut VoiceListenerWorld) {
+    assert!(
+        world.unit_match_result.unwrap(),
+        "expected wake word to match"
+    );
+}
+
+#[then("the wake word does not match")]
+fn then_wake_word_does_not_match(world: &mut VoiceListenerWorld) {
+    assert!(
+        !world.unit_match_result.unwrap(),
+        "expected wake word NOT to match"
+    );
+}
+
+#[when(regex = r#"^the order is extracted from "(.+)"$"#)]
+fn when_extract_order(world: &mut VoiceListenerWorld, text: String) {
+    let ww = world.unit_wake_word.as_ref().expect("wake word not set");
+    world.unit_extract_result = Some(ww.extract_order(&text));
+}
+
+#[then(regex = r#"^the extracted order is "(.+)"$"#)]
+fn then_extracted_order(world: &mut VoiceListenerWorld, expected: String) {
+    assert_eq!(
+        world.unit_extract_result.as_ref().unwrap().as_deref(),
+        Some(expected.as_str()),
+        "extracted order mismatch"
+    );
+}
+
+#[then("no order is extracted")]
+fn then_no_order_extracted(world: &mut VoiceListenerWorld) {
+    assert_eq!(
+        world.unit_extract_result.as_ref().unwrap().as_deref(),
+        None,
+        "expected no extracted order"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Language unit test steps
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[given(regex = r#"^a language with code "(.+)"$"#)]
+fn given_unit_language(world: &mut VoiceListenerWorld, code: String) {
+    world.unit_language = Some(Language::new(&code).unwrap());
+}
+
+#[when("the language prefix is requested")]
+fn when_lang_prefix(world: &mut VoiceListenerWorld) {
+    let lang = world.unit_language.as_ref().expect("language not set");
+    world.unit_prefix_result = Some(lang.lang_prefix().to_string());
+}
+
+#[then(regex = r#"^the prefix is "(.+)"$"#)]
+fn then_lang_prefix(world: &mut VoiceListenerWorld, expected: String) {
+    assert_eq!(
+        world.unit_prefix_result.as_deref(),
+        Some(expected.as_str()),
+        "language prefix mismatch"
+    );
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
