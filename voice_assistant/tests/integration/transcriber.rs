@@ -68,6 +68,11 @@ fn given_wav_header_only(world: &mut TranscriberWorld, sample_rate: u32) {
     world.audio = Some(AudioCapture::new(header, sample_rate, 2));
 }
 
+#[given(regex = r#"^the environment variable "([^"]+)" is set to "([^"]*)"$"#)]
+fn given_env_var(_world: &mut TranscriberWorld, key: String, value: String) {
+    std::env::set_var(&key, &value);
+}
+
 // ── When steps ─────────────────────────────────────────────────────────────────
 
 #[when("the Transcriber transcribes the audio")]
@@ -84,13 +89,42 @@ fn when_transcribe(world: &mut TranscriberWorld) {
 fn then_non_empty(world: &mut TranscriberWorld) {
     let r = world.result.as_ref().unwrap();
     assert!(r.is_some(), "expected Some(string), got None");
-    assert!(!r.as_ref().unwrap().is_empty(), "transcription should not be empty");
+    let text = r.as_ref().unwrap();
+    assert!(!text.is_empty(), "transcription should not be empty");
 }
 
 #[then("the result is None")]
 fn then_none(world: &mut TranscriberWorld) {
     let r = world.result.as_ref().unwrap();
     assert!(r.is_none(), "expected None, got {:?}", r);
+}
+
+#[then("the result contains at least one space")]
+fn then_contains_space(world: &mut TranscriberWorld) {
+    let r = world.result.as_ref().unwrap();
+    let text = r.as_ref().expect("expected Some(string) for space check");
+    assert!(
+        text.contains(' '),
+        "transcription should contain at least one space, got: [{text}]"
+    );
+}
+
+#[then("the result is not the sentinel value \"xyzzy\"")]
+fn then_not_sentinel(world: &mut TranscriberWorld) {
+    let r = world.result.as_ref().unwrap();
+    assert_ne!(r, &Some("xyzzy".to_string()), "transcription should not be the sentinel value");
+}
+
+#[then("the result does not contain JSON artifacts")]
+fn then_no_json_artifacts(world: &mut TranscriberWorld) {
+    let r = world.result.as_ref().unwrap();
+    if let Some(text) = r {
+        assert!(
+            !text.contains('"') && !text.contains('{') && !text.contains('}'),
+            "transcription contains JSON artifacts: {:?}",
+            text
+        );
+    }
 }
 
 fn main() {

@@ -30,3 +30,21 @@ Feature: Transcriber port integration
     And the language is "es-ES"
     When the Transcriber transcribes the audio
     Then the result is None
+
+  Scenario: An empty API key environment variable falls back to the default key
+    Given the Transcriber is resolved from the DI container
+    And the environment variable "GOOGLE_SPEECH_API_KEY" is set to ""
+    And the audio file "test_speech_es.wav" at 16000 Hz mono 16-bit
+    And the language is "es-ES"
+    When the Transcriber transcribes the audio
+    Then the result is a non-empty string
+
+  Scenario: Transcription output is clean natural language text
+    Given the Transcriber is resolved from the DI container
+    And the audio file "test_speech_es.wav" at 16000 Hz mono 16-bit
+    And the language is "es-ES"
+    When the Transcriber transcribes the audio
+    Then the result is a non-empty string
+    And the result contains at least one space
+    And the result is not the sentinel value "xyzzy"
+    And the result does not contain JSON artifacts
