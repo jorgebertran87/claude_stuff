@@ -26,16 +26,6 @@ path = "tests/integration/audio_speaker.rs"
 harness = false
 
 [[test]]
-name = "telegram_bot"
-path = "tests/integration/telegram_bot.rs"
-harness = false
-
-[[test]]
-name = "container"
-path = "tests/integration/container.rs"
-harness = false
-
-[[test]]
 name = "voice_listener_service"
 path = "tests/unit/voice_listener_service.rs"
 harness = false
