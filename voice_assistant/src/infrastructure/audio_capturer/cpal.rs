@@ -9,10 +9,12 @@ use shaku::Component;
 
 use crate::domain::model::AudioCapture;
 use crate::domain::ports::{AudioCapturer, EchoRef};
-use crate::infrastructure::shared::audio::{
+use crate::infrastructure::audio_capturer::shared::audio::{
     bytes_to_i16, cancel_echo, encode_wav, i16_to_bytes, resample,
 };
-use crate::infrastructure::shared::vad::{CaptureDecision, CaptureEvent, SpeechAccumulator};
+use crate::infrastructure::audio_capturer::shared::vad::{
+    CaptureDecision, CaptureEvent, SpeechAccumulator,
+};
 
 /// Amplitude threshold for voice-onset detection (fraction of i16 max).
 const VAD_THRESHOLD: f64 = 0.02;

@@ -43,8 +43,12 @@ UNIT_TESTS = --lib $(patsubst tests/unit/%.rs,--test %,$(wildcard tests/unit/*.r
 INTEGRATION_TESTS = $(patsubst tests/integration/%.rs,--test %,$(wildcard tests/integration/*.rs))
 
 # FILE must point to the infrastructure source file (e.g. src/infrastructure/transcriber/google_stt.rs).
-# The test name is derived from the parent directory (the port name).
-FILE_TEST = $(if $(FILE),--test $(notdir $(patsubst %/,%,$(dir $(FILE)))),$(INTEGRATION_TESTS))
+# The test name is derived from the port directory under src/infrastructure/. The port's
+# shared/ files (if any) are mutated together with FILE, so an adapter and its shared
+# logic are covered in a single run.
+PORT = $(word 3,$(subst /, ,$(FILE)))
+FILE_TEST = $(if $(FILE),--test $(PORT),$(INTEGRATION_TESTS))
+MUTANT_FILES = -f $(FILE) $(patsubst %,-f %,$(filter-out $(FILE),$(wildcard src/infrastructure/$(PORT)/shared/*.rs)))
 
 test:
 	$(_shared) docker build --platform $(LOCAL_PLATFORM) --target test -t $(IMAGE)-test .
@@ -79,7 +83,30 @@ mutants-integration:
 		-v $(HOME)/.claude:/root/.claude \
 		-v $(PWD)/.google_refresh_token:/app/.google_refresh_token \
 		$(IMAGE)-mutants \
-		cargo mutants -j 3 --config config/mutants-integration.toml -f $(FILE) -- $(FILE_TEST)
+		cargo mutants -j 3 --config config/mutants-integration.toml $(MUTANT_FILES) -- $(FILE_TEST)
+
+# ── Per-adapter mutation testing ─────────────────────────────────────────────
+# Auto-generates one target per adapter whose port has an integration test:
+#   make mutants-<port>-<adapter>     e.g.  make mutants-audio_capturer-cpal
+# Each runs mutants-integration with FILE set to the adapter source, which
+# also mutates the port's shared/ files. `make mutants-list` shows them all.
+
+ADAPTER_FILES = $(filter-out %/mod.rs,$(wildcard src/infrastructure/*/*.rs))
+
+define ADAPTER_MUTANTS_RULE
+ifneq (,$(wildcard tests/integration/$(1).rs))
+MUTANT_ADAPTER_TARGETS += mutants-$(1)-$(2)
+mutants-$(1)-$(2):
+	$$(MAKE) mutants-integration FILE=src/infrastructure/$(1)/$(2).rs
+endif
+endef
+
+$(foreach f,$(ADAPTER_FILES),$(eval $(call ADAPTER_MUTANTS_RULE,$(word 3,$(subst /, ,$(f))),$(basename $(notdir $(f))))))
+
+mutants-list:
+	@printf 'make %s\n' $(sort $(MUTANT_ADAPTER_TARGETS))
+
+.PHONY: mutants-list $(MUTANT_ADAPTER_TARGETS)
 
 debug:
 	docker run -it --rm \

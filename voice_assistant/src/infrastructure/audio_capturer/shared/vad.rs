@@ -2,7 +2,7 @@
 //! decides when a spoken phrase starts and ends, independent of any audio
 //! backend. Capture adapters feed it stream events and act on its decisions.
 
-use crate::infrastructure::shared::audio::rms_amplitude;
+use crate::infrastructure::audio_capturer::shared::audio::rms_amplitude;
 
 /// An event observed by a capture loop.
 pub enum CaptureEvent<'a> {

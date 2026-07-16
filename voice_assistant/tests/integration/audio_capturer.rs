@@ -7,10 +7,10 @@ use shaku::HasComponent;
 use voice_assistant::container;
 use voice_assistant::domain::model::AudioCapture;
 use voice_assistant::domain::ports::AudioCapturer;
-use voice_assistant::infrastructure::shared::audio::{
+use voice_assistant::infrastructure::audio_capturer::shared::audio::{
     bytes_to_i16, cancel_echo, denoise, encode_wav, i16_to_bytes,
 };
-use voice_assistant::infrastructure::shared::vad::{
+use voice_assistant::infrastructure::audio_capturer::shared::vad::{
     CaptureDecision, CaptureEvent, SpeechAccumulator,
 };
 
