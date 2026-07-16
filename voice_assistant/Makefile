@@ -72,6 +72,7 @@ mutants-integration:
 	$(_shared) docker build --platform $(LOCAL_PLATFORM) --target mutants -t $(IMAGE)-mutants .
 	docker run --rm \
 		--network host \
+		--device /dev/snd \
 		--env-file .env \
 		-e SDL_AUDIODRIVER=dummy \
 		-e SDL_VIDEODRIVER=dummy \

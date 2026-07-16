@@ -57,6 +57,9 @@ impl AudioCapturer for FakeCapturer {
     fn mute(&self) {}
     fn unmute(&self) {}
     fn set_echo_reference(&self, _: Option<EchoRef>) {}
+    fn apply_echo_cancellation(&self, raw: &[u8], _: u32, _: u16) -> Vec<u8> {
+        raw.to_vec()
+    }
 }
 
 // ── Fake Transcriber ──────────────────────────────────────────────────────────
@@ -472,6 +475,9 @@ fn when_ww_wait(world: &mut VoiceListenerWorld) {
         fn mute(&self) {}
         fn unmute(&self) {}
         fn set_echo_reference(&self, _: Option<EchoRef>) {}
+        fn apply_echo_cancellation(&self, raw: &[u8], _: u32, _: u16) -> Vec<u8> {
+            raw.to_vec()
+        }
     }
 
     let service = VoiceListenerService::new(

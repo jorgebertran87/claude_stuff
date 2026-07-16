@@ -14,4 +14,12 @@ pub trait AudioCapturer: Send + Sync {
     fn mute(&self);
     fn unmute(&self);
     fn set_echo_reference(&self, reference: Option<EchoRef>);
+
+    /// Apply echo cancellation to a raw audio buffer using the stored reference.
+    fn apply_echo_cancellation(
+        &self,
+        raw:          &[u8],
+        sample_rate:  u32,
+        sample_width: u16,
+    ) -> Vec<u8>;
 }

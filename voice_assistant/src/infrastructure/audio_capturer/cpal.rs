@@ -10,8 +10,9 @@ use shaku::Component;
 use crate::domain::model::AudioCapture;
 use crate::domain::ports::{AudioCapturer, EchoRef};
 use crate::infrastructure::shared::audio::{
-    bytes_to_i16, cancel_echo, i16_to_bytes, resample, rms_amplitude,
+    bytes_to_i16, cancel_echo, encode_wav, i16_to_bytes, resample,
 };
+use crate::infrastructure::shared::vad::{CaptureDecision, CaptureEvent, SpeechAccumulator};
 
 /// Amplitude threshold for voice-onset detection (fraction of i16 max).
 const VAD_THRESHOLD: f64 = 0.02;
@@ -29,32 +30,6 @@ pub struct MicrophoneCapturer {
 impl MicrophoneCapturer {
     pub fn new() -> Self {
         Self { echo_reference: Mutex::new(None) }
-    }
-
-    /// Apply echo cancellation to a raw audio buffer using the stored reference.
-    pub fn apply_echo_cancellation(
-        &self,
-        raw:          &[u8],
-        sample_rate:  u32,
-        _sample_width: u16,
-    ) -> Vec<u8> {
-        let Some((ref_samples, ref_rate)) = ({
-            let guard = self.echo_reference.lock().unwrap();
-            guard.as_ref().map(|(bytes, rate, _)| (bytes_to_i16(bytes), *rate))
-        }) else {
-            return raw.to_vec();
-        };
-
-        let mic_samples = bytes_to_i16(raw);
-
-        let ref_resampled = if ref_rate != sample_rate {
-            resample(&ref_samples, ref_rate, sample_rate)
-        } else {
-            ref_samples
-        };
-
-        let cleaned = cancel_echo(&mic_samples, &ref_resampled, 0.95);
-        i16_to_bytes(&cleaned)
     }
 
     /// Blocking capture loop — collects samples until silence or timeout.
@@ -87,93 +62,37 @@ impl MicrophoneCapturer {
 
         stream.play().ok()?;
 
-        let mut all_samples: Vec<i16> = Vec::new();
-        let mut silence_ms: u64 = 0;
-        let mut voice_heard = false;
-        let max_dur = Duration::from_millis(phrase_time_limit_ms.max(timeout_ms));
-        let start = Instant::now();
-
         // Poll interval — roughly one chunk's worth
         let poll = Duration::from_millis(50);
 
-        while start.elapsed() < max_dur {
-            match rx.recv_timeout(poll) {
-                Ok(chunk) => {
-                    let amp = rms_amplitude(&chunk);
+        // The speech-segmentation policy lives in the shared VAD state
+        // machine; this loop only shuttles stream events into it. (SRP)
+        let mut accumulator = SpeechAccumulator::new(
+            VAD_THRESHOLD,
+            SILENCE_THRESHOLD,
+            pause_threshold_ms,
+            timeout_ms,
+            phrase_time_limit_ms.max(timeout_ms),
+            poll.as_millis() as u64,
+        );
+        let start = Instant::now();
 
-                    if !voice_heard && amp > VAD_THRESHOLD {
-                        voice_heard = true;
-                    }
-
-                    if voice_heard {
-                        all_samples.extend_from_slice(&chunk);
-
-                        if amp < SILENCE_THRESHOLD {
-                            silence_ms += poll.as_millis() as u64;
-                            if silence_ms >= pause_threshold_ms {
-                                break;
-                            }
-                        } else {
-                            silence_ms = 0;
-                        }
-                    }
+        loop {
+            let elapsed_ms = start.elapsed().as_millis() as u64;
+            let decision = match rx.recv_timeout(poll) {
+                Ok(chunk) => accumulator.on_event(CaptureEvent::Chunk(&chunk), elapsed_ms),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    accumulator.on_event(CaptureEvent::Timeout, elapsed_ms)
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    if voice_heard {
-                        silence_ms += poll.as_millis() as u64;
-                        if silence_ms >= pause_threshold_ms {
-                            break;
-                        }
-                    }
-                    // If we never heard voice and timeout expired, return None
-                    if !voice_heard && start.elapsed() >= Duration::from_millis(timeout_ms) {
-                        drop(stream);
-                        return None;
-                    }
-                }
+            };
+            if let CaptureDecision::Stop = decision {
+                break;
             }
         }
 
         drop(stream);
-
-        if all_samples.is_empty() {
-            None
-        } else {
-            Some(all_samples)
-        }
-    }
-
-    /// Encode raw i16 samples as a WAV byte vector (16-bit mono PCM).
-    pub fn encode_wav(samples: &[i16], sample_rate: u32) -> Vec<u8> {
-        let data_size = (samples.len() * 2) as u32;
-        let file_size = 44 + data_size;
-
-        let mut wav = Vec::with_capacity(file_size as usize);
-
-        // RIFF header
-        wav.extend_from_slice(b"RIFF");
-        wav.extend_from_slice(&(file_size - 8).to_le_bytes());
-        wav.extend_from_slice(b"WAVE");
-
-        // fmt  chunk
-        wav.extend_from_slice(b"fmt ");
-        wav.extend_from_slice(&16u32.to_le_bytes());          // chunk size
-        wav.extend_from_slice(&1u16.to_le_bytes());            // PCM
-        wav.extend_from_slice(&1u16.to_le_bytes());            // mono
-        wav.extend_from_slice(&sample_rate.to_le_bytes());
-        wav.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
-        wav.extend_from_slice(&2u16.to_le_bytes());            // block align
-        wav.extend_from_slice(&16u16.to_le_bytes());           // bits per sample
-
-        // data chunk
-        wav.extend_from_slice(b"data");
-        wav.extend_from_slice(&data_size.to_le_bytes());
-        for s in samples {
-            wav.extend_from_slice(&s.to_le_bytes());
-        }
-
-        wav
+        accumulator.finish()
     }
 }
 
@@ -193,7 +112,7 @@ impl AudioCapturer for MicrophoneCapturer {
         let pause     = pause_threshold_ms.unwrap_or(1_500);
 
         let samples = self.record_loop(timeout, phrase, pause)?;
-        let raw = Self::encode_wav(&samples, 16_000);
+        let raw = encode_wav(&samples, 16_000);
         Some(AudioCapture::new(raw, 16_000, 2))
     }
 
@@ -205,5 +124,30 @@ impl AudioCapturer for MicrophoneCapturer {
 
     fn set_echo_reference(&self, reference: Option<EchoRef>) {
         *self.echo_reference.lock().unwrap() = reference;
+    }
+
+    fn apply_echo_cancellation(
+        &self,
+        raw:          &[u8],
+        sample_rate:  u32,
+        _sample_width: u16,
+    ) -> Vec<u8> {
+        let Some((ref_samples, ref_rate)) = ({
+            let guard = self.echo_reference.lock().unwrap();
+            guard.as_ref().map(|(bytes, rate, _)| (bytes_to_i16(bytes), *rate))
+        }) else {
+            return raw.to_vec();
+        };
+
+        let mic_samples = bytes_to_i16(raw);
+
+        let ref_resampled = if ref_rate != sample_rate {
+            resample(&ref_samples, ref_rate, sample_rate)
+        } else {
+            ref_samples
+        };
+
+        let cleaned = cancel_echo(&mic_samples, &ref_resampled, 0.95);
+        i16_to_bytes(&cleaned)
     }
 }

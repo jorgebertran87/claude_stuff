@@ -22,32 +22,6 @@ impl SoxMicrophoneCapturer {
     pub fn new() -> Self {
         Self { echo_reference: Mutex::new(None) }
     }
-
-    /// Apply echo cancellation to a raw audio buffer using the stored reference.
-    pub fn apply_echo_cancellation(
-        &self,
-        raw:          &[u8],
-        sample_rate:  u32,
-        _sample_width: u16,
-    ) -> Vec<u8> {
-        let Some((ref_samples, ref_rate)) = ({
-            let guard = self.echo_reference.lock().unwrap();
-            guard.as_ref().map(|(bytes, rate, _)| (bytes_to_i16(bytes), *rate))
-        }) else {
-            return raw.to_vec();
-        };
-
-        let mic_samples = bytes_to_i16(raw);
-
-        let ref_resampled = if ref_rate != sample_rate {
-            resample(&ref_samples, ref_rate, sample_rate)
-        } else {
-            ref_samples
-        };
-
-        let cleaned = cancel_echo(&mic_samples, &ref_resampled, 0.95);
-        i16_to_bytes(&cleaned)
-    }
 }
 
 impl Default for SoxMicrophoneCapturer {
@@ -99,5 +73,30 @@ impl AudioCapturer for SoxMicrophoneCapturer {
 
     fn set_echo_reference(&self, reference: Option<EchoRef>) {
         *self.echo_reference.lock().unwrap() = reference;
+    }
+
+    fn apply_echo_cancellation(
+        &self,
+        raw:          &[u8],
+        sample_rate:  u32,
+        _sample_width: u16,
+    ) -> Vec<u8> {
+        let Some((ref_samples, ref_rate)) = ({
+            let guard = self.echo_reference.lock().unwrap();
+            guard.as_ref().map(|(bytes, rate, _)| (bytes_to_i16(bytes), *rate))
+        }) else {
+            return raw.to_vec();
+        };
+
+        let mic_samples = bytes_to_i16(raw);
+
+        let ref_resampled = if ref_rate != sample_rate {
+            resample(&ref_samples, ref_rate, sample_rate)
+        } else {
+            ref_samples
+        };
+
+        let cleaned = cancel_echo(&mic_samples, &ref_resampled, 0.95);
+        i16_to_bytes(&cleaned)
     }
 }

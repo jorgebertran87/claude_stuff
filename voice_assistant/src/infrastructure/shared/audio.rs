@@ -37,6 +37,40 @@ pub fn rms_amplitude(samples: &[i16]) -> f64 {
     (sum_sq / samples.len() as f64).sqrt() / 32768.0
 }
 
+// ── WAV encoding ───────────────────────────────────────────────────────────
+
+/// Encode raw i16 samples as a WAV byte vector (16-bit mono PCM).
+pub fn encode_wav(samples: &[i16], sample_rate: u32) -> Vec<u8> {
+    let data_size = (samples.len() * 2) as u32;
+    let file_size = 44 + data_size;
+
+    let mut wav = Vec::with_capacity(file_size as usize);
+
+    // RIFF header
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(file_size - 8).to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+
+    // fmt  chunk
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());          // chunk size
+    wav.extend_from_slice(&1u16.to_le_bytes());            // PCM
+    wav.extend_from_slice(&1u16.to_le_bytes());            // mono
+    wav.extend_from_slice(&sample_rate.to_le_bytes());
+    wav.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
+    wav.extend_from_slice(&2u16.to_le_bytes());            // block align
+    wav.extend_from_slice(&16u16.to_le_bytes());           // bits per sample
+
+    // data chunk
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_size.to_le_bytes());
+    for s in samples {
+        wav.extend_from_slice(&s.to_le_bytes());
+    }
+
+    wav
+}
+
 // ── Denoising / echo cancellation ──────────────────────────────────────────
 
 /// Stationary noise reduction: treats the signal's own spectrum as the noise
