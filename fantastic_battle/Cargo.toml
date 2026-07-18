@@ -1,0 +1,8 @@
+[package]
+name = "fantastic_battle"
+version = "0.1.0"
+edition = "2021"
+
+# Pure domain crate for now — the domain layer imports nothing from
+# infrastructure, and no infrastructure adapter exists yet.
+[dependencies]

@@ -1,0 +1,8 @@
+[dev-dependencies]
+cucumber = "0.21"
+futures = "0.3"
+
+[[test]]
+name = "battle_service"
+path = "tests/unit/battle_service.rs"
+harness = false
