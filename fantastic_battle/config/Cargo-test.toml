@@ -17,3 +17,8 @@ harness = false
 name = "http_server"
 path = "tests/integration/http_server.rs"
 harness = false
+
+[[test]]
+name = "game_world_api"
+path = "tests/integration/game_world_api.rs"
+harness = false

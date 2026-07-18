@@ -5,8 +5,8 @@
 | Phase | Status | Commit |
 |---|---|---|
 | 0: Scaffolding | ✅ Done | `9ae70dc` |
-| 1: GameWorld Domain Model | ✅ Done | — |
-| 2: HTTP API | ⬜ Pending | — |
+| 1: GameWorld Domain Model | ✅ Done | `267cf20` |
+| 2: HTTP API | ✅ Done | `(pending commit)` |
 | 3: Frontend Foundation | ⬜ Pending | — |
 | 4: Frontend-Backend Integration | ⬜ Pending | — |
 | 5: UI Polish (Pokémon Effects) | ⬜ Pending | — |

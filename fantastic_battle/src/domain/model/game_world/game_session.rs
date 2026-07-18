@@ -54,6 +54,10 @@ impl GameSession {
         Ok(target)
     }
 
+    pub fn into_map(self) -> GameMap {
+        self.map
+    }
+
     pub fn interact(&self) -> Option<&Npc> {
         let target = self.player_position.adjacent(self.player_direction);
         self.npcs.iter().find(|n| n.position() == target)

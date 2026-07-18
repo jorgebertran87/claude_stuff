@@ -28,9 +28,14 @@ RUN touch src/main.rs src/lib.rs src/container.rs \
     src/infrastructure/mod.rs src/infrastructure/http/mod.rs \
     src/infrastructure/persistence/mod.rs src/infrastructure/map/mod.rs \
     tests/unit/battle_service.rs tests/unit/game_world_service.rs \
-    tests/integration/http_server.rs \
+    src/infrastructure/map/static_map_repository.rs \
+    src/infrastructure/persistence/in_memory_session_repository.rs \
+    src/infrastructure/http/dto.rs \
+    src/infrastructure/http/handlers.rs \
+    src/infrastructure/http/routes.rs \
+    tests/integration/http_server.rs tests/integration/game_world_api.rs \
     features/battle_service.feature features/server_health.feature \
-    features/game_world_service.feature \
-    && cargo test --no-run --lib --test battle_service --test game_world_service --test http_server
+    features/game_world_service.feature features/game_world_api.feature \
+    && cargo test --no-run --lib --test battle_service --test game_world_service --test http_server --test game_world_api
 
-CMD ["cargo", "test", "--lib", "--test", "battle_service", "--test", "game_world_service", "--test", "http_server"]
+CMD ["cargo", "test", "--lib", "--test", "battle_service", "--test", "game_world_service", "--test", "http_server", "--test", "game_world_api"]
