@@ -69,3 +69,7 @@ Organize code around the domain model, not technical layers:
 - **D** — Dependency Inversion: Depend on abstractions (interfaces, protocols), not concrete implementations. Use dependency injection.
 
 When suggesting or writing code, briefly note which principles are in play if it's not obvious.
+
+### Comment Policy
+
+Do **not** write comments. Code must speak for itself through clear naming, small functions, and expressive types. Comments are only allowed when the logic is genuinely inscrutable — a rare "why" that naming alone cannot convey. Doc-comments (`///`, `//!`) count as comments: no doc-comments on types, functions, or modules unless the reason for their existence would be opaque to a new reader.
