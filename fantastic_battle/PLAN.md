@@ -5,7 +5,7 @@
 | Phase | Status | Commit |
 |---|---|---|
 | 0: Scaffolding | ✅ Done | `9ae70dc` |
-| 1: GameWorld Domain Model | ⬜ Pending | — |
+| 1: GameWorld Domain Model | ✅ Done | — |
 | 2: HTTP API | ⬜ Pending | — |
 | 3: Frontend Foundation | ⬜ Pending | — |
 | 4: Frontend-Backend Integration | ⬜ Pending | — |

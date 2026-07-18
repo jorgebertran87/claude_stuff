@@ -9,6 +9,11 @@ path = "tests/unit/battle_service.rs"
 harness = false
 
 [[test]]
+name = "game_world_service"
+path = "tests/unit/game_world_service.rs"
+harness = false
+
+[[test]]
 name = "http_server"
 path = "tests/integration/http_server.rs"
 harness = false

@@ -1,4 +1,5 @@
 mod battle;
+pub mod game_world;
 mod player;
 mod question;
 mod theme;
