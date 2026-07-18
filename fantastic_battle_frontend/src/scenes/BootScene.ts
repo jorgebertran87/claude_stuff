@@ -10,5 +10,9 @@ export class BootScene extends Phaser.Scene {
       fontSize: "32px",
       color: "#ffffff",
     }).setOrigin(0.5);
+
+    this.time.delayedCall(200, () => {
+      this.scene.start("MapScene");
+    });
   }
 }

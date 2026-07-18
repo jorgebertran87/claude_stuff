@@ -7,7 +7,7 @@
 | 0: Scaffolding | ✅ Done | `9ae70dc` |
 | 1: GameWorld Domain Model | ✅ Done | `267cf20` |
 | 2: HTTP API | ✅ Done | `db211c8` |
-| 3: Frontend Foundation | ⬜ Pending | — |
+| 3: Frontend Foundation | ✅ Done | — |
 | 4: Frontend-Backend Integration | ⬜ Pending | — |
 | 5: UI Polish (Pokémon Effects) | ⬜ Pending | — |
 | 6: Hardening & Deployment | ⬜ Pending | — |

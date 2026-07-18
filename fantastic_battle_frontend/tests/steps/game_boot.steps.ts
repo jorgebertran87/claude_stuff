@@ -8,12 +8,12 @@ class GameWorld {
 
 setWorldConstructor(GameWorld);
 
-Before(async function (this: GameWorld) {
+Before({ tags: "@boot" }, async function (this: GameWorld) {
   this.browser = await chromium.launch({ headless: true });
   this.page = await this.browser.newPage();
 });
 
-After(async function (this: GameWorld) {
+After({ tags: "@boot" }, async function (this: GameWorld) {
   await this.browser.close();
 });
 
