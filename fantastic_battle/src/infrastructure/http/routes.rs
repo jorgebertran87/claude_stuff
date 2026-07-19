@@ -14,5 +14,13 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(
             web::resource("/api/sessions/{id}/interact")
                 .route(web::post().to(handlers::interact)),
+        )
+        .service(
+            web::resource("/api/sessions/{id}/battle")
+                .route(web::get().to(handlers::get_battle)),
+        )
+        .service(
+            web::resource("/api/sessions/{id}/battle/answer")
+                .route(web::post().to(handlers::answer_battle)),
         );
 }

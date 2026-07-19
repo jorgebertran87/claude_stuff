@@ -8,7 +8,7 @@
 | 1: GameWorld Domain Model | ✅ Done | `267cf20` |
 | 2: HTTP API | ✅ Done | `db211c8` |
 | 3: Frontend Foundation | ✅ Done | — |
-| 4: Frontend-Backend Integration | ⬜ Pending | — |
+| 4: Frontend-Backend Integration | ✅ Done | — |
 | 5: UI Polish (Pokémon Effects) | ⬜ Pending | — |
 | 6: Hardening & Deployment | ⬜ Pending | — |
 
@@ -83,11 +83,11 @@ fantastic_battle_frontend/ (TypeScript + Phaser.js — NEW)
 - NPC sprites placed on map
 - Gherkin scenarios with Playwright asserting game state through `page.evaluate()`
 
-### Phase 4: Frontend-Backend Integration
-- `ApiClient` service calling backend endpoints
-- MapScene wired to backend: join game, validate moves, trigger interaction
-- BattleScene: Pokémon-style dialog box, question display, answer input, victory/defeat result
-- End-to-end Gherkin acceptance test: full loop from join → explore → interact → battle
+### Phase 4: Frontend-Backend Integration ✅
+- **Backend**: `BattleService` in container, battle HTTP endpoints (`POST .../interact` auto-starts battles, `GET .../battle`, `POST .../battle/answer`), `BattleResponse`/`BattleAnswerRequest`/`BattleAnswerResponse` DTOs, `appState` refactored (`service` → `game_service` + `battle_service` + `battle_repo`)
+- **Frontend**: `ApiClient` (join/move/interact/answer), `MapScene` server-validated movement with client-side fallback, `Player.animateTo()`, `BattleScene` + `BattleOverlay` (DOM-based question/answer UI), space key triggers interact → battle transition
+- **E2E**: `full_game_loop.feature` — join → move east → interact → answer correctly/wrong → outcome displayed → return to map
+- 4 new backend tests (battle_api), 3 new frontend feature files (api_integration, battle_scene, full_game_loop)
 
 ### Phase 5: UI Polish (Pokémon Effects)
 - Dialog box with typewriter text effect and blinking advance indicator

@@ -11,7 +11,7 @@ pub enum BattleError {
     AlreadyOver,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Battle {
     opponent: Player,
     question: Question,

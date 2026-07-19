@@ -9,7 +9,7 @@ use fantastic_battle::domain::model::{
 use fantastic_battle::domain::ports::QuestionAsker;
 use fantastic_battle::domain::service::BattleService;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct FakeQuestionAsker {
     questions: HashMap<(String, String), Question>,
 }

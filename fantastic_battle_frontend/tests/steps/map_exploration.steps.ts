@@ -44,7 +44,7 @@ async function waitForNotMoving(page: Page) {
 
 async function debugMove(page: Page, direction: string) {
   await page.evaluate((dir: string) => {
-    (window as any).__gameState.debugMove(dir);
+    return (window as any).__gameState.debugMove(dir);
   }, direction);
   await waitForNotMoving(page);
 }

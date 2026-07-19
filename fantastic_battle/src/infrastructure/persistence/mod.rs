@@ -1,3 +1,5 @@
+mod in_memory_battle_repository;
 mod in_memory_session_repository;
 
+pub use in_memory_battle_repository::InMemoryBattleRepository;
 pub use in_memory_session_repository::InMemorySessionRepository;

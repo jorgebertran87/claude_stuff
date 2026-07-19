@@ -22,3 +22,18 @@ harness = false
 name = "game_world_api"
 path = "tests/integration/game_world_api.rs"
 harness = false
+
+[[test]]
+name = "question_asker"
+path = "tests/integration/question_asker.rs"
+harness = false
+
+[[test]]
+name = "battle_repository"
+path = "tests/integration/battle_repository.rs"
+harness = false
+
+[[test]]
+name = "battle_api"
+path = "tests/integration/battle_api.rs"
+harness = false

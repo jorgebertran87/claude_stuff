@@ -54,8 +54,12 @@ impl GameSession {
         Ok(target)
     }
 
-    pub fn into_map(self) -> GameMap {
-        self.map
+    pub fn npcs(&self) -> &[Npc] {
+        &self.npcs
+    }
+
+    pub fn map(&self) -> &GameMap {
+        &self.map
     }
 
     pub fn interact(&self) -> Option<&Npc> {

@@ -54,22 +54,18 @@ export class Player {
     return this.moving;
   }
 
-  move(
-    direction: string,
+  animateTo(
     targetX: number,
     targetY: number,
-    isWalkable: (x: number, y: number) => boolean,
+    direction: string,
     onComplete?: () => void
-  ): boolean {
+  ): void {
     if (this.moving) {
-      return false;
-    }
-    if (!isWalkable(targetX, targetY)) {
-      return false;
+      return;
     }
     this.gridX = targetX;
     this.gridY = targetY;
-    this.direction = direction;
+    this.direction = direction.toLowerCase();
     this.moving = true;
 
     const pixelX = this.toPixelX(targetX);
@@ -81,14 +77,12 @@ export class Player {
       y: pixelY,
       duration: MOVE_DURATION,
       onComplete: () => {
+        this.moving = false;
         if (onComplete) {
           onComplete();
         }
-        this.moving = false;
       },
     });
-
-    return true;
   }
 
   private toPixelX(gridX: number): number {

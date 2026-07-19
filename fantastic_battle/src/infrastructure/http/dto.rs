@@ -13,12 +13,14 @@ pub struct SessionResponse {
 
 impl From<GameSession> for SessionResponse {
     fn from(session: GameSession) -> Self {
+        let npcs = session.npcs().iter().map(NpcResponse::from).collect();
+        let map = MapResponse::from(session.map());
         Self {
             id: session.id().to_string(),
             player_position: PositionResponse::from(session.player_position()),
             player_direction: session.player_direction(),
-            npcs: vec![], // NPCs live on the map, surfaced via interact
-            map: MapResponse::from(session.into_map()),
+            npcs,
+            map,
         }
     }
 }
@@ -71,15 +73,15 @@ pub struct TileEntry {
     pub tile_type: TileType,
 }
 
-impl From<GameMap> for MapResponse {
-    fn from(map: GameMap) -> Self {
+impl From<&GameMap> for MapResponse {
+    fn from(map: &GameMap) -> Self {
         let tiles: Vec<TileEntry> = map
             .tiles
-            .into_iter()
+            .iter()
             .map(|(pos, tile_type)| TileEntry {
                 x: pos.x(),
                 y: pos.y(),
-                tile_type,
+                tile_type: *tile_type,
             })
             .collect();
         Self {
@@ -105,6 +107,22 @@ pub struct MoveResponse {
 #[derive(Debug, Serialize)]
 pub struct InteractResponse {
     pub npc: Option<NpcResponse>,
+    pub battle: Option<BattleResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BattleResponse {
+    pub question: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BattleAnswerRequest {
+    pub answer: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BattleAnswerResponse {
+    pub outcome: String,
 }
 
 #[derive(Debug, Serialize)]

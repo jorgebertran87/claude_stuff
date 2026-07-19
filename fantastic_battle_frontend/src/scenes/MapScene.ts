@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { Player } from "../game/Player";
 import { Npc } from "../game/Npc";
 import { GameState } from "../game/GameState";
+import { ApiClient } from "../services/ApiClient";
 
 const TILE_SIZE = 32;
 const MAP_WIDTH_TILES = 5;
@@ -31,6 +32,9 @@ export class MapScene extends Phaser.Scene {
   private offsetX = 0;
   private offsetY = 0;
   private lastDirection: string | null = null;
+  private apiClient!: ApiClient;
+  private lastSpaceState = false;
+  private hasApiSession = false;
 
   constructor() {
     super({ key: "MapScene" });
@@ -55,7 +59,9 @@ export class MapScene extends Phaser.Scene {
     this.load.tilemapTiledJSON("map", "assets/map.json");
   }
 
-  create(): void {
+  async create(): Promise<void> {
+    this.apiClient = this.game.registry.get("apiClient");
+
     this.offsetX = (800 - MAP_PIXEL_W) / 2;
     this.offsetY = (600 - MAP_PIXEL_H) / 2;
 
@@ -67,18 +73,47 @@ export class MapScene extends Phaser.Scene {
     this.groundLayer = map.createLayer("ground", tileset)!;
     this.groundLayer.setPosition(this.offsetX, this.offsetY);
 
-    this.player = new Player(
-      this,
-      0,
-      0,
-      "south",
-      this.offsetX,
-      this.offsetY
-    );
+    try {
+      const session = await this.apiClient.join();
+      this.hasApiSession = true;
 
-    this.npcs = [
-      new Npc(this, "Sphinx", 2, 0, "south", this.offsetX, this.offsetY),
-    ];
+      this.player = new Player(
+        this,
+        session.player_position.x,
+        session.player_position.y,
+        session.player_direction,
+        this.offsetX,
+        this.offsetY
+      );
+
+      this.npcs = session.npcs.map(
+        (npcData) =>
+          new Npc(
+            this,
+            npcData.name,
+            npcData.position.x,
+            npcData.position.y,
+            npcData.direction,
+            this.offsetX,
+            this.offsetY
+          )
+      );
+    } catch {
+      this.hasApiSession = false;
+
+      this.player = new Player(
+        this,
+        0,
+        0,
+        "south",
+        this.offsetX,
+        this.offsetY
+      );
+
+      this.npcs = [
+        new Npc(this, "Sphinx", 2, 0, "south", this.offsetX, this.offsetY),
+      ];
+    }
 
     this.cursors = this.input.keyboard!.createCursorKeys();
 
@@ -86,6 +121,9 @@ export class MapScene extends Phaser.Scene {
   }
 
   update(): void {
+    if (!this.player || !this.cursors) {
+      return;
+    }
     if (this.player.getIsMoving()) {
       this.exposeGameState();
       return;
@@ -105,18 +143,44 @@ export class MapScene extends Phaser.Scene {
       }
     }
 
+    const spaceDown = this.cursors.space.isDown;
+    if (spaceDown && !this.lastSpaceState) {
+      this.tryInteract();
+    }
+    this.lastSpaceState = spaceDown;
+
     this.exposeGameState();
   }
 
-  private tryMove(direction: string): void {
+  private async tryMove(direction: string): Promise<void> {
+    if (this.hasApiSession) {
+      try {
+        const response = await this.apiClient.move(direction);
+        this.player.animateTo(
+          response.player_position.x,
+          response.player_position.y,
+          response.player_direction,
+          () => this.exposeGameState()
+        );
+        this.exposeGameState();
+      } catch {
+        this.exposeGameState();
+      }
+      return;
+    }
+
     const delta = DIRECTION_DELTA[direction];
     const pos = this.player.getGridPosition();
     const targetX = pos.x + delta.dx;
     const targetY = pos.y + delta.dy;
 
-    const moved = this.player.move(direction, targetX, targetY, (x, y) =>
-      this.isWalkable(x, y),
-      () => this.exposeGameState()
+    if (!this.isWalkable(targetX, targetY)) {
+      this.exposeGameState();
+      return;
+    }
+
+    this.player.animateTo(targetX, targetY, direction, () =>
+      this.exposeGameState()
     );
     this.exposeGameState();
   }
@@ -137,6 +201,26 @@ export class MapScene extends Phaser.Scene {
     return tile.index !== 2;
   }
 
+  private async tryInteract(): Promise<void> {
+    if (!this.hasApiSession) {
+      return;
+    }
+    try {
+      const response = await this.apiClient.interact();
+      if (response.battle) {
+        this.scene.start("BattleScene", {
+          npcName: response.npc?.name ?? "",
+          question: response.battle.question,
+          sessionId: this.apiClient.getSessionId(),
+        });
+        return;
+      }
+      this.exposeGameState();
+    } catch {
+      this.exposeGameState();
+    }
+  }
+
   private exposeGameState(): void {
     const state: GameState = {
       playerPosition: this.player.getGridPosition(),
@@ -153,9 +237,13 @@ export class MapScene extends Phaser.Scene {
 
     const self = this;
     (window as any).__gameState = Object.assign(state, {
-      debugMove: (direction: string) => {
-        self.tryMove(direction);
+      debugMove: (direction: string): Promise<void> => {
+        return self.tryMove(direction);
       },
+      debugInteract: (): Promise<void> => {
+        return self.tryInteract();
+      },
+      debugHasApi: () => self.hasApiSession,
     });
   }
 }
