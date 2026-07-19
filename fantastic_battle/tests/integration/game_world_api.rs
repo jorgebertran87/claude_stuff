@@ -29,21 +29,50 @@ impl ApiWorld {
 
 // ── Joining a game ──────────────────────────────────────────────────────────
 
-#[when("the client sends a POST request to \"/api/sessions\"")]
-async fn when_post_sessions(world: &mut ApiWorld) {
-    world.ensure_state();
+async fn post_session(state: &AppState, body: &str) -> (StatusCode, Vec<u8>) {
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(world.state.clone().unwrap()))
+            .app_data(web::Data::new(state.clone()))
             .configure(http::configure),
     )
     .await;
     let req = test::TestRequest::post()
         .uri("/api/sessions")
+        .set_payload(body.to_string())
+        .insert_header(("Content-Type", "application/json"))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    world.response_status = Some(resp.status());
-    world.response_body = Some(test::read_body(resp).await.to_vec());
+    let status = resp.status();
+    let body_bytes = test::read_body(resp).await.to_vec();
+    (status, body_bytes)
+}
+
+#[when("the client sends a POST request to \"/api/sessions\"")]
+async fn when_post_sessions(world: &mut ApiWorld) {
+    world.ensure_state();
+    let state = world.state.clone().unwrap();
+    let (status, body) = post_session(&state, r#"{"theme": "Greek mythology"}"#).await;
+    world.response_status = Some(status);
+    world.response_body = Some(body);
+}
+
+#[when(regex = r#"^the client sends a POST request to "([^"]+)" with theme "([^"]*)"$"#)]
+async fn when_post_with_theme(world: &mut ApiWorld, _path: String, theme: String) {
+    world.ensure_state();
+    let state = world.state.clone().unwrap();
+    let body = format!(r#"{{"theme": "{}"}}"#, theme);
+    let (status, resp_body) = post_session(&state, &body).await;
+    world.response_status = Some(status);
+    world.response_body = Some(resp_body);
+}
+
+#[when("the client sends a POST request to \"/api/sessions\" with no theme field")]
+async fn when_post_no_theme(world: &mut ApiWorld) {
+    world.ensure_state();
+    let state = world.state.clone().unwrap();
+    let (status, resp_body) = post_session(&state, "{}").await;
+    world.response_status = Some(status);
+    world.response_body = Some(resp_body);
 }
 
 #[then("the response status is 200")]
@@ -72,18 +101,9 @@ fn then_position_facing(world: &mut ApiWorld, x: i32, y: i32, direction: String)
 #[given("a game session exists")]
 async fn given_session_exists(world: &mut ApiWorld) {
     world.ensure_state();
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(world.state.clone().unwrap()))
-            .configure(http::configure),
-    )
-    .await;
-    let req = test::TestRequest::post()
-        .uri("/api/sessions")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let body = test::read_body(resp).await;
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    let state = world.state.clone().unwrap();
+    let (_status, body_bytes) = post_session(&state, r#"{"theme": "Greek mythology"}"#).await;
+    let json: Value = serde_json::from_slice(&body_bytes).unwrap();
     world.session_id = Some(json["id"].as_str().unwrap().to_string());
 }
 
@@ -118,6 +138,11 @@ async fn when_get_path(world: &mut ApiWorld, path: String) {
     let resp = test::call_service(&app, req).await;
     world.response_status = Some(resp.status());
     world.response_body = Some(test::read_body(resp).await.to_vec());
+}
+
+#[then("the response status is 400")]
+fn then_status_400(world: &mut ApiWorld) {
+    assert_eq!(world.response_status, Some(StatusCode::BAD_REQUEST));
 }
 
 #[then("the response status is 404")]

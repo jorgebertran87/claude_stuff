@@ -94,6 +94,11 @@ impl From<&GameMap> for MapResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct JoinRequest {
+    pub theme: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MoveRequest {
     pub direction: Option<Direction>,
 }

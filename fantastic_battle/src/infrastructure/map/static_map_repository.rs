@@ -32,18 +32,28 @@ impl MapRepository for StaticMapRepository {
             start_position: Position::new(0, 0),
             npc_spawns: vec![
                 NpcSpawn {
-                    name: "Sphinx".to_string(),
+                    name: "NPC-1".to_string(),
                     position: Position::new(2, 0),
                     direction: Direction::South,
                 },
                 NpcSpawn {
-                    name: "Medusa".to_string(),
+                    name: "NPC-2".to_string(),
                     position: Position::new(8, 2),
                     direction: Direction::South,
                 },
                 NpcSpawn {
-                    name: "Minotaur".to_string(),
+                    name: "NPC-3".to_string(),
                     position: Position::new(12, 5),
+                    direction: Direction::South,
+                },
+                NpcSpawn {
+                    name: "NPC-4".to_string(),
+                    position: Position::new(4, 8),
+                    direction: Direction::South,
+                },
+                NpcSpawn {
+                    name: "NPC-5".to_string(),
+                    position: Position::new(10, 8),
                     direction: Direction::South,
                 },
             ],

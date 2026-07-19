@@ -42,3 +42,8 @@ harness = false
 name = "error_handling"
 path = "tests/integration/error_handling.rs"
 harness = false
+
+[[test]]
+name = "npc_name_generator"
+path = "tests/integration/npc_name_generator.rs"
+harness = false

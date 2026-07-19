@@ -5,10 +5,22 @@ Feature: Game World Service
 
   # ── Joining the game ─────────────────────────────────────────────────────
 
-  Scenario: Joining a game places the player at the starting position
-    When the human player joins the game
+  Scenario: Joining a game with a theme places the player at the starting position
+    When the human player joins the game with the theme "Greek mythology"
     Then the player is at position (5, 5)
     And the player is facing south
+    And the session has the theme "Greek mythology"
+
+  Scenario: Joining with a theme places themed NPCs on the map
+    Given the NPC name generator provides the names Socrates, Aristotle, Plato for the theme "Greek mythology"
+    When the human player joins the game with the theme "Greek mythology"
+    Then the session has 3 NPCs
+    And the NPCs are named Socrates, Aristotle, and Plato
+
+  Scenario: Joining with a different theme places different NPCs
+    Given the NPC name generator provides the names Ada Lovelace, Grace Hopper for the theme "Computer Science"
+    When the human player joins the game with the theme "Computer Science"
+    Then the NPCs are named Ada Lovelace and Grace Hopper
 
   # ── Movement ─────────────────────────────────────────────────────────────
 

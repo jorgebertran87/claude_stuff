@@ -72,6 +72,8 @@ async fn create_session(state: &AppState) -> String {
     .await;
     let req = test::TestRequest::post()
         .uri("/api/sessions")
+        .set_payload(r#"{"theme": "Greek mythology"}"#)
+        .insert_header(("Content-Type", "application/json"))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body = test::read_body(resp).await;

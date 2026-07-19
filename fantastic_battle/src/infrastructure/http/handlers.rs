@@ -5,15 +5,41 @@ use crate::domain::model::{BattleError, Player, Theme};
 use crate::domain::service::GameWorldError;
 use crate::infrastructure::http::dto::{
     BattleAnswerRequest, BattleAnswerResponse, BattleResponse, ErrorResponse, InteractResponse,
-    MoveRequest, MoveResponse, NpcResponse, SessionResponse,
+    JoinRequest, MoveRequest, MoveResponse, NpcResponse, SessionResponse,
 };
 
 pub async fn health() -> HttpResponse {
     HttpResponse::Ok().body("ok")
 }
 
-pub async fn join(state: web::Data<AppState>) -> HttpResponse {
-    let session = state.game_service.join();
+pub async fn join(
+    state: web::Data<AppState>,
+    body: Option<web::Json<JoinRequest>>,
+) -> HttpResponse {
+    let theme_name = match body {
+        Some(b) => match &b.theme {
+            Some(t) => t.clone(),
+            None => {
+                return HttpResponse::BadRequest().json(ErrorResponse {
+                    error: "missing theme field".to_string(),
+                })
+            }
+        },
+        None => {
+            return HttpResponse::BadRequest().json(ErrorResponse {
+                error: "missing theme field".to_string(),
+            })
+        }
+    };
+    let theme = match Theme::new(&theme_name) {
+        Ok(t) => t,
+        Err(_) => {
+            return HttpResponse::BadRequest().json(ErrorResponse {
+                error: "theme is required".to_string(),
+            })
+        }
+    };
+    let session = state.game_service.join(&theme);
     HttpResponse::Ok().json(SessionResponse::from(session))
 }
 
@@ -76,11 +102,11 @@ pub async fn interact(state: web::Data<AppState>, path: web::Path<String>) -> Ht
     };
     let (npc_response, battle) = match npc {
         Some(ref n) => {
-            let theme = match Theme::new("Greek mythology") {
-                Ok(t) => t,
-                Err(_) => {
-                    return HttpResponse::InternalServerError().json(ErrorResponse {
-                        error: "failed to create battle theme".to_string(),
+            let session_theme = match state.game_service.get_session(&session_id) {
+                Some(s) => s.theme().clone(),
+                None => {
+                    return HttpResponse::NotFound().json(ErrorResponse {
+                        error: "session not found".to_string(),
                     })
                 }
             };
@@ -92,7 +118,7 @@ pub async fn interact(state: web::Data<AppState>, path: web::Path<String>) -> Ht
                     })
                 }
             };
-            let battle = state.battle_service.start_battle(&theme, &player);
+            let battle = state.battle_service.start_battle(&session_theme, &player);
             state.battle_repo.save(&session_id, battle.clone());
             (
                 Some(NpcResponse::from(n)),

@@ -1,5 +1,7 @@
 use uuid::Uuid;
 
+use crate::domain::model::Theme;
+
 use super::{Direction, GameMap, MoveError, Npc, Position};
 
 #[derive(Debug, Clone)]
@@ -9,10 +11,11 @@ pub struct GameSession {
     player_position: Position,
     player_direction: Direction,
     npcs: Vec<Npc>,
+    theme: Theme,
 }
 
 impl GameSession {
-    pub fn new(map: GameMap) -> Self {
+    pub fn new(map: GameMap, theme: Theme) -> Self {
         let player_position = map.start_position;
         let player_direction = Direction::South;
         let npcs = map
@@ -26,6 +29,7 @@ impl GameSession {
             player_position,
             player_direction,
             npcs,
+            theme,
         }
     }
 
@@ -39,6 +43,10 @@ impl GameSession {
 
     pub fn player_direction(&self) -> Direction {
         self.player_direction
+    }
+
+    pub fn theme(&self) -> &Theme {
+        &self.theme
     }
 
     pub fn move_player(&mut self, direction: Direction) -> Result<Position, MoveError> {

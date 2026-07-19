@@ -5,11 +5,21 @@ Feature: Game World API
 
   # ── Joining a game ────────────────────────────────────────────────────────
 
-  Scenario: Creating a new game session returns session state
-    When the client sends a POST request to "/api/sessions"
+  Scenario: Creating a new game session with a theme returns session state
+    When the client sends a POST request to "/api/sessions" with theme "Greek mythology"
     Then the response status is 200
     And the response body contains a session id
     And the player position is (0, 0) facing "South"
+
+  Scenario: Creating a session without a theme is rejected
+    When the client sends a POST request to "/api/sessions" with no theme field
+    Then the response status is 400
+    And the error message is "missing theme field"
+
+  Scenario: Creating a session with a blank theme is rejected
+    When the client sends a POST request to "/api/sessions" with theme ""
+    Then the response status is 400
+    And the error message is "theme is required"
 
   # ── Retrieving a session ──────────────────────────────────────────────────
 

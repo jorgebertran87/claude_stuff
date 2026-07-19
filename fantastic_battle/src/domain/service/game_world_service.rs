@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use crate::domain::model::game_world::{Direction, GameSession, MoveError, Npc, Position};
-use crate::domain::ports::{MapRepository, SessionRepository};
+use crate::domain::model::Theme;
+use crate::domain::ports::{MapRepository, NpcNameGenerator, SessionRepository};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameWorldError {
@@ -21,6 +22,7 @@ impl std::fmt::Display for GameWorldError {
 pub struct GameWorldService {
     map_repo: Arc<dyn MapRepository>,
     session_repo: Arc<dyn SessionRepository>,
+    name_generator: Arc<dyn NpcNameGenerator>,
 }
 
 impl std::fmt::Debug for GameWorldService {
@@ -33,16 +35,24 @@ impl GameWorldService {
     pub fn new(
         map_repo: Arc<dyn MapRepository>,
         session_repo: Arc<dyn SessionRepository>,
+        name_generator: Arc<dyn NpcNameGenerator>,
     ) -> Self {
         Self {
             map_repo,
             session_repo,
+            name_generator,
         }
     }
 
-    pub fn join(&self) -> GameSession {
-        let map = self.map_repo.load();
-        let session = GameSession::new(map);
+    pub fn join(&self, theme: &Theme) -> GameSession {
+        let mut map = self.map_repo.load();
+        let names = self
+            .name_generator
+            .generate(theme, map.npc_spawns.len() as u32);
+        for (spawn, name) in map.npc_spawns.iter_mut().zip(names.iter()) {
+            spawn.name = name.name().to_string();
+        }
+        let session = GameSession::new(map, theme.clone());
         self.session_repo.save(session.clone());
         session
     }
