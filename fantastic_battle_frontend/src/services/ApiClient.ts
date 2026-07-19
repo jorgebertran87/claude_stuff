@@ -7,6 +7,7 @@ interface NpcData {
   name: string;
   position: Position;
   direction: string;
+  status: string;
 }
 
 export interface SessionResponse {
@@ -19,6 +20,12 @@ export interface SessionResponse {
     height: number;
     tiles: { x: number; y: number; type: string }[];
     start_position: Position;
+  };
+  results?: {
+    total: number;
+    correct: number;
+    incorrect: number;
+    remaining: number;
   };
 }
 
@@ -40,11 +47,14 @@ export class ApiClient {
     this.baseUrl = baseUrl;
   }
 
-  async join(theme?: string): Promise<SessionResponse> {
-    const body = theme ? JSON.stringify({ theme }) : undefined;
+  async join(theme: string, questionCount?: number): Promise<SessionResponse> {
+    const body = JSON.stringify({
+      theme,
+      question_count: questionCount ?? 5,
+    });
     const resp = await fetch(`${this.baseUrl}/api/sessions`, {
       method: "POST",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: { "Content-Type": "application/json" },
       body,
     });
     if (!resp.ok) {
@@ -53,6 +63,14 @@ export class ApiClient {
     const data = await resp.json();
     this.sessionId = data.id;
     return data;
+  }
+
+  async getSession(sessionId: string): Promise<SessionResponse> {
+    const resp = await fetch(`${this.baseUrl}/api/sessions/${sessionId}`);
+    if (!resp.ok) {
+      throw new Error(`getSession failed: ${resp.status}`);
+    }
+    return resp.json();
   }
 
   async move(direction: string): Promise<MoveResponse> {

@@ -2,6 +2,7 @@ export interface NpcState {
   name: string;
   position: { x: number; y: number };
   direction: string;
+  status: string;
 }
 
 export interface GameState {

@@ -60,9 +60,23 @@ export class MapScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
     this.cursors = this.input.keyboard!.createCursorKeys();
 
-    this.initPlayerAndNpcs();
+    const incoming = this.scene.settings.data as {
+      sessionId?: string;
+      npcName?: string;
+      outcome?: string;
+    } | undefined;
 
-    if (this.soundService) {
+    if (incoming?.sessionId) {
+      this.initFromSession({
+        sessionId: incoming.sessionId,
+        npcName: incoming.npcName,
+        outcome: incoming.outcome,
+      });
+    } else {
+      this.initPlayerAndNpcs();
+    }
+
+    if (this.soundService && !incoming?.sessionId) {
       this.time.delayedCall(1500, () => {
         this.soundService.startBgm();
       });
@@ -120,8 +134,9 @@ export class MapScene extends Phaser.Scene {
 
   private async initPlayerAndNpcs(): Promise<void> {
     try {
-      const theme = this.game.registry.get("theme") as string | undefined;
-      const session = await this.apiClient.join(theme);
+      const theme = this.game.registry.get("theme") as string;
+      const questionCount = this.game.registry.get("questionCount") as number | undefined;
+      const session = await this.apiClient.join(theme, questionCount);
       this.hasApiSession = true;
 
       this.player = new Player(
@@ -138,7 +153,8 @@ export class MapScene extends Phaser.Scene {
             npcData.name,
             npcData.position.x,
             npcData.position.y,
-            npcData.direction
+            npcData.direction,
+            npcData.status
           )
       );
     } catch {
@@ -149,6 +165,66 @@ export class MapScene extends Phaser.Scene {
 
     this.cameras.main.startFollow(this.player.getSprite(), true, 0.1, 0.1);
     this.exposeGameState();
+  }
+
+  private async initFromSession(incoming: {
+    sessionId: string;
+    npcName?: string;
+    outcome?: string;
+  }): Promise<void> {
+    try {
+      const session = await this.apiClient.getSession(incoming.sessionId);
+      this.hasApiSession = true;
+
+      this.player = new Player(
+        this,
+        session.player_position.x,
+        session.player_position.y,
+        session.player_direction
+      );
+
+      this.npcs = session.npcs.map(
+        (npcData) =>
+          new Npc(
+            this,
+            npcData.name,
+            npcData.position.x,
+            npcData.position.y,
+            npcData.direction,
+            npcData.status
+          )
+      );
+
+      const allDefeated = this.npcs.every(
+        (n) => n.getStatus() !== "Active"
+      );
+
+      if (allDefeated && session.results) {
+        this.showResults(session.results);
+      }
+    } catch {
+      this.hasApiSession = false;
+      this.player = new Player(this, 0, 0, "south");
+      this.npcs = [new Npc(this, "Sphinx", 2, 0, "south")];
+    }
+
+    this.cameras.main.startFollow(this.player.getSprite(), true, 0.1, 0.1);
+    this.exposeGameState();
+  }
+
+  private showResults(results: {
+    total: number;
+    correct: number;
+    incorrect: number;
+    remaining: number;
+  }): void {
+    this.time.delayedCall(500, async () => {
+      const { ResultsOverlay } = await import("../ui/ResultsOverlay");
+      const overlay = new ResultsOverlay();
+      await overlay.show(results);
+      overlay.remove();
+      this.scene.start("BootScene");
+    });
   }
 
   update(): void {
@@ -248,6 +324,23 @@ export class MapScene extends Phaser.Scene {
     if (!this.hasApiSession) {
       return;
     }
+    const playerPos = this.player.getGridPosition();
+    const playerDir = this.player.getDirection();
+    const delta = DIRECTION_DELTA[playerDir];
+    if (!delta) {
+      return;
+    }
+    const targetX = playerPos.x + delta.dx;
+    const targetY = playerPos.y + delta.dy;
+    const adjacentNpc = this.npcs.find(
+      (n) => {
+        const npcPos = n.getGridPosition();
+        return npcPos.x === targetX && npcPos.y === targetY;
+      }
+    );
+    if (adjacentNpc && adjacentNpc.getStatus() !== "Active") {
+      return;
+    }
     try {
       const response = await this.apiClient.interact();
       if (response.battle) {
@@ -343,6 +436,7 @@ export class MapScene extends Phaser.Scene {
         name: npc.getName(),
         position: npc.getGridPosition(),
         direction: npc.getDirection(),
+        status: npc.getStatus(),
       })),
       cameraScrollX: this.cameras.main.scrollX,
       cameraScrollY: this.cameras.main.scrollY,

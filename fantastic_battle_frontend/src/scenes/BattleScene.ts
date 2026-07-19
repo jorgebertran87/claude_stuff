@@ -9,7 +9,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   async create(): Promise<void> {
-    const { question } = this.scene.settings.data as {
+    const { npcName, question, sessionId } = this.scene.settings.data as {
       npcName: string;
       question: string;
       sessionId: string;
@@ -31,6 +31,10 @@ export class BattleScene extends Phaser.Scene {
 
     await overlay.showOutcome(response.outcome);
 
-    this.scene.start("MapScene");
+    this.scene.start("MapScene", {
+      sessionId,
+      npcName,
+      outcome: response.outcome,
+    });
   }
 }

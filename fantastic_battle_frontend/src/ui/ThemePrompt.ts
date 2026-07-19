@@ -1,7 +1,12 @@
+export interface ThemePromptResult {
+  theme: string;
+  questionCount: number;
+}
+
 export class ThemePrompt {
   private container: HTMLDivElement | null = null;
 
-  show(): Promise<string> {
+  show(): Promise<ThemePromptResult> {
     this.remove();
 
     this.container = document.createElement("div");
@@ -28,6 +33,20 @@ export class ThemePrompt {
       "padding:10px 16px;font-size:18px;border-radius:4px;border:none;" +
       "width:350px;margin-bottom:16px;text-align:center;";
 
+    const countLabel = document.createElement("p");
+    countLabel.textContent = "Number of Questions";
+    countLabel.style.cssText = "font-size:14px;margin-bottom:8px;color:#aaa;";
+
+    const countInput = document.createElement("input");
+    countInput.id = "question-count";
+    countInput.type = "number";
+    countInput.min = "1";
+    countInput.max = "10";
+    countInput.value = "5";
+    countInput.style.cssText =
+      "padding:8px 12px;font-size:16px;border-radius:4px;border:none;" +
+      "width:100px;margin-bottom:20px;text-align:center;";
+
     const button = document.createElement("button");
     button.id = "theme-start";
     button.textContent = "Start Game";
@@ -38,6 +57,8 @@ export class ThemePrompt {
     this.container.appendChild(title);
     this.container.appendChild(subtitle);
     this.container.appendChild(input);
+    this.container.appendChild(countLabel);
+    this.container.appendChild(countInput);
     this.container.appendChild(button);
 
     document.body.appendChild(this.container);
@@ -49,9 +70,10 @@ export class ThemePrompt {
           input.style.border = "2px solid #f44336";
           return;
         }
+        const count = parseInt(countInput.value, 10) || 5;
         button.removeEventListener("click", submit);
         input.removeEventListener("keydown", onKey);
-        resolve(value);
+        resolve({ theme: value, questionCount: count });
       };
       const onKey = (e: KeyboardEvent) => {
         if (e.key === "Enter") {
