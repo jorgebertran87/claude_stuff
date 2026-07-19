@@ -7,7 +7,7 @@ Feature: Map Exploration
   Scenario: Full game world exploration
     Given the map has loaded
     Then the game canvas is visible
-    And the map is 5 tiles wide and 5 tiles tall
+    And the map is 15 tiles wide and 10 tiles tall
     And the player is at grid position (0, 0)
     And the player is facing south
     And an NPC named Sphinx is at grid position (2, 0)

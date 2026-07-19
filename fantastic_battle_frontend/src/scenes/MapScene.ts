@@ -3,10 +3,12 @@ import { Player } from "../game/Player";
 import { Npc } from "../game/Npc";
 import { GameState } from "../game/GameState";
 import { ApiClient } from "../services/ApiClient";
+import { DialogBox } from "../ui/DialogBox";
+import { SoundService } from "../services/SoundService";
 
 const TILE_SIZE = 32;
-const MAP_WIDTH_TILES = 5;
-const MAP_HEIGHT_TILES = 5;
+const MAP_WIDTH_TILES = 15;
+const MAP_HEIGHT_TILES = 10;
 const MAP_PIXEL_W = MAP_WIDTH_TILES * TILE_SIZE;
 const MAP_PIXEL_H = MAP_HEIGHT_TILES * TILE_SIZE;
 
@@ -29,12 +31,12 @@ export class MapScene extends Phaser.Scene {
   private npcs: Npc[] = [];
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private groundLayer!: Phaser.Tilemaps.TilemapLayer;
-  private offsetX = 0;
-  private offsetY = 0;
   private lastDirection: string | null = null;
   private apiClient!: ApiClient;
   private lastSpaceState = false;
   private hasApiSession = false;
+  private dialog: DialogBox | null = null;
+  private soundService!: SoundService;
 
   constructor() {
     super({ key: "MapScene" });
@@ -61,9 +63,7 @@ export class MapScene extends Phaser.Scene {
 
   async create(): Promise<void> {
     this.apiClient = this.game.registry.get("apiClient");
-
-    this.offsetX = (800 - MAP_PIXEL_W) / 2;
-    this.offsetY = (600 - MAP_PIXEL_H) / 2;
+    this.soundService = this.game.registry.get("soundService");
 
     const map = this.make.tilemap({ key: "map" });
     const tileset = map.addTilesetImage("tiles", "tiles");
@@ -71,7 +71,8 @@ export class MapScene extends Phaser.Scene {
       throw new Error("tileset not found");
     }
     this.groundLayer = map.createLayer("ground", tileset)!;
-    this.groundLayer.setPosition(this.offsetX, this.offsetY);
+
+    this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
 
     try {
       const session = await this.apiClient.join();
@@ -81,9 +82,7 @@ export class MapScene extends Phaser.Scene {
         this,
         session.player_position.x,
         session.player_position.y,
-        session.player_direction,
-        this.offsetX,
-        this.offsetY
+        session.player_direction
       );
 
       this.npcs = session.npcs.map(
@@ -93,34 +92,39 @@ export class MapScene extends Phaser.Scene {
             npcData.name,
             npcData.position.x,
             npcData.position.y,
-            npcData.direction,
-            this.offsetX,
-            this.offsetY
+            npcData.direction
           )
       );
     } catch {
       this.hasApiSession = false;
 
-      this.player = new Player(
-        this,
-        0,
-        0,
-        "south",
-        this.offsetX,
-        this.offsetY
-      );
+      this.player = new Player(this, 0, 0, "south");
 
       this.npcs = [
-        new Npc(this, "Sphinx", 2, 0, "south", this.offsetX, this.offsetY),
+        new Npc(this, "Sphinx", 2, 0, "south"),
       ];
     }
 
+    this.cameras.main.startFollow(this.player.getSprite(), true, 0.1, 0.1);
+
     this.cursors = this.input.keyboard!.createCursorKeys();
+
+    if (this.soundService) {
+      this.time.delayedCall(1500, () => {
+        this.soundService.startBgm();
+      });
+    }
 
     this.exposeGameState();
   }
 
   update(): void {
+    if (this.dialog) {
+      this.dialog.update();
+      this.exposeGameState();
+      return;
+    }
+
     if (!this.player || !this.cursors) {
       return;
     }
@@ -156,6 +160,9 @@ export class MapScene extends Phaser.Scene {
     if (this.hasApiSession) {
       try {
         const response = await this.apiClient.move(direction);
+        if (this.soundService) {
+          this.soundService.playFootstep();
+        }
         this.player.animateTo(
           response.player_position.x,
           response.player_position.y,
@@ -179,6 +186,9 @@ export class MapScene extends Phaser.Scene {
       return;
     }
 
+    if (this.soundService) {
+      this.soundService.playFootstep();
+    }
     this.player.animateTo(targetX, targetY, direction, () =>
       this.exposeGameState()
     );
@@ -208,8 +218,17 @@ export class MapScene extends Phaser.Scene {
     try {
       const response = await this.apiClient.interact();
       if (response.battle) {
+        const npcName = response.npc?.name ?? "";
+        if (this.soundService) {
+          this.soundService.playBattleStart();
+        }
+        this.dialog = new DialogBox(this, `${npcName}: Prepare for battle!`);
+        await this.dialog.show();
+        this.dialog = null;
+        const npcSprite = this.npcs.find((n) => n.getName() === npcName)?.getSprite();
+        await this.playBattleTransition(npcSprite ?? null, npcName);
         this.scene.start("BattleScene", {
-          npcName: response.npc?.name ?? "",
+          npcName,
           question: response.battle.question,
           sessionId: this.apiClient.getSessionId(),
         });
@@ -221,11 +240,65 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
+  private playBattleTransition(
+    npcSprite: Phaser.GameObjects.Rectangle | null,
+    npcName: string
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      const flash = this.add.rectangle(400, 300, 800, 600, 0xffffff, 0);
+      flash.setDepth(100);
+      flash.setScrollFactor(0);
+
+      this.exposeGameState();
+
+      this.tweens.add({
+        targets: flash,
+        alpha: 0.8,
+        duration: 100,
+        yoyo: true,
+        hold: 100,
+        onStart: () => {
+          this.updateTransitionState(true, npcName);
+        },
+        onComplete: () => {
+          flash.destroy();
+          this.updateTransitionState(false, null);
+          resolve();
+        },
+      });
+
+      if (npcSprite) {
+        this.tweens.add({
+          targets: npcSprite,
+          scaleX: 1.3,
+          scaleY: 1.3,
+          duration: 150,
+          yoyo: true,
+        });
+      }
+    });
+  }
+
+  private updateTransitionState(active: boolean, target: string | null): void {
+    const state = (window as any).__gameState;
+    if (state) {
+      state.transitionFlashActive = active;
+      state.npcGlowTarget = target;
+    }
+    if (active) {
+      (window as any).__flashWasActive = true;
+      if (target) {
+        (window as any).__npcGlowed = target;
+      }
+    }
+  }
+
   private exposeGameState(): void {
     const state: GameState = {
       playerPosition: this.player.getGridPosition(),
       playerDirection: this.player.getDirection(),
       isMoving: this.player.getIsMoving(),
+      playerFrame: this.player.getFrame(),
       mapWidth: MAP_WIDTH_TILES,
       mapHeight: MAP_HEIGHT_TILES,
       npcs: this.npcs.map((npc) => ({
@@ -233,6 +306,10 @@ export class MapScene extends Phaser.Scene {
         position: npc.getGridPosition(),
         direction: npc.getDirection(),
       })),
+      cameraScrollX: this.cameras.main.scrollX,
+      cameraScrollY: this.cameras.main.scrollY,
+      transitionFlashActive: false,
+      npcGlowTarget: null,
     };
 
     const self = this;

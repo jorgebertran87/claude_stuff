@@ -9,7 +9,7 @@
 | 2: HTTP API | ✅ Done | `db211c8` |
 | 3: Frontend Foundation | ✅ Done | — |
 | 4: Frontend-Backend Integration | ✅ Done | — |
-| 5: UI Polish (Pokémon Effects) | ⬜ Pending | — |
+| 5: UI Polish (Pokémon Effects) | ✅ Done | — |
 | 6: Hardening & Deployment | ⬜ Pending | — |
 
 To resume: read this file, check the git log for the last completed phase commit, and pick up from the next pending phase. The original plan snapshot is at `~/.claude/plans/twinkly-crunching-stroustrup.md`.

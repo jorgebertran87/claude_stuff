@@ -34,6 +34,19 @@ When(
     await this.page.keyboard.down("Space");
     await this.page.waitForTimeout(100);
     await this.page.keyboard.up("Space");
+
+    await this.page.waitForFunction(
+      () => {
+        const ds = (window as any).__dialogState;
+        return ds && ds.typewriterComplete;
+      },
+      { timeout: 15000 }
+    );
+
+    await this.page.waitForTimeout(200);
+    await this.page.keyboard.down("Space");
+    await this.page.waitForTimeout(100);
+    await this.page.keyboard.up("Space");
     await this.page.waitForTimeout(500);
   }
 );

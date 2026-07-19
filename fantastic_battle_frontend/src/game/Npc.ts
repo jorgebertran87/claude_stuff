@@ -15,9 +15,7 @@ export class Npc {
     name: string,
     gridX: number,
     gridY: number,
-    direction: string,
-    offsetX: number,
-    offsetY: number
+    direction: string
   ) {
     this.scene = scene;
     this.name = name;
@@ -25,8 +23,8 @@ export class Npc {
     this.gridY = gridY;
     this.direction = direction;
 
-    const pixelX = offsetX + gridX * TILE_SIZE + TILE_SIZE / 2;
-    const pixelY = offsetY + gridY * TILE_SIZE + TILE_SIZE / 2;
+    const pixelX = gridX * TILE_SIZE + TILE_SIZE / 2;
+    const pixelY = gridY * TILE_SIZE + TILE_SIZE / 2;
 
     this.sprite = scene.add.rectangle(
       pixelX,
@@ -48,5 +46,9 @@ export class Npc {
 
   getDirection(): string {
     return this.direction;
+  }
+
+  getSprite(): Phaser.GameObjects.Rectangle {
+    return this.sprite;
   }
 }
