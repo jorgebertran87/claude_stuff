@@ -95,7 +95,7 @@ impl From<&GameMap> for MapResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct MoveRequest {
-    pub direction: Direction,
+    pub direction: Option<Direction>,
 }
 
 #[derive(Debug, Serialize)]
@@ -117,7 +117,7 @@ pub struct BattleResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct BattleAnswerRequest {
-    pub answer: String,
+    pub answer: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

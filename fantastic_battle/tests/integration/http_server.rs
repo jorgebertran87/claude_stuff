@@ -1,5 +1,7 @@
-use actix_web::{test, web, App, HttpResponse};
+use actix_web::{test, web, App};
 use cucumber::{then, when, World};
+
+use fantastic_battle::infrastructure::http;
 
 #[derive(Debug, Default, World)]
 pub struct ServerWorld {
@@ -9,7 +11,13 @@ pub struct ServerWorld {
 
 #[when("the client sends a GET request to \"/health\"")]
 async fn when_health_check(world: &mut ServerWorld) {
-    let app = test::init_service(App::new().route("/health", web::get().to(health))).await;
+    let state = fantastic_battle::container::build_state();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(state))
+            .configure(http::configure),
+    )
+    .await;
     let req = test::TestRequest::get().uri("/health").to_request();
     let resp = test::call_service(&app, req).await;
     world.status = Some(resp.status().as_u16());
@@ -24,10 +32,6 @@ fn then_status_200(world: &mut ServerWorld) {
 #[then("the response body is \"ok\"")]
 fn then_body_ok(world: &mut ServerWorld) {
     assert_eq!(world.body.as_deref(), Some("ok"));
-}
-
-async fn health() -> HttpResponse {
-    HttpResponse::Ok().body("ok")
 }
 
 fn main() {

@@ -35,13 +35,13 @@ Feature: Game World API
     Given a game session exists
     When the client sends a POST request to that session's move endpoint with direction "South"
     Then the response status is 409
-    And the error message is "NotWalkable"
+    And the error message is "cannot walk through walls"
 
   Scenario: Moving out of bounds is rejected
     Given a game session exists
     When the client sends a POST request to that session's move endpoint with direction "North"
     Then the response status is 409
-    And the error message is "OutOfBounds"
+    And the error message is "cannot move outside the map"
 
   # ── NPC Interaction ──────────────────────────────────────────────────────
 

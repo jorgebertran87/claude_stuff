@@ -1,5 +1,18 @@
-FROM rust:1-slim-bookworm AS test
+FROM rust:1-slim-bookworm AS builder
+WORKDIR /app
+COPY Cargo.toml ./
+COPY src/ src/
+RUN cargo build --release --bin fantastic_battle_server
 
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/fantastic_battle_server /usr/local/bin/
+EXPOSE 8080
+ENV PORT=8080
+CMD ["fantastic_battle_server"]
+
+
+FROM rust:1-slim-bookworm AS test
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock* ./
@@ -39,11 +52,11 @@ RUN touch src/main.rs src/lib.rs src/container.rs \
     src/infrastructure/http/routes.rs \
     tests/integration/http_server.rs tests/integration/game_world_api.rs \
     tests/integration/question_asker.rs tests/integration/battle_repository.rs \
-    tests/integration/battle_api.rs \
+    tests/integration/battle_api.rs tests/integration/error_handling.rs \
     features/battle_service.feature features/server_health.feature \
     features/game_world_service.feature features/game_world_api.feature \
     features/question_asker.feature features/battle_repository.feature \
-    features/battle_api.feature \
-    && cargo test --no-run --lib --test battle_service --test game_world_service --test http_server --test game_world_api --test question_asker --test battle_repository --test battle_api
+    features/battle_api.feature features/error_handling.feature \
+    && cargo test --no-run --lib --test battle_service --test game_world_service --test http_server --test game_world_api --test question_asker --test battle_repository --test battle_api --test error_handling
 
-CMD ["cargo", "test", "--lib", "--test", "battle_service", "--test", "game_world_service", "--test", "http_server", "--test", "game_world_api", "--test", "question_asker", "--test", "battle_repository", "--test", "battle_api"]
+CMD ["cargo", "test", "--lib", "--test", "battle_service", "--test", "game_world_service", "--test", "http_server", "--test", "game_world_api", "--test", "question_asker", "--test", "battle_repository", "--test", "battle_api", "--test", "error_handling"]

@@ -7,7 +7,7 @@ use fantastic_battle::domain::model::game_world::{
     Direction, GameMap, GameSession, MoveError, Npc, NpcSpawn, Position, TileType,
 };
 use fantastic_battle::domain::ports::{MapRepository, SessionRepository};
-use fantastic_battle::domain::service::GameWorldService;
+use fantastic_battle::domain::service::{GameWorldError, GameWorldService};
 
 #[derive(Debug)]
 struct FakeMapRepository {
@@ -84,8 +84,8 @@ pub struct GameWorld {
     service: Option<GameWorldService>,
     current_session_id: Option<String>,
     last_position: Option<Position>,
-    move_result: Option<Result<Position, MoveError>>,
-    interact_result: Option<Option<Npc>>,
+    move_result: Option<Result<Position, GameWorldError>>,
+    interact_result: Option<Result<Option<Npc>, GameWorldError>>,
 }
 
 impl GameWorld {
@@ -245,13 +245,13 @@ fn given_wall(world: &mut GameWorld, x: i32, y: i32) {
 #[then("the move is rejected because the tile is not walkable")]
 fn then_rejected_not_walkable(world: &mut GameWorld) {
     let result = world.move_result.as_ref().expect("no move result");
-    assert_eq!(*result, Err(MoveError::NotWalkable));
+    assert_eq!(*result, Err(GameWorldError::Move(MoveError::NotWalkable)));
 }
 
 #[then("the move is rejected because the position is out of bounds")]
 fn then_rejected_out_of_bounds(world: &mut GameWorld) {
     let result = world.move_result.as_ref().expect("no move result");
-    assert_eq!(*result, Err(MoveError::OutOfBounds));
+    assert_eq!(*result, Err(GameWorldError::Move(MoveError::OutOfBounds)));
 }
 
 #[then(regex = r"^the player stays at position \((\-?\d+), (\-?\d+)\)$")]
@@ -288,14 +288,15 @@ fn when_interact(world: &mut GameWorld) {
 #[then(regex = r#"^the interaction returns the NPC named "(.+)"$"#)]
 fn then_interact_returns_npc(world: &mut GameWorld, name: String) {
     let result = world.interact_result.as_ref().expect("no interact result");
-    let npc = result.as_ref().expect("expected an NPC but got None");
+    let npc = result.as_ref().expect("expected Ok but got Err").as_ref().expect("expected an NPC but got None");
     assert_eq!(npc.name(), &name);
 }
 
 #[then("the interaction returns no NPC")]
 fn then_interact_returns_none(world: &mut GameWorld) {
     let result = world.interact_result.as_ref().expect("no interact result");
-    assert!(result.is_none(), "expected None but got an NPC");
+    let npc = result.as_ref().expect("expected Ok but got Err");
+    assert!(npc.is_none(), "expected None but got an NPC");
 }
 
 fn main() {

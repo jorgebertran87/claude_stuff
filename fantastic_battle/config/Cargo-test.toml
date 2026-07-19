@@ -37,3 +37,8 @@ harness = false
 name = "battle_api"
 path = "tests/integration/battle_api.rs"
 harness = false
+
+[[test]]
+name = "error_handling"
+path = "tests/integration/error_handling.rs"
+harness = false

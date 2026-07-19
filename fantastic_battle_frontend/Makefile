@@ -9,6 +9,12 @@ dev:
 build:
 	npx tsc --noEmit && npx vite build
 
+docker-build:
+	docker build --platform $(LOCAL_PLATFORM) -t $(IMAGE) .
+
+docker-run: docker-build
+	docker run --rm -p 80:80 $(IMAGE)
+
 start-backend:
 	@if ! docker ps --format '{{.Names}}' | grep -q '^$(BACKEND_CONTAINER)$$'; then \
 		echo "Starting backend server..."; \
@@ -40,4 +46,4 @@ test-all: build start-backend
 	@sleep 3
 	npx cucumber-js --require-module tsx/esm; EXIT=$$?; kill %1 2>/dev/null || true; $(MAKE) stop-backend; exit $$EXIT
 
-.PHONY: dev build test test-api test-all start-backend stop-backend
+.PHONY: dev build docker-build docker-run test test-api test-all start-backend stop-backend

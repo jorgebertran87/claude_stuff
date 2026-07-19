@@ -11,6 +11,14 @@ pub enum BattleError {
     AlreadyOver,
 }
 
+impl std::fmt::Display for BattleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BattleError::AlreadyOver => write!(f, "battle is already over"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Battle {
     opponent: Player,
