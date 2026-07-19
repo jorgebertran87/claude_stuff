@@ -5,7 +5,7 @@ import { BattleScene } from "./scenes/BattleScene";
 import { ApiClient } from "./services/ApiClient";
 import { SoundService } from "./services/SoundService";
 
-const apiClient = new ApiClient("http://localhost:8081");
+const apiClient = new ApiClient("");
 const soundService = new SoundService();
 
 const config: Phaser.Types.Core.GameConfig = {
