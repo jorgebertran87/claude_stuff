@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex};
 use cucumber::{given, then, when, World};
 
 use fantastic_battle::domain::model::game_world::{
-    Direction, GameMap, GameSession, MoveError, Npc, NpcSpawn, Position, TileType,
+    Direction, GameMap, GameSession, MoveError, Npc, NpcSpawn, NpcStatus, Position, TileType,
 };
-use fantastic_battle::domain::model::{Player, Theme};
+use fantastic_battle::domain::model::{BattleOutcome, Player, Theme};
 use fantastic_battle::domain::ports::{MapRepository, NpcNameGenerator, SessionRepository};
 use fantastic_battle::domain::service::{GameWorldError, GameWorldService};
 
@@ -130,13 +130,17 @@ impl GameWorld {
     }
 
     fn join_game(&mut self, theme_name: &str) {
+        self.join_game_with_count(theme_name, 5);
+    }
+
+    fn join_game_with_count(&mut self, theme_name: &str, count: u32) {
         self.session_repo = Some(FakeSessionRepository::new());
         self.service = None;
         self.ensure_service();
         let theme = Theme::new(theme_name).unwrap();
         self.current_theme = Some(theme.clone());
         let service = self.service.as_ref().unwrap();
-        let session = service.join(&theme);
+        let session = service.join(&theme, count);
         self.current_session_id = Some(session.id().to_string());
         self.last_position = Some(session.player_position());
     }
@@ -390,6 +394,95 @@ fn then_interact_returns_none(world: &mut GameWorld) {
     let result = world.interact_result.as_ref().expect("no interact result");
     let npc = result.as_ref().expect("expected Ok but got Err");
     assert!(npc.is_none(), "expected None but got an NPC");
+}
+
+// ── NPC Status ──────────────────────────────────────────────────────────────
+
+#[then(regex = r#"^the NPC "(.+)" has status (.+)$"#)]
+fn then_npc_status(world: &mut GameWorld, name: String, status_name: String) {
+    let service = world.service.as_ref().unwrap();
+    let session_id = world.current_session_id.as_ref().unwrap();
+    let session = service.get_session(session_id).unwrap();
+    let npc = session
+        .npcs()
+        .iter()
+        .find(|n| n.name() == &name)
+        .expect("NPC not found");
+    let expected = match status_name.as_str() {
+        "Active" => NpcStatus::Active,
+        "DefeatedCorrect" => NpcStatus::DefeatedCorrect,
+        "DefeatedIncorrect" => NpcStatus::DefeatedIncorrect,
+        _ => panic!("unknown status: {}", status_name),
+    };
+    assert_eq!(npc.status(), expected);
+}
+
+#[when(regex = r#"^the player defeats the NPC "(.+)" with outcome (.+)$"#)]
+fn when_defeat_npc(world: &mut GameWorld, name: String, outcome_name: String) {
+    let outcome = match outcome_name.as_str() {
+        "Victory" => BattleOutcome::Victory,
+        "Defeat" => BattleOutcome::Defeat,
+        _ => panic!("unknown outcome: {}", outcome_name),
+    };
+    world.ensure_service();
+    let service = world.service.as_ref().unwrap();
+    let session_id = world.current_session_id.as_ref().unwrap();
+    service
+        .defeat_npc(session_id, &name, outcome)
+        .expect("failed to defeat NPC");
+}
+
+#[given(regex = r#"^there is an NPC named "(.+)" at position \((\-?\d+), (\-?\d+)\) that has been defeated$"#)]
+fn given_defeated_npc(world: &mut GameWorld, name: String, x: i32, y: i32) {
+    let repo = world
+        .map_repo
+        .get_or_insert_with(FakeMapRepository::default_map);
+    repo.npc_spawns.push(NpcSpawn {
+        name: name.clone(),
+        position: Position::new(x, y),
+        direction: Direction::South,
+    });
+    world.join_game("Greek mythology");
+    world.ensure_service();
+    let service = world.service.as_ref().unwrap();
+    let session_id = world.current_session_id.as_ref().unwrap();
+    service
+        .defeat_npc(session_id, &name, BattleOutcome::Defeat)
+        .expect("failed to defeat NPC");
+}
+
+// ── Question Count ──────────────────────────────────────────────────────────
+
+#[when(regex = r#"^the human player joins the game with the theme "([^"]*)" and (\d+) questions$"#)]
+fn when_join_with_theme_and_count(world: &mut GameWorld, theme_name: String, count: u32) {
+    if world.map_repo.is_none() {
+        world.map_repo = Some(FakeMapRepository::default_map());
+    }
+    world.join_game_with_count(&theme_name, count);
+}
+
+#[given("the map has 3 NPC spawn positions")]
+fn given_map_has_3_spawns(world: &mut GameWorld) {
+    let repo = world
+        .map_repo
+        .get_or_insert_with(FakeMapRepository::default_map);
+    repo.npc_spawns = vec![
+        NpcSpawn {
+            name: "placeholder-0".to_string(),
+            position: Position::new(10, 10),
+            direction: Direction::South,
+        },
+        NpcSpawn {
+            name: "placeholder-1".to_string(),
+            position: Position::new(11, 10),
+            direction: Direction::South,
+        },
+        NpcSpawn {
+            name: "placeholder-2".to_string(),
+            position: Position::new(12, 10),
+            direction: Direction::South,
+        },
+    ];
 }
 
 fn main() {

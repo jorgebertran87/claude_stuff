@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-use crate::domain::model::game_world::{Direction, GameMap, GameSession, Npc, Position, TileType};
+use crate::domain::model::game_world::{Direction, GameMap, GameSession, Npc, NpcStatus, Position, TileType};
+
+#[derive(Debug, Serialize)]
+pub struct SessionResults {
+    pub total: u32,
+    pub correct: u32,
+    pub incorrect: u32,
+    pub remaining: u32,
+}
 
 #[derive(Debug, Serialize)]
 pub struct SessionResponse {
@@ -9,18 +17,36 @@ pub struct SessionResponse {
     pub player_direction: Direction,
     pub npcs: Vec<NpcResponse>,
     pub map: MapResponse,
+    pub results: Option<SessionResults>,
 }
 
 impl From<GameSession> for SessionResponse {
     fn from(session: GameSession) -> Self {
-        let npcs = session.npcs().iter().map(NpcResponse::from).collect();
+        let npcs: Vec<NpcResponse> = session.npcs().iter().map(NpcResponse::from).collect();
         let map = MapResponse::from(session.map());
+        let total = npcs.len() as u32;
+        let correct = npcs
+            .iter()
+            .filter(|n| n.status == "DefeatedCorrect")
+            .count() as u32;
+        let incorrect = npcs
+            .iter()
+            .filter(|n| n.status == "DefeatedIncorrect")
+            .count() as u32;
+        let remaining = total - correct - incorrect;
+        let results = Some(SessionResults {
+            total,
+            correct,
+            incorrect,
+            remaining,
+        });
         Self {
             id: session.id().to_string(),
             player_position: PositionResponse::from(session.player_position()),
             player_direction: session.player_direction(),
             npcs,
             map,
+            results,
         }
     }
 }
@@ -45,6 +71,15 @@ pub struct NpcResponse {
     pub name: String,
     pub position: PositionResponse,
     pub direction: Direction,
+    pub status: String,
+}
+
+fn npc_status_to_string(status: NpcStatus) -> String {
+    match status {
+        NpcStatus::Active => "Active".to_string(),
+        NpcStatus::DefeatedCorrect => "DefeatedCorrect".to_string(),
+        NpcStatus::DefeatedIncorrect => "DefeatedIncorrect".to_string(),
+    }
 }
 
 impl From<&Npc> for NpcResponse {
@@ -53,6 +88,7 @@ impl From<&Npc> for NpcResponse {
             name: npc.name().to_string(),
             position: PositionResponse::from(npc.position()),
             direction: npc.direction(),
+            status: npc_status_to_string(npc.status()),
         }
     }
 }
@@ -96,6 +132,7 @@ impl From<&GameMap> for MapResponse {
 #[derive(Debug, Deserialize)]
 pub struct JoinRequest {
     pub theme: Option<String>,
+    pub question_count: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]

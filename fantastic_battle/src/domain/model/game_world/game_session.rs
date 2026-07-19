@@ -1,6 +1,7 @@
 use uuid::Uuid;
 
-use crate::domain::model::Theme;
+use crate::domain::model::game_world::NpcStatus;
+use crate::domain::model::{BattleOutcome, Theme};
 
 use super::{Direction, GameMap, MoveError, Npc, Position};
 
@@ -72,6 +73,18 @@ impl GameSession {
 
     pub fn interact(&self) -> Option<&Npc> {
         let target = self.player_position.adjacent(self.player_direction);
-        self.npcs.iter().find(|n| n.position() == target)
+        self.npcs
+            .iter()
+            .find(|n| n.position() == target && n.status() == NpcStatus::Active)
+    }
+
+    pub fn defeat_npc_by_name(&mut self, name: &str, outcome: BattleOutcome) -> bool {
+        match self.npcs.iter_mut().find(|n| n.name() == name) {
+            Some(npc) => {
+                npc.defeat(outcome);
+                true
+            }
+            None => false,
+        }
     }
 }

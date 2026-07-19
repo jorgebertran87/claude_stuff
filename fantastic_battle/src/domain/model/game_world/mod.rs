@@ -8,7 +8,7 @@ mod tile_type;
 pub use direction::Direction;
 pub use game_map::GameMap;
 pub use game_session::GameSession;
-pub use npc::{Npc, NpcSpawn};
+pub use npc::{Npc, NpcSpawn, NpcStatus};
 pub use position::Position;
 pub use tile_type::TileType;
 

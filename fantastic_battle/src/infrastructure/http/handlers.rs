@@ -17,7 +17,7 @@ pub async fn join(
     body: Option<web::Json<JoinRequest>>,
 ) -> HttpResponse {
     let theme_name = match body {
-        Some(b) => match &b.theme {
+        Some(ref b) => match &b.theme {
             Some(t) => t.clone(),
             None => {
                 return HttpResponse::BadRequest().json(ErrorResponse {
@@ -39,7 +39,11 @@ pub async fn join(
             })
         }
     };
-    let session = state.game_service.join(&theme);
+    let question_count = body
+        .as_ref()
+        .and_then(|b| b.question_count)
+        .unwrap_or(5);
+    let session = state.game_service.join(&theme, question_count);
     HttpResponse::Ok().json(SessionResponse::from(session))
 }
 
@@ -155,7 +159,9 @@ pub async fn answer_battle(
         }),
         Some(mut battle) => match battle.answer(&answer) {
             Ok(outcome) => {
+                let npc_name = battle.opponent().name().to_string();
                 state.battle_repo.save(&session_id, battle);
+                let _ = state.game_service.defeat_npc(&session_id, &npc_name, outcome);
                 let outcome_str = match outcome {
                     crate::domain::model::BattleOutcome::Victory => "Victory",
                     crate::domain::model::BattleOutcome::Defeat => "Defeat",

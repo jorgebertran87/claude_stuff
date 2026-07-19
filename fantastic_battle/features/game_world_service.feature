@@ -13,13 +13,13 @@ Feature: Game World Service
 
   Scenario: Joining with a theme places themed NPCs on the map
     Given the NPC name generator provides the names Socrates, Aristotle, Plato for the theme "Greek mythology"
-    When the human player joins the game with the theme "Greek mythology"
+    When the human player joins the game with the theme "Greek mythology" and 3 questions
     Then the session has 3 NPCs
     And the NPCs are named Socrates, Aristotle, and Plato
 
   Scenario: Joining with a different theme places different NPCs
     Given the NPC name generator provides the names Ada Lovelace, Grace Hopper for the theme "Computer Science"
-    When the human player joins the game with the theme "Computer Science"
+    When the human player joins the game with the theme "Computer Science" and 2 questions
     Then the NPCs are named Ada Lovelace and Grace Hopper
 
   # ── Movement ─────────────────────────────────────────────────────────────
@@ -81,3 +81,42 @@ Feature: Game World Service
     And there is an NPC named "Sphinx" at position (5, 4)
     When the player interacts
     Then the interaction returns no NPC
+
+  # ── NPC Status ─────────────────────────────────────────────────────────────
+
+  Scenario: NPCs start with Active status
+    Given the human player has joined the game
+    And there is an NPC named "Sphinx" at position (5, 6)
+    Then the NPC "Sphinx" has status Active
+
+  Scenario: Defeating an NPC with a correct answer marks it DefeatedCorrect
+    Given the human player has joined the game
+    And there is an NPC named "Sphinx" at position (5, 6)
+    When the player defeats the NPC "Sphinx" with outcome Victory
+    Then the NPC "Sphinx" has status DefeatedCorrect
+
+  Scenario: Defeating an NPC with an incorrect answer marks it DefeatedIncorrect
+    Given the human player has joined the game
+    And there is an NPC named "Sphinx" at position (5, 6)
+    When the player defeats the NPC "Sphinx" with outcome Defeat
+    Then the NPC "Sphinx" has status DefeatedIncorrect
+
+  Scenario: Interacting with a defeated NPC returns nothing
+    Given the human player has joined the game
+    And there is an NPC named "Sphinx" at position (5, 6) that has been defeated
+    When the player interacts
+    Then the interaction returns no NPC
+
+  # ── Question Count ─────────────────────────────────────────────────────────
+
+  Scenario: Joining with a question count generates exactly that many NPCs
+    Given the NPC name generator provides the names Socrates, Aristotle, Plato, Homer, Herodotus for the theme "Greek mythology"
+    When the human player joins the game with the theme "Greek mythology" and 3 questions
+    Then the session has 3 NPCs
+    And the NPCs are named Socrates, Aristotle, and Plato
+
+  Scenario: Joining with more questions than spawn positions generates extra NPCs
+    Given the NPC name generator provides the names A, B, C, D, E, F, G for the theme "Greek mythology"
+    And the map has 3 NPC spawn positions
+    When the human player joins the game with the theme "Greek mythology" and 7 questions
+    Then the session has 7 NPCs
