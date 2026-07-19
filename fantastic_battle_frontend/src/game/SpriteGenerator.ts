@@ -67,5 +67,14 @@ export function generatePlayerTexture(scene: Phaser.Scene): string {
   }
 
   canvas.refresh();
+
+  const texture = scene.textures.get(key);
+  for (let dir = 0; dir < 4; dir++) {
+    for (let frame = 0; frame < 3; frame++) {
+      const index = dir * 3 + frame;
+      texture.add(index, 0, frame * CELL, dir * CELL, CELL, CELL);
+    }
+  }
+
   return key;
 }

@@ -26,11 +26,16 @@ const CURSOR_TO_DIRECTION: Record<string, string> = {
   right: "east",
 };
 
+const GRASS_COLOR = 0x4caf50;
+const WALL_COLOR = 0x9e9e9e;
+const WALL_TILE_INDEX = 2;
+
 export class MapScene extends Phaser.Scene {
   private player!: Player;
   private npcs: Npc[] = [];
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private groundLayer!: Phaser.Tilemaps.TilemapLayer;
+  private tileData: number[] = [];
+  private tileGraphics: Phaser.GameObjects.Rectangle[] = [];
   private lastDirection: string | null = null;
   private apiClient!: ApiClient;
   private lastSpaceState = false;
@@ -43,37 +48,77 @@ export class MapScene extends Phaser.Scene {
   }
 
   preload(): void {
-    const canvasTexture = this.textures.createCanvas(
-      "tiles",
-      TILE_SIZE * 2,
-      TILE_SIZE
-    );
-    if (!canvasTexture) {
-      throw new Error("failed to create tileset texture");
-    }
-    const ctx = canvasTexture.getContext();
-    ctx.fillStyle = "#4caf50";
-    ctx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    ctx.fillStyle = "#9e9e9e";
-    ctx.fillRect(TILE_SIZE, 0, TILE_SIZE, TILE_SIZE);
-    canvasTexture.refresh();
-
-    this.load.tilemapTiledJSON("map", "assets/map.json");
+    this.load.json("map_data", "assets/map.json");
   }
 
-  async create(): Promise<void> {
+  create(): void {
     this.apiClient = this.game.registry.get("apiClient");
     this.soundService = this.game.registry.get("soundService");
 
-    const map = this.make.tilemap({ key: "map" });
-    const tileset = map.addTilesetImage("tiles", "tiles");
-    if (!tileset) {
-      throw new Error("tileset not found");
-    }
-    this.groundLayer = map.createLayer("ground", tileset)!;
+    this.renderTiles();
 
     this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
+    this.cursors = this.input.keyboard!.createCursorKeys();
 
+    this.initPlayerAndNpcs();
+
+    if (this.soundService) {
+      this.time.delayedCall(1500, () => {
+        this.soundService.startBgm();
+      });
+    }
+
+    this.exposeGameState();
+  }
+
+  private renderTiles(): void {
+    const mapData = this.cache.json.get("map_data");
+    if (!mapData) {
+      return;
+    }
+
+    const groundLayer = mapData.layers?.find(
+      (l: { name: string }) => l.name === "ground"
+    );
+    if (!groundLayer || !groundLayer.data) {
+      return;
+    }
+
+    this.tileData = groundLayer.data;
+
+    const viewCols = Math.ceil(800 / TILE_SIZE);
+    const viewRows = Math.ceil(600 / TILE_SIZE);
+
+    for (let row = 0; row < viewRows; row++) {
+      for (let col = 0; col < viewCols; col++) {
+        const inMap =
+          col < MAP_WIDTH_TILES && row < MAP_HEIGHT_TILES;
+        const mapIndex = row * MAP_WIDTH_TILES + col;
+
+        let color: number;
+        if (inMap) {
+          const tileIndex = this.tileData[mapIndex];
+          if (tileIndex === 0) {
+            continue;
+          }
+          color = tileIndex === WALL_TILE_INDEX ? WALL_COLOR : GRASS_COLOR;
+        } else {
+          color = 0x333333;
+        }
+
+        const pixelX = col * TILE_SIZE + TILE_SIZE / 2;
+        const pixelY = row * TILE_SIZE + TILE_SIZE / 2;
+
+        const rect = this.add.rectangle(
+          pixelX, pixelY, TILE_SIZE, TILE_SIZE, color
+        );
+        rect.setDepth(0);
+        this.tileGraphics.push(rect);
+      }
+    }
+  }
+
+  private async initPlayerAndNpcs(): Promise<void> {
     try {
       const session = await this.apiClient.join();
       this.hasApiSession = true;
@@ -97,24 +142,11 @@ export class MapScene extends Phaser.Scene {
       );
     } catch {
       this.hasApiSession = false;
-
       this.player = new Player(this, 0, 0, "south");
-
-      this.npcs = [
-        new Npc(this, "Sphinx", 2, 0, "south"),
-      ];
+      this.npcs = [new Npc(this, "Sphinx", 2, 0, "south")];
     }
 
     this.cameras.main.startFollow(this.player.getSprite(), true, 0.1, 0.1);
-
-    this.cursors = this.input.keyboard!.createCursorKeys();
-
-    if (this.soundService) {
-      this.time.delayedCall(1500, () => {
-        this.soundService.startBgm();
-      });
-    }
-
     this.exposeGameState();
   }
 
@@ -204,11 +236,11 @@ export class MapScene extends Phaser.Scene {
     ) {
       return false;
     }
-    const tile = this.groundLayer.getTileAt(gridX, gridY);
-    if (!tile) {
+    const index = gridY * MAP_WIDTH_TILES + gridX;
+    if (index < 0 || index >= this.tileData.length) {
       return false;
     }
-    return tile.index !== 2;
+    return this.tileData[index] !== WALL_TILE_INDEX;
   }
 
   private async tryInteract(): Promise<void> {
@@ -225,7 +257,9 @@ export class MapScene extends Phaser.Scene {
         this.dialog = new DialogBox(this, `${npcName}: Prepare for battle!`);
         await this.dialog.show();
         this.dialog = null;
-        const npcSprite = this.npcs.find((n) => n.getName() === npcName)?.getSprite();
+        const npcSprite = this.npcs
+          .find((n) => n.getName() === npcName)
+          ?.getSprite();
         await this.playBattleTransition(npcSprite ?? null, npcName);
         this.scene.start("BattleScene", {
           npcName,
@@ -294,6 +328,9 @@ export class MapScene extends Phaser.Scene {
   }
 
   private exposeGameState(): void {
+    if (!this.player) {
+      return;
+    }
     const state: GameState = {
       playerPosition: this.player.getGridPosition(),
       playerDirection: this.player.getDirection(),
