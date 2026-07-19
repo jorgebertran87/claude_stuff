@@ -1,18 +1,18 @@
 import Phaser from "phaser";
+import { ThemePrompt } from "../ui/ThemePrompt";
 
 export class BootScene extends Phaser.Scene {
   constructor() {
     super({ key: "BootScene" });
   }
 
-  create(): void {
-    this.add.text(400, 300, "Fantastic Battle", {
-      fontSize: "32px",
-      color: "#ffffff",
-    }).setOrigin(0.5);
+  async create(): Promise<void> {
+    const prompt = new ThemePrompt();
+    const theme = await prompt.show();
+    prompt.remove();
 
-    this.time.delayedCall(200, () => {
-      this.scene.start("MapScene");
-    });
+    this.game.registry.set("theme", theme);
+
+    this.scene.start("MapScene");
   }
 }

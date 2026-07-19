@@ -120,7 +120,8 @@ export class MapScene extends Phaser.Scene {
 
   private async initPlayerAndNpcs(): Promise<void> {
     try {
-      const session = await this.apiClient.join();
+      const theme = this.game.registry.get("theme") as string | undefined;
+      const session = await this.apiClient.join(theme);
       this.hasApiSession = true;
 
       this.player = new Player(

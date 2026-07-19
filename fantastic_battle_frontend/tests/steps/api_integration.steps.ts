@@ -35,6 +35,9 @@ Given("the game loads with the API backend", async function (this: ApiWorld) {
     await this.page.goto("http://localhost:5173", { timeout: 30000 });
   }
   await this.page.waitForSelector("canvas", { timeout: 30000 });
+  await this.page.waitForSelector("#theme-input", { timeout: 10000 });
+  await this.page.fill("#theme-input", "Greek mythology");
+  await this.page.click("#theme-start");
   await this.page.waitForFunction(
     () => (window as any).__gameState !== undefined,
     { timeout: 15000 }

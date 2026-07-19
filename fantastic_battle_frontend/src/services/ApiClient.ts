@@ -40,9 +40,12 @@ export class ApiClient {
     this.baseUrl = baseUrl;
   }
 
-  async join(): Promise<SessionResponse> {
+  async join(theme?: string): Promise<SessionResponse> {
+    const body = theme ? JSON.stringify({ theme }) : undefined;
     const resp = await fetch(`${this.baseUrl}/api/sessions`, {
       method: "POST",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body,
     });
     if (!resp.ok) {
       throw new Error(`join failed: ${resp.status}`);

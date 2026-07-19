@@ -67,6 +67,9 @@ async function loadGamePage(page: Page) {
     await page.goto("http://localhost:5173", { timeout: 30000 });
   }
   await page.waitForSelector("canvas", { timeout: 30000 });
+  await page.waitForSelector("#theme-input", { timeout: 10000 });
+  await page.fill("#theme-input", "Greek mythology");
+  await page.click("#theme-start");
   await waitForGameState(page);
 }
 

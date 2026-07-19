@@ -30,11 +30,12 @@ Then("the game canvas is visible", async function (this: GameWorld) {
 });
 
 Then("the title {string} is displayed", async function (this: GameWorld, title: string) {
-  const text = await this.page.evaluate(() => {
-    const canvas = document.querySelector("canvas");
-    return canvas !== null;
-  });
-  if (!text) {
-    throw new Error("canvas not found for title check");
+  const titleEl = await this.page.$("#theme-prompt h1");
+  if (!titleEl) {
+    throw new Error("theme prompt title not found");
+  }
+  const text = await titleEl.textContent();
+  if (!text || !text.includes(title)) {
+    throw new Error(`expected title "${title}" but got "${text}"`);
   }
 });
